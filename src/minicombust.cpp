@@ -2,7 +2,7 @@
 
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
-#include "geometry/TetraMesh.hpp"
+#include "geometry/Mesh.hpp"
 
 #include "particles/ParticleSolver.inl"
 #include "flow/FlowSolver.inl"

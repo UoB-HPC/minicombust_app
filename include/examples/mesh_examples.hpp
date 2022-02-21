@@ -1,6 +1,6 @@
 #pragma once
 
-#include "geometry/TetraMesh.hpp"
+#include "geometry/Mesh.hpp"
 #include "utils/utils.hpp"
 
 using namespace minicombust::geometry;
