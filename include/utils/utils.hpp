@@ -12,6 +12,23 @@ namespace minicombust::utils
         T x;
         T y;
         T z;
+
+        vec<T>& operator+=(const vec<T>& rhs)
+        {
+            x += rhs.x;
+            y += rhs.y;
+            z += rhs.z;
+	    return *this;
+        }
+
+        vec<T>& operator/=(const T rhs)
+        {
+            x /= rhs;
+            y /= rhs;
+            z /= rhs;
+	    return *this;
+        }
+
     };
 
     template<typename T>
@@ -20,6 +37,7 @@ namespace minicombust::utils
         vec<T> sum = {a.x + b.x, a.y + b.y, a.z + b.z};
         return sum;
     }
+
 
     template<typename T>
     vec<T> operator-(vec<T> a, vec<T> b) 
