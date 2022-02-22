@@ -47,6 +47,8 @@ namespace minicombust::geometry
 
                 // Allocate space for and calculate cell centre co-ordinates
                 mesh_obj_centres = (vec<T> *)malloc(mesh_obj_size * sizeof(vec<T>));
+                printf("Allocating mesh cell centres array, %llu points (%.2f MB)\n\n", mesh_obj_size,
+                                                                              (float)(mesh_obj_size * sizeof(vec<T>))/1000000.0);
                 calculate_cell_centres();
             }
 
@@ -55,6 +57,8 @@ namespace minicombust::geometry
             {
                 // Allocate space for and calculate cell centre co-ordinates
                 mesh_obj_centres = (vec<T> *)malloc(mesh_obj_size * sizeof(vec<T>));
+                printf("Allocating mesh cell centres array, %llu points (%.2f MB)\n\n", mesh_obj_size,
+                                                                              (float)(mesh_obj_size * sizeof(vec<T>))/1000000.0);
                 calculate_cell_centres();
             }
 
