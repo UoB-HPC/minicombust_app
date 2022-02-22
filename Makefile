@@ -11,7 +11,7 @@ EXE := bin/minicombust
 
 
 
-SOURCES := $(shell find $(SRC) -type f -name *.c*)
+SOURCES := $(shell find $(SRC) -type f -name *.c -o -name *.cpp)
 OBJECTS := $(patsubst $(SRC)/%,build/%,$(SOURCES:.cpp=.o))
 
 all: $(EXE)
