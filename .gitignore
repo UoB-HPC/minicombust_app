@@ -32,11 +32,15 @@
 *.app
 
 # Ignore the build and lib dirs
-build
+build/*
 lib/*
+out/*
 
 # Ignore any executables
 bin/*
 
 # Ignore Mac specific files
 .DS_Store
+
+# VSCode
+.vscode

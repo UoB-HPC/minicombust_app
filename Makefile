@@ -22,7 +22,7 @@ $(EXE): $(OBJECTS)
 	$(CC) $(LIB) $^ -o $(EXE) 
 
 build/%.o: $(SRC)/%.cpp
-	@mkdir -p bin build $(dir $@)
+	@mkdir -p bin build out $(dir $@)
 	$(CC) $(CFLAGS) $(INC) $< -c -o $@ 
 
 clean:

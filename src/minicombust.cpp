@@ -3,6 +3,8 @@
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
 #include "geometry/Mesh.hpp"
+#include "visit/VisitWriter.hpp"
+
 
 #include "particles/ParticleSolver.inl"
 #include "flow/FlowSolver.inl"
@@ -10,6 +12,7 @@
 
 using namespace minicombust::flow;
 using namespace minicombust::particles;
+using namespace minicombust::visit;
 
 template<typename F, typename P>
 void timestep(FlowSolver<F> *flow_solver, ParticleSolver<P> *particle_solver)
@@ -37,7 +40,7 @@ int main (int argc, char ** argv)
         
         default:
             const double box_dim                  = 100;
-            const double elements_per_dim         = 100;
+            const double elements_per_dim         = 10;
             const uint64_t particles_per_timestep = 1000;
             printf("No meshes supplied. Running built in example instead.\n");
             boundary_mesh = load_boundary_box_mesh(box_dim);
@@ -46,7 +49,7 @@ int main (int argc, char ** argv)
     }
 
     printf("Loaded mesh. %llu vertexes (%.2f MB). %llu cells (%.2f MB).\n", global_mesh->mesh_points_size, (float)(global_mesh->mesh_points_size*sizeof(vec<double>))/1000000.0, 
-                                                                        global_mesh->mesh_obj_size,    (float)(global_mesh->mesh_obj_size*8*sizeof(vec<double> *))/1000000.0);
+                                                                            global_mesh->mesh_size,    (float)(global_mesh->mesh_size*8*sizeof(vec<double> *))/1000000.0);
 
 
     const uint64_t ntimesteps = 5;
@@ -57,6 +60,9 @@ int main (int argc, char ** argv)
         printf("Timestep %d..\n\n", t);
         timestep(flow_solver, particle_solver);
     }
+
+    VisitWriter<double> *vtk_writer = new VisitWriter<double>(global_mesh, boundary_mesh);
+    vtk_writer->write_file();
 
     
 

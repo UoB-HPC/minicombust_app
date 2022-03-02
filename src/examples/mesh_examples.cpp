@@ -11,7 +11,7 @@ using namespace std;
 
 Mesh<double> *load_boundary_box_mesh(double box_size)
 {
-
+    const uint64_t cell_size = 3; // Triangle
     const double size  = box_size;
 
     const int num_points    = 8;
@@ -59,13 +59,16 @@ Mesh<double> *load_boundary_box_mesh(double box_size)
                                                              triangle_7,  triangle_8,  triangle_9,
                                                              triangle_10, triangle_11, triangle_12};
 
-    Mesh<double> *mesh = new Mesh<double>(num_points, num_triangles, points, triangle_vertexes);
+    Mesh<double> *mesh = new Mesh<double>(num_points, num_triangles, cell_size, points, triangle_vertexes);
 
     return mesh;
 }
 
 Mesh<double> *load_global_mesh(double mesh_dim, int elements_per_dim)
 {
+    const uint64_t cell_size = 8; // Cube
+
+    
     const double mesh_x_dim = mesh_dim; 
     const double mesh_y_dim = mesh_dim;   
     const double mesh_z_dim = mesh_dim;
@@ -126,8 +129,8 @@ Mesh<double> *load_global_mesh(double mesh_dim, int elements_per_dim)
                 int index   = z * x_points * y_points + y * x_points + x;
                 int cube_index    = z*mesh_elements_per_x_dim*mesh_elements_per_y_dim + y*mesh_elements_per_x_dim + x;
 
-                cubes[cube_index] = new vec<double>*[8]{&(points[index]), &(points[index+1]), &(points[x+x_points]), &(points[index+x_points+1]), 
-                                                        &(points[index+x_points*y_points]), &(points[index+x_points*y_points+1]), &(points[x+x_points*y_points+x_points]), &(points[index+x_points*y_points+x_points+1])};
+                cubes[cube_index] = new vec<double>*[cell_size]{&(points[index]), &(points[index+1]), &(points[index+x_points]), &(points[index+x_points+1]), 
+                                                        &(points[index+x_points*y_points]), &(points[index+x_points*y_points+1]), &(points[index+x_points*y_points+x_points]), &(points[index+x_points*y_points+x_points+1])};
             }
         }
     }
@@ -150,7 +153,7 @@ Mesh<double> *load_global_mesh(double mesh_dim, int elements_per_dim)
     // cout << endl << endl;
 
     
-    Mesh<double> *mesh = new Mesh<double>(num_points, num_cubes, points, cubes);
+    Mesh<double> *mesh = new Mesh<double>(num_points, num_cubes, cell_size, points, cubes);
 
     return mesh;
 }

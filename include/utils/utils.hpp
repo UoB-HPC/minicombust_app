@@ -64,7 +64,7 @@ namespace minicombust::utils
     std::string print_vec(vec<T> v)
     {
         std::stringstream buffer;
-        buffer << "{" << v.x << ", " << v.y << ", " << v.z << "}";
+        buffer << v.x << " " << v.y << " " << v.z;
         return buffer.str();
     }
 }
