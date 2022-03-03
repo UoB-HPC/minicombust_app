@@ -42,19 +42,20 @@ int main (int argc, char ** argv)
             const double box_dim                  = 100;
             const double elements_per_dim         = 10;
             const uint64_t particles_per_timestep = 1000;
-            printf("No meshes supplied. Running built in example instead.\n");
+            printf("No meshes supplied. Running built in example instead.\n\n");
             boundary_mesh = load_boundary_box_mesh(box_dim);
             global_mesh   = load_global_mesh(box_dim, elements_per_dim);
             particle_dist = load_particle_distribution(particles_per_timestep);
     }
 
-    printf("Loaded mesh. %llu vertexes (%.2f MB). %llu cells (%.2f MB).\n", global_mesh->mesh_points_size, (float)(global_mesh->mesh_points_size*sizeof(vec<double>))/1000000.0, 
-                                                                            global_mesh->mesh_size,    (float)(global_mesh->mesh_size*8*sizeof(vec<double> *))/1000000.0);
+    
 
 
     const uint64_t ntimesteps = 5;
     FlowSolver<double>     *flow_solver     = new FlowSolver<double>();
     ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, boundary_mesh, global_mesh);
+
+    cout << endl;
     for(int t = 0; t < ntimesteps; t++)
     {
         printf("Timestep %d..\n\n", t);

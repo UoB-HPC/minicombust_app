@@ -85,6 +85,20 @@ namespace minicombust::visit
                 } 
                 vtk_file << endl;
 
+                // Print temperature values for points
+                vtk_file << endl << "POINT_DATA " << global_mesh->mesh_points_size << endl;
+                vtk_file << "SCALARS Particles unsigned_int 1" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(int p = 0; p < global_mesh->mesh_size; p++)
+                {
+                    // TODO: Instead of index, set values to be based of temperature values
+                    const int data_per_line = 20;
+                    if (p % data_per_line == 0)  vtk_file << endl;
+                    else             vtk_file << " ";
+                    vtk_file << p << " ";
+                } 
+                vtk_file << endl;
+
                 // TODO: Allow different cell types
 
                 vtk_file.close();
