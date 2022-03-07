@@ -22,7 +22,8 @@ namespace minicombust::particles
             vec<T> v1 = 0.0;        // current velocity
             
             vec<T> a1 = 0.0;        // current acceleration
-
+            
+            // TODO: Perform check for if particle is actually starting in cell 0.
             int cell0 = 0;         // starting cell
             int cell1 = 0;         // current cell
             // int face  = 0;         // current face the particle is on

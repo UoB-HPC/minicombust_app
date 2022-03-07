@@ -59,34 +59,37 @@ Mesh<double> *load_boundary_box_mesh(double box_size)
                                                              triangle_7,  triangle_8,  triangle_9,
                                                              triangle_10, triangle_11, triangle_12};
 
-    Mesh<double> *mesh = new Mesh<double>(num_points, num_triangles, cell_size, points, triangle_vertexes);
+    Face<double> ***faces = new Face<double>**[num_triangles*1];
+
+    Mesh<double> *mesh = new Mesh<double>(num_points, num_triangles, cell_size, 1, points, triangle_vertexes, faces);
 
     return mesh;
 }
 
-Mesh<double> *load_global_mesh(double mesh_dim, int elements_per_dim)
+Mesh<double> *load_global_mesh(double mesh_dim, uint64_t elements_per_dim)
 {
-    const uint64_t cell_size = 8; // Cube
+    const uint64_t cell_size  = 8; // Cube
+    const uint64_t faces_size = 6; // Cube
 
     
     const double mesh_x_dim = mesh_dim; 
     const double mesh_y_dim = mesh_dim;   
     const double mesh_z_dim = mesh_dim;
 
-    const double mesh_elements_per_x_dim = elements_per_dim; // Number of cubes for each dimension
-    const double mesh_elements_per_y_dim = elements_per_dim;
-    const double mesh_elements_per_z_dim = elements_per_dim;
+    const uint64_t elements_x_dim = elements_per_dim; // Number of cubes for each dimension
+    const uint64_t elements_y_dim = elements_per_dim;
+    const uint64_t elements_z_dim = elements_per_dim;
 
-    const int z_points = mesh_elements_per_z_dim + 1;
-    const int y_points = mesh_elements_per_y_dim + 1;
-    const int x_points = mesh_elements_per_x_dim + 1;
+    const int z_points = elements_z_dim + 1;
+    const int y_points = elements_y_dim + 1;
+    const int x_points = elements_x_dim + 1;
 
-    const double element_x_dim = mesh_x_dim / mesh_elements_per_x_dim;
-    const double element_y_dim = mesh_y_dim / mesh_elements_per_y_dim;
-    const double element_z_dim = mesh_z_dim / mesh_elements_per_z_dim;
+    const double element_x_dim = mesh_x_dim / elements_x_dim;
+    const double element_y_dim = mesh_y_dim / elements_y_dim;
+    const double element_z_dim = mesh_z_dim / elements_z_dim;
  
     const double num_points       = z_points * y_points * x_points;   
-    const double num_cubes        = mesh_elements_per_x_dim * mesh_elements_per_y_dim * mesh_elements_per_z_dim;
+    const double num_cubes        = elements_x_dim * elements_y_dim * elements_z_dim;
 
 
     // Create array of all the points we'll need.
@@ -108,52 +111,72 @@ Mesh<double> *load_global_mesh(double mesh_dim, int elements_per_dim)
         }
         current_point = current_point + vec<double>{0, 0, element_z_dim};
     }
-    
-    // // Print vectors of each vertex in the mesh
-    // for (int p = 0; p < num_points; p++)
-    // {
-    //     if (p % x_points == 0)
-    //         cout << endl << p << ". ";
-    //     cout << print_vec(points[p]) << ", ";
-    // }
-    // cout << endl;
 
-    // Create array of cubes
+
+    // Create array of cube cells
     vec<double> ***cubes = new vec<double>**[num_cubes];
-    for (int z = 0; z < mesh_elements_per_z_dim; z++)
+    for (int z = 0; z < elements_z_dim; z++)
     {
-        for (int y = 0; y < mesh_elements_per_y_dim; y++)
+        for (int y = 0; y < elements_y_dim; y++)
         {
-            for (int x = 0; x < mesh_elements_per_x_dim; x++)
+            for (int x = 0; x < elements_x_dim; x++)
             {
                 int index   = z * x_points * y_points + y * x_points + x;
-                int cube_index    = z*mesh_elements_per_x_dim*mesh_elements_per_y_dim + y*mesh_elements_per_x_dim + x;
+                int cube_index    = z*elements_x_dim*elements_y_dim + y*elements_x_dim + x;
 
+                // Add cell, contains 8 pointers to the 8 vertexes of the cube
                 cubes[cube_index] = new vec<double>*[cell_size]{&(points[index]), &(points[index+1]), &(points[index+x_points]), &(points[index+x_points+1]), 
-                                                        &(points[index+x_points*y_points]), &(points[index+x_points*y_points+1]), &(points[index+x_points*y_points+x_points]), &(points[index+x_points*y_points+x_points+1])};
+                                                                &(points[index+x_points*y_points]), &(points[index+x_points*y_points+1]), 
+                                                                &(points[index+x_points*y_points+x_points]), &(points[index+x_points*y_points+x_points+1])};
             }
         }
     }
 
-    // cout << endl << endl;
-
-    // // Print 8 vertex for each cube in the global mesh
-    // for (int c = 0; c < num_cubes; c++)
-    // {
-    //     cout << c << ". ";
-
-    //     for (int v = 0; v < 7; v++)
-    //         cout << cubes[c][v] - points << ", ";
-    //     cout << cubes[c][7] - points;
-
-    //     cout << endl;
-    // }
-    // cout << endl;
-
-    // cout << endl << endl;
 
     
-    Mesh<double> *mesh = new Mesh<double>(num_points, num_cubes, cell_size, points, cubes);
+    // Create array of faces, each face is a pointer to two neighbouring cells.
+    // TODO: Does it matter that faces are stored in the order: XY faces, YZ faces, XZ faces? Cache purposes. Makes sense to have duplicates for this. Every cell has face pointers nearby.
+    Face<double> ***faces = new Face<double>**[num_cubes];
+    
+    for (int c = 0; c < num_cubes; c++)
+    {
+        // Assuming we iterate through the cells, front -> back, left -> right, and down -> up, back/right/up faces of the cells must be created.
+        // Front/left/down faces are only created if they are on the edge of a grid, and therefore, no cells have created them.
+        
+
+        Face<double> *front;
+        if ( c < elements_x_dim*elements_y_dim )                         front = new Face<double>(nullptr,                                  cubes[c]);
+        else                                                             front = faces[c - elements_x_dim*elements_y_dim][BACK_FACE];
+
+        Face<double> *back;
+        if ( c >= (elements_z_dim-1)*elements_x_dim*elements_y_dim )     back = new Face<double>(cubes[c], nullptr);
+        else                                                             back = new Face<double>(cubes[c], cubes[c + elements_x_dim*elements_y_dim]);
+
+        Face<double> *left;
+        if ( c % elements_x_dim == 0 )                                   left = new Face<double>(nullptr,      cubes[c]);
+        else                                                             left = faces[c - 1][RIGHT_FACE];
+
+        Face<double> *right;
+        if ( (c+1) % elements_x_dim == 0 )                               right = new Face<double>(cubes[c], nullptr);
+        else                                                             right = new Face<double>(cubes[c], cubes[c + 1]);
+
+        Face<double> *down;
+        if ( c % (elements_x_dim*elements_y_dim) < 5 )                   down = new Face<double>(nullptr,  cubes[c]);
+        else                                                             down = faces[c - elements_x_dim][UP_FACE];
+
+        Face<double> *up;
+        if ( (c+elements_x_dim) % (elements_x_dim*elements_y_dim) < 5 )  up = new Face<double>(cubes[c],                  nullptr);
+        else                                                             up = new Face<double>(cubes[c + elements_x_dim], cubes[c]);
+
+
+        faces[c]  = new Face<double>*[faces_size]{front, back, left, right, down, up};
+    }
+
+    // const uint64_t total_faces    = elements_x_dim*elements_y_dim*z_points + elements_y_dim*elements_z_dim*x_points + elements_z_dim*elements_x_dim*y_points; // Without duplicates
+
+
+    
+    Mesh<double> *mesh = new Mesh<double>(num_points, num_cubes, cell_size, faces_size, points, cubes, faces);
 
     return mesh;
 }

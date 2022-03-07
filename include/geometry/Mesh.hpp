@@ -6,9 +6,27 @@
 
 using namespace minicombust::utils; 
 
+enum FACE_DIRECTIONS { FRONT_FACE = 0, BACK_FACE = 1, LEFT_FACE = 2, RIGHT_FACE = 3, DOWN_FACE = 4, UP_FACE = 5};
+
 
 namespace minicombust::geometry 
 {   
+
+    template<class T>
+    class Face
+    {
+        private:
+
+
+        public:
+            vec<T> **face0;
+            vec<T> **face1;
+
+            Face(vec<T> **face0, vec<T> **face1) : face0(face0), face1(face1)
+            { }
+            
+    }; // class Face
+
     template<class T>
     class Mesh 
     {
@@ -33,16 +51,19 @@ namespace minicombust::geometry
             uint64_t mesh_points_size;    // Number of points in the mesh
             uint64_t mesh_size;           // Number of polygons in the mesh
             uint64_t cell_size;           // Number of points in the cell
+            uint64_t faces_size;          // Number of faces in the cell
 
             vec<T> *mesh_points;          // Mesh Points
-            vec<T> ***mesh_cells;         // Array of [cells_vertex_count*mesh_point pointers
+            vec<T> ***mesh_cells;         // Array of cell_size*mesh_point vertex pointers
+
+            Face<T> ***mesh_faces;         // Array of faces_size*mesh_point face pointers
 
             uint64_t *particles_per_cell; // Number of particles in each cell
 
             vec<T> *mesh_cells_centres;   // Cell centres
 
-            Mesh(uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, vec<T> *points, vec<T> ***cells) : mesh_points_size(points_size), mesh_size(mesh_size), cell_size(cell_size),
-                                                                                                                  mesh_points(points), mesh_cells(cells)
+            Mesh(uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, vec<T> *points, vec<T> ***cells, Face<T> ***faces) : mesh_points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size),
+                                                                                                                                                        mesh_points(points), mesh_cells(cells), mesh_faces(faces)
             {
                 // Allocate space for and calculate cell centre co-ordinates
                 const size_t mesh_cell_centre_size = mesh_size * sizeof(vec<T>);
@@ -55,9 +76,11 @@ namespace minicombust::geometry
                 printf("Allocating array of particles per cell (%.2f MB)\n", (float)(particles_per_cell_size)/1000000.0);
 
                 const size_t points_array_size = mesh_points_size*sizeof(vec<double>);
-                const size_t cells_array_size  = mesh_size*8*sizeof(vec<double> *);
-                printf("Allocating %llu vertexes (%.2f MB)\n", mesh_points_size, (float)(points_array_size)/1000000.0);
-                printf("Allocating %llu cells (%.2f MB)\n",    mesh_size,        (float)(cells_array_size)/1000000.0);
+                const size_t cells_array_size  = mesh_size*cell_size*sizeof(vec<double> *);
+                const size_t faces_array_size  = mesh_size*faces_size*sizeof(Face<T>);
+                printf("Allocating %llu vertexes (%.2f MB)\n", mesh_points_size,      (float)(points_array_size)/1000000.0);
+                printf("Allocating %llu cells (%.2f MB)\n",    mesh_size,             (float)(cells_array_size)/1000000.0);
+                printf("Allocating %llu faces (%.2f MB)\n",    mesh_size*faces_size,  (float)(faces_array_size)/1000000.0);
 
                 const size_t total_size = mesh_cell_centre_size + particles_per_cell_size + points_array_size + cells_array_size;
 

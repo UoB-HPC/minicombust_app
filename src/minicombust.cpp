@@ -28,7 +28,6 @@ void timestep(FlowSolver<F> *flow_solver, ParticleSolver<P> *particle_solver)
 int main (int argc, char ** argv)
 {
     printf("Starting miniCOMBUST..\n");
-    Mesh<double> *boundary_mesh;
     Mesh<double> *global_mesh;
     ParticleDistribution<double> *particle_dist;
 
@@ -43,7 +42,6 @@ int main (int argc, char ** argv)
             const double elements_per_dim         = 10;
             const uint64_t particles_per_timestep = 1000;
             printf("No meshes supplied. Running built in example instead.\n\n");
-            boundary_mesh = load_boundary_box_mesh(box_dim);
             global_mesh   = load_global_mesh(box_dim, elements_per_dim);
             particle_dist = load_particle_distribution(particles_per_timestep);
     }
@@ -53,7 +51,7 @@ int main (int argc, char ** argv)
 
     const uint64_t ntimesteps = 5;
     FlowSolver<double>     *flow_solver     = new FlowSolver<double>();
-    ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, boundary_mesh, global_mesh);
+    ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, global_mesh);
 
     cout << endl;
     for(int t = 0; t < ntimesteps; t++)
@@ -62,7 +60,7 @@ int main (int argc, char ** argv)
         timestep(flow_solver, particle_solver);
     }
 
-    VisitWriter<double> *vtk_writer = new VisitWriter<double>(global_mesh, boundary_mesh);
+    VisitWriter<double> *vtk_writer = new VisitWriter<double>(global_mesh);
     vtk_writer->write_file();
 
     

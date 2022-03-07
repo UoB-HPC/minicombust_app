@@ -34,7 +34,7 @@ namespace minicombust::particles
         public:
 
             template<typename M>
-            ParticleSolver(uint64_t ntimesteps, ParticleDistribution<T> *particle_dist, Mesh<M> *boundary_mesh, Mesh<M> *global_mesh) : particle_dist(particle_dist), global_mesh(global_mesh)
+            ParticleSolver(uint64_t ntimesteps, ParticleDistribution<T> *particle_dist, Mesh<M> *global_mesh) : particle_dist(particle_dist), global_mesh(global_mesh)
             {
                 // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                 printf("Allocating particles array, %llu particles (%.2f MB)\n", ntimesteps * particle_dist->particles_per_timestep, 

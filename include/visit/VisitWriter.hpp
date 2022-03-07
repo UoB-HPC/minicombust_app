@@ -17,9 +17,8 @@ namespace minicombust::visit
 
         public:
             Mesh<T> *global_mesh;
-            Mesh<T> *boundary_mesh;
 
-            VisitWriter(Mesh<T> *global_mesh, Mesh<T> *boundary_mesh) : global_mesh(global_mesh), boundary_mesh(boundary_mesh)
+            VisitWriter(Mesh<T> *global_mesh) : global_mesh(global_mesh)
             { }
 
             
