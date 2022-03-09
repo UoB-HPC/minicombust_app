@@ -21,11 +21,11 @@ namespace minicombust::particles
             vec<T> *closest_vertex = nullptr;
             for (int i = 0; i < global_mesh->cell_size; i++)
             {
-                const double dist = magnitude(particle->x1 - *global_mesh->cells[particle->cell1][i]);
+                const double dist = magnitude(particle->x1 - *global_mesh->cells[particle->cell][i]);
                 if ( dist < closest_dist )
                 {
                     closest_dist   = dist;
-                    closest_vertex = global_mesh->cells[particle->cell1][i];
+                    closest_vertex = global_mesh->cells[particle->cell][i];
                 }
             }
             global_mesh->particles_per_point[closest_vertex - global_mesh->mesh_points] += 1;

@@ -63,6 +63,14 @@ namespace minicombust::utils
     }
 
     template<typename T>
+    vec<T> operator*(T b, vec<T> a) 
+    {
+        vec<T> sum = {a.x * b, a.y * b, a.z * b};
+        return sum;
+    }
+
+
+    template<typename T>
     bool operator<(vec<T> a, vec<T> b) 
     {
         return a.x < b.x && a.y < b.y && a.z < b.z;

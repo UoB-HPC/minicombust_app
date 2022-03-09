@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <ctime>
 
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
@@ -29,6 +30,7 @@ int main (int argc, char ** argv)
     printf("Starting miniCOMBUST..\n");
     Mesh<double> *global_mesh;
     ParticleDistribution<double> *particle_dist;
+    uint64_t ntimesteps = 0;
 
     switch (argc)
     {
@@ -40,6 +42,7 @@ int main (int argc, char ** argv)
             const double box_dim                  = 100;
             const double elements_per_dim         = 10;
             const uint64_t particles_per_timestep = 1;
+            ntimesteps                            = 1;
             printf("No meshes supplied. Running built in example instead.\n\n");
             global_mesh   = load_global_mesh(box_dim, elements_per_dim);
             particle_dist = load_particle_distribution(particles_per_timestep, global_mesh);
@@ -48,17 +51,17 @@ int main (int argc, char ** argv)
     
 
 
-    const uint64_t ntimesteps = 5;
     FlowSolver<double>     *flow_solver     = new FlowSolver<double>();
     ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, global_mesh);
-
     cout << endl;
+
+    const clock_t begin_time = clock();
     for(int t = 0; t < ntimesteps; t++)
     {
         printf("Timestep %d..\n\n", t);
         timestep(flow_solver, particle_solver);
     }
-
+    cout << "\nProgram Runtime " << float( clock () - begin_time ) /  CLOCKS_PER_SEC << "s" << endl;
 
     
 

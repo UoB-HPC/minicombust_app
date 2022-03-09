@@ -123,8 +123,7 @@ namespace minicombust::particles
             {
                 for (int p = 0; p < particles_per_timestep; p++)
                 {
-                    // TODO: Calc starting cell positions here.
-                    particles[p] = Particle<T>(start_pos->get_value(), velocity->get_value(), acceleration->get_value(), 0);
+                    particles[p] = Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value());
                 }
             }
                                   
