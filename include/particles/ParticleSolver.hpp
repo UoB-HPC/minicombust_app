@@ -31,6 +31,8 @@ namespace minicombust::particles
             T S_i_d;       // For momentum equation
             T Q_d;         // For energy equation
 
+            void output_data();
+
         public:
 
             template<typename M>
@@ -57,6 +59,7 @@ namespace minicombust::particles
             void interpolate_data();
 
             void timestep();
+
 
     }; // class ParticleSolver
 

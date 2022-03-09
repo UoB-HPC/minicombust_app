@@ -1,10 +1,40 @@
 #include <stdio.h>
 
 #include "particles/ParticleSolver.hpp"
+#include "visit/VisitWriter.hpp"
 
 
 namespace minicombust::particles 
 {
+    using namespace minicombust::visit;
+
+    template<class T>
+    void ParticleSolver<T>::output_data()
+    {
+        static int count = 0;
+        global_mesh->clear_particles_per_point_array();
+        // Assign each particles to one of the vertexes of the bounding cell.
+        for(int p = 0; p < current_particle; p++)
+        {
+            Particle<T> *particle     = particles + p;
+            double closest_dist    = __DBL_MAX__;
+            vec<T> *closest_vertex = nullptr;
+            for (int i = 0; i < global_mesh->cell_size; i++)
+            {
+                const double dist = magnitude(particle->x1 - *global_mesh->cells[particle->cell1][i]);
+                if ( dist < closest_dist )
+                {
+                    closest_dist   = dist;
+                    closest_vertex = global_mesh->cells[particle->cell1][i];
+                }
+            }
+            global_mesh->particles_per_point[closest_vertex - global_mesh->mesh_points] += 1;
+        }
+
+        VisitWriter<double> *vtk_writer = new VisitWriter<double>(global_mesh);
+        vtk_writer->write_file("minicombust", count++);
+    }
+
     template<class T> 
     void ParticleSolver<T>::update_flow_field()
     {
@@ -31,14 +61,16 @@ namespace minicombust::particles
     void ParticleSolver<T>::update_particle_positions()
     {
         printf("\tRunning fn: update_particle_positions.\n");
+        
+        output_data();
 
         // Update particle positions
-        global_mesh->clear_particles_per_cell_array();
         for (int p = 0; p < current_particle; p++)
         {
-            particles[p].timestep();
-            global_mesh->particles_per_cell[particles[p].cell1] += 1;
+            particles[p].timestep(global_mesh);
         }
+
+
 
         // Algorithm for finding nearest point to particle.
         //  - Store the starting cell of each particle.

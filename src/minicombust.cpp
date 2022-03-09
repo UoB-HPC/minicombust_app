@@ -3,7 +3,6 @@
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
 #include "geometry/Mesh.hpp"
-#include "visit/VisitWriter.hpp"
 
 
 #include "particles/ParticleSolver.inl"
@@ -40,10 +39,10 @@ int main (int argc, char ** argv)
         default:
             const double box_dim                  = 100;
             const double elements_per_dim         = 10;
-            const uint64_t particles_per_timestep = 1000;
+            const uint64_t particles_per_timestep = 1;
             printf("No meshes supplied. Running built in example instead.\n\n");
             global_mesh   = load_global_mesh(box_dim, elements_per_dim);
-            particle_dist = load_particle_distribution(particles_per_timestep);
+            particle_dist = load_particle_distribution(particles_per_timestep, global_mesh);
     }
 
     
@@ -60,8 +59,6 @@ int main (int argc, char ** argv)
         timestep(flow_solver, particle_solver);
     }
 
-    VisitWriter<double> *vtk_writer = new VisitWriter<double>(global_mesh);
-    vtk_writer->write_file();
 
     
 

@@ -54,10 +54,10 @@ Mesh<double> *load_boundary_box_mesh(double box_size)
     vec<double> **triangle_11 = new vec<double>*[3]{&A, &E, &H};
     vec<double> **triangle_12 = new vec<double>*[3]{&A, &D, &H};
 
-    vec<double> ***triangle_vertexes = new vec<double>**[]{triangle_1, triangle_2,  triangle_3,
-                                                             triangle_4,  triangle_5,  triangle_6,
-                                                             triangle_7,  triangle_8,  triangle_9,
-                                                             triangle_10, triangle_11, triangle_12};
+    vec<double> ***triangle_vertexes = new vec<double>**[]{triangle_1,  triangle_2,  triangle_3,
+                                                           triangle_4,  triangle_5,  triangle_6,
+                                                           triangle_7,  triangle_8,  triangle_9,
+                                                           triangle_10, triangle_11, triangle_12};
 
     Face<double> ***faces = new Face<double>**[num_triangles*1];
 
@@ -138,35 +138,38 @@ Mesh<double> *load_global_mesh(double mesh_dim, uint64_t elements_per_dim)
     // TODO: Does it matter that faces are stored in the order: XY faces, YZ faces, XZ faces? Cache purposes. Makes sense to have duplicates for this. Every cell has face pointers nearby.
     Face<double> ***faces = new Face<double>**[num_cubes];
     
+    
     for (int c = 0; c < num_cubes; c++)
     {
         // Assuming we iterate through the cells, front -> back, left -> right, and down -> up, back/right/up faces of the cells must be created.
         // Front/left/down faces are only created if they are on the edge of a grid, and therefore, no cells have created them.
         
 
+        // Better to have cell0 as nullptr for checks?
+
         Face<double> *front;
-        if ( c < elements_x_dim*elements_y_dim )                         front = new Face<double>(nullptr,                                  cubes[c]);
-        else                                                             front = faces[c - elements_x_dim*elements_y_dim][BACK_FACE];
+        if ( c < elements_x_dim*elements_y_dim )                                     front = new Face<double>(nullptr, cubes[c]);
+        else                                                                         front = faces[c - elements_x_dim*elements_y_dim][BACK_FACE];
 
         Face<double> *back;
-        if ( c >= (elements_z_dim-1)*elements_x_dim*elements_y_dim )     back = new Face<double>(cubes[c], nullptr);
-        else                                                             back = new Face<double>(cubes[c], cubes[c + elements_x_dim*elements_y_dim]);
+        if ( c >= (elements_z_dim-1)*elements_x_dim*elements_y_dim )                 back = new Face<double>(nullptr, cubes[c]);
+        else                                                                         back = new Face<double>(cubes[c], cubes[c + elements_x_dim*elements_y_dim]);
 
         Face<double> *left;
-        if ( c % elements_x_dim == 0 )                                   left = new Face<double>(nullptr,      cubes[c]);
-        else                                                             left = faces[c - 1][RIGHT_FACE];
+        if ( c % elements_x_dim == 0 )                                               left = new Face<double>(nullptr, cubes[c]);
+        else                                                                         left = faces[c - 1][RIGHT_FACE];
 
         Face<double> *right;
-        if ( (c+1) % elements_x_dim == 0 )                               right = new Face<double>(cubes[c], nullptr);
-        else                                                             right = new Face<double>(cubes[c], cubes[c + 1]);
+        if ( (c+1) % elements_x_dim == 0 )                                           right = new Face<double>(nullptr,  cubes[c]);
+        else                                                                         right = new Face<double>(cubes[c], cubes[c + 1]);
 
         Face<double> *down;
-        if ( c % (elements_x_dim*elements_y_dim) < 5 )                   down = new Face<double>(nullptr,  cubes[c]);
-        else                                                             down = faces[c - elements_x_dim][UP_FACE];
+        if ( c % (elements_x_dim*elements_y_dim) < element_x_dim )                   down = new Face<double>(nullptr, cubes[c]);
+        else                                                                         down = faces[c - elements_x_dim][UP_FACE];
 
         Face<double> *up;
-        if ( (c+elements_x_dim) % (elements_x_dim*elements_y_dim) < 5 )  up = new Face<double>(cubes[c],                  nullptr);
-        else                                                             up = new Face<double>(cubes[c + elements_x_dim], cubes[c]);
+        if ( (c+elements_x_dim) % (elements_x_dim*elements_y_dim) < element_x_dim )  up = new Face<double>(nullptr, cubes[c]);
+        else                                                                         up = new Face<double>(cubes[c + elements_x_dim], cubes[c]);
 
 
         faces[c]  = new Face<double>*[faces_size]{front, back, left, right, down, up};
