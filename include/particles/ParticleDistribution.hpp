@@ -2,6 +2,7 @@
 
 // #include <random>
 
+#include "geometry/Mesh.hpp"
 #include "particles/Particle.hpp"
 #include "utils/utils.hpp"
 
@@ -88,6 +89,8 @@ namespace minicombust::particles
         public:
             // TODO: Change this to particles per unit of time?
             uint64_t particles_per_timestep;
+            Mesh<T> *mesh;
+
             Distribution<vec<T>> *start_pos;
             Distribution<T> *rate;            
             Distribution<T> *angle_xy;        
@@ -101,9 +104,9 @@ namespace minicombust::particles
             // TODO: Read particle distribution from file
 
             // Generate fixed distribution
-            ParticleDistribution (uint64_t particles_per_timestep, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
+            ParticleDistribution (uint64_t particles_per_timestep, Mesh<T> *mesh, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
                                   vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean) :
-                                  particles_per_timestep(particles_per_timestep)
+                                  particles_per_timestep(particles_per_timestep), mesh(mesh)
             {   
                 start_pos        = new FixedDistribution<vec<T>>(start);
                 rate             = new FixedDistribution<T>(rate_mean);           
@@ -120,7 +123,7 @@ namespace minicombust::particles
             {
                 for (int p = 0; p < particles_per_timestep; p++)
                 {
-                    particles[p] = Particle<T>(start_pos->get_value(), velocity->get_value(), acceleration->get_value());
+                    particles[p] = Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value());
                 }
             }
                                   
