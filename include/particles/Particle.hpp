@@ -8,6 +8,8 @@
 #include "geometry/Mesh.hpp"
 
 
+#define PARTICLE_DEBUG 1
+
 namespace minicombust::particles 
 {
     using namespace std; 
@@ -59,7 +61,7 @@ namespace minicombust::particles
                 vec<T> **current_cell = mesh->cells[cell];
                 if ( check_cell(current_cell) )
                 {
-                    cout << "\t\tParticle is still in " << cell << ", x1: " << print_vec(x1) <<  endl ;
+                    if (PARTICLE_DEBUG)  cout << "\t\tParticle is still in cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
                 } 
                 else
                 {
@@ -73,12 +75,14 @@ namespace minicombust::particles
                     {
                         int intercepted_face = -1;
                         // TODO Check if particle goes through vertex.
+                        // int edge_vertex = 0;
 
                         double LHS; // LHS =  ACDB + ADFB + AFEB + AECB 
                         double RHS; // RHS =  ACDF + BCDF + AECF + BECF   
+                        double ACDB, ADFB, AFEB, AECB; // LHS partial volumes. Also used for edge/vertex detection.
                         for (int face = 0; face < 6; face++)
                         {
-                            if (face == face_mask)  continue;
+                            if ((1 << face) & face_mask)  continue;
                             // TODO: Can we predict the order better? 
                             // Check whether particle - moving from A to B - intercepts face CDEF. If LHS == RHS, particle intercepts this face.
                             LHS = 0.0;
@@ -89,38 +93,52 @@ namespace minicombust::particles
                             vec<T> *E = current_cell[CUBE_FACE_VERTEX_MAP[face][2]];
                             vec<T> *F = current_cell[CUBE_FACE_VERTEX_MAP[face][3]];
 
-                            LHS += tetrahedral_volume(A, C, D, B);
-                            LHS += tetrahedral_volume(A, D, F, B);
-                            LHS += tetrahedral_volume(A, F, E, B);
-                            LHS += tetrahedral_volume(A, E, C, B);
+                            ACDB = tetrahedral_volume(A, C, D, B);
+                            LHS += ACDB;
+                            ADFB = tetrahedral_volume(A, D, F, B);
+                            LHS += ADFB;
+                            AFEB = tetrahedral_volume(A, F, E, B);
+                            LHS += AFEB;
+                            AECB = tetrahedral_volume(A, E, C, B);
+                            LHS += AECB;
 
                             RHS += tetrahedral_volume(A, C, D, F);
                             RHS += tetrahedral_volume(A, E, C, F);
-                            // inner_volume = RHS;
                             RHS += tetrahedral_volume(B, C, D, F);
                             RHS += tetrahedral_volume(B, E, C, F);
 
-                            // TODO: AREA/VOLUME CHECKS FOR VERTEXES/EDGES? Worth it?
-
-                            if (abs(LHS - RHS) < 5e-12)
+                            if (abs(LHS - RHS) < 5e-12)  
                             {
                                 intercepted_face = face;
-                                cout << "Intercepted Face " << intercepted_face << endl;
+                                if (PARTICLE_DEBUG)  cout << "\t\tIntercepted Face " << intercepted_face << endl;
                                 // printf("\t%.17f %.17f\n", LHS, RHS);
                                 break;
                             }
                         }
 
 
-
                         // If intercepted with boundary of mesh, decay particle. TODO: Rebound them?
                         if (mesh->mesh_faces[cell][intercepted_face]->cell0 == nullptr) 
                         {
-                            cout << "Particle decayed after leaving the grid, x1: " << print_vec(x1) <<  endl ;
+                            if (PARTICLE_DEBUG)  cout << "\t\tParticle decayed after leaving the grid, x1: " << print_vec(x1) <<  endl ;
                             decayed = true;
                             return;
                         }
+
                         vec<T> **neighbour_cell;
+
+
+                        // Code for detecting edges/vertexes. Don't think this will be faster. Probably required for tetra implementation
+                        // edge_vertex += (ACDB == 0.) ? 1 : 0;
+                        // edge_vertex += (ADFB == 0.) ? 1 : 0;
+                        // edge_vertex += (AFEB == 0.) ? 1 : 0;
+                        // edge_vertex += (AECB == 0.) ? 1 : 0;
+
+                        // if (edge_vertex > 0) // Edge/Vertex detected. Edge = 1, Vertex = 2
+                        // {
+                            
+                        // }
+
                         // TODO: Is there a way of finding neighbouring cell, without checking if neighbour is our own cell?
                         if ( mesh->mesh_faces[cell][intercepted_face]->cell0 == current_cell)  neighbour_cell = mesh->mesh_faces[cell][intercepted_face]->cell1;
                         else                                                                   neighbour_cell = mesh->mesh_faces[cell][intercepted_face]->cell0;
@@ -131,19 +149,13 @@ namespace minicombust::particles
                             cell = (neighbour_cell - mesh->cells[0])/mesh->cell_size;
                             x0 = x1;
                             v0 = v1;
-                            cout << "Particle has moved to cell " << cell << " " << ", x1: " << print_vec(x1) <<  endl ;
+                            if (PARTICLE_DEBUG)  cout << "\t\tParticle has moved to cell " << cell << " " << ", x1: " << print_vec(x1) <<  endl ;
                         }
                         else { // Particle isn't in immediate neighbour
                             current_cell = neighbour_cell;
                             cell         = (neighbour_cell - mesh->cells[0])/mesh->cell_size;
-                            face_mask    = intercepted_face ^ 1;  // E.G If we detect interception with front face, don't trigger back face interception next time.
-                            cout  << "Particle isn't in neighbour cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
-                        }
-                        static int count = 0;
-                        if (count++ == 2)
-                        {
-                            cout << "here" << endl;  
-                            return;
+                            face_mask    = face_mask | (1 << (intercepted_face ^ 1));  // E.G If we detect interception with front face, don't trigger back face interception next time.
+                            if (PARTICLE_DEBUG)  cout  << "\t\tParticle isn't in neighbour cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
                         }
 
                     }
@@ -186,6 +198,7 @@ namespace minicombust::particles
                     cout << "Particle is not in mesh!!!!" << endl;
                     exit(0);
                 }
+                if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x1: " << print_vec(x1) <<  endl ;
             }
 
             void timestep(Mesh<T> *mesh)
@@ -198,7 +211,6 @@ namespace minicombust::particles
 
                 // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
 
-                cout << "Particle is starting in cell " << cell << ", x0: " << print_vec(x0) << endl;
 
                 // Cube algorithm, assumes A is closer to origin. TODO.
                 check_current_cell(mesh);
