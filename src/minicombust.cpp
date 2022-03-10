@@ -51,7 +51,7 @@ int main (int argc, char ** argv)
     
 
 
-    FlowSolver<double>     *flow_solver     = new FlowSolver<double>();
+    FlowSolver<double>     *flow_solver     = new FlowSolver<double>(global_mesh);
     ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, global_mesh);
     cout << endl;
 
