@@ -12,26 +12,28 @@ namespace minicombust::particles
     void ParticleSolver<T>::output_data()
     {
         static int count = 0;
-        global_mesh->clear_particles_per_point_array();
+        mesh->clear_particles_per_point_array();
+
         // Assign each particles to one of the vertexes of the bounding cell.
-        for(int p = 0; p < current_particle; p++)
+        for(int p = 0; p < current_particle; p++)  // Iterate through each particle
         {
             Particle<T> *particle     = particles + p;
-            double closest_dist    = __DBL_MAX__;
-            vec<T> *closest_vertex = nullptr;
-            for (int i = 0; i < global_mesh->cell_size; i++)
+            double closest_dist       = __DBL_MAX__;
+            uint64_t closest_vertex   = UINT64_MAX;
+            for (int i = 0; i < mesh->cell_size; i++)  // Iterate through the points of the cell that the particle is in
             {
-                const double dist = magnitude(particle->x1 - *global_mesh->cells[particle->cell][i]);
+                const uint64_t point_index = mesh->cells[particle->cell*mesh->cell_size + i];
+                const double dist = magnitude(particle->x1 - mesh->points[point_index]);
                 if ( dist < closest_dist )
                 {
                     closest_dist   = dist;
-                    closest_vertex = global_mesh->cells[particle->cell][i];
+                    closest_vertex = point_index;
                 }
             }
-            global_mesh->particles_per_point[closest_vertex - global_mesh->mesh_points] += 1;
+            mesh->particles_per_point[closest_vertex] += 1;
         }
 
-        VisitWriter<double> *vtk_writer = new VisitWriter<double>(global_mesh);
+        VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
         vtk_writer->write_file("minicombust", count++);
     }
 
@@ -67,7 +69,7 @@ namespace minicombust::particles
         // Update particle positions
         for (int p = 0; p < current_particle; p++)
         {
-            particles[p].timestep(global_mesh);
+            particles[p].timestep(mesh);
         }
 
 

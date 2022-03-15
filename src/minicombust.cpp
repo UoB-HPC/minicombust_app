@@ -3,6 +3,7 @@
 
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
+#include "tests/particle_tests.hpp"
 #include "geometry/Mesh.hpp"
 
 
@@ -28,31 +29,35 @@ void timestep(FlowSolver<F> *flow_solver, ParticleSolver<P> *particle_solver)
 int main (int argc, char ** argv)
 {
     printf("Starting miniCOMBUST..\n");
-    Mesh<double> *global_mesh;
-    ParticleDistribution<double> *particle_dist;
+    Mesh<double> *mesh = nullptr;
+    ParticleDistribution<double> *particle_dist = nullptr;
     uint64_t ntimesteps = 0;
 
     switch (argc)
     {
-        // case 2:
-        //     printf("Mesh input is: %s\n", argv[1]);
-        //     break;
+        case 2:
+            if(strcmp(argv[1], "tests") == 0)
+            {
+                printf("Running tests\n");
+                run_particle_tests();
+                exit(0);
+            }   
         
         default:
+            printf("No meshes supplied. Running built in example instead.\n\n");
             const double box_dim                  = 100;
-            const uint64_t elements_per_dim       = 20;
+            const uint64_t elements_per_dim       = 10;
             const uint64_t particles_per_timestep = 1;
             ntimesteps                            = 1;
-            printf("No meshes supplied. Running built in example instead.\n\n");
-            global_mesh   = load_global_mesh(box_dim, elements_per_dim);
-            particle_dist = load_particle_distribution(particles_per_timestep, global_mesh);
+            mesh          = load_mesh(box_dim, elements_per_dim);
+            particle_dist = load_particle_distribution(particles_per_timestep, mesh);
     }
 
     
 
 
     FlowSolver<double>     *flow_solver     = new FlowSolver<double>();
-    ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, global_mesh);
+    ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, mesh);
     cout << endl;
 
     const clock_t begin_time = clock();
