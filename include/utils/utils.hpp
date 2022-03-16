@@ -22,7 +22,15 @@ namespace minicombust::utils
             x += rhs.x;
             y += rhs.y;
             z += rhs.z;
-	    return *this;
+	        return *this;
+        }
+
+        inline vec<T>& operator-=(const vec<T>& rhs)
+        {
+            x -= rhs.x;
+            y -= rhs.y;
+            z -= rhs.z;
+	        return *this;
         }
 
         inline vec<T>& operator/=(const T rhs)
@@ -30,7 +38,7 @@ namespace minicombust::utils
             x /= rhs;
             y /= rhs;
             z /= rhs;
-	    return *this;
+	        return *this;
         }
 
     };

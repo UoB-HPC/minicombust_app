@@ -67,7 +67,18 @@ namespace minicombust::particles
                     
                     uint64_t face_mask = 0; // Prevents double interceptions     
 
-
+                    // TODO: Fix bug where parallelepiped is formed and breaks the intersection logic
+                    int parallelepiped = 0;
+                    vec<T> x_delta   = x1 - x0;
+                    vec<T> cell_size = mesh->points[mesh->cells[cell*mesh->cell_size + H_VERTEX]] - mesh->points[mesh->cells[cell*mesh->cell_size + A_VERTEX]];
+                    parallelepiped += (abs(x_delta.x) == abs(cell_size.x)) ? 1 : 0;
+                    parallelepiped += (abs(x_delta.y) == abs(cell_size.y)) ? 1 : 0;
+                    parallelepiped += (abs(x_delta.z) == abs(cell_size.z)) ? 1 : 0;
+                    if (parallelepiped > 1)  {
+                        x1 += 1e-8*x_delta;
+                        // x1 += numeric_limits<T>::min()*x_delta;
+                        if (PARTICLE_DEBUG)  cout << "\t\tParticle parallelepiped detected." << endl;
+                    }
                     while (!found_cell)
                     {
                         uint64_t *current_cell_points = mesh->cells + cell*mesh->cell_size;       
@@ -163,8 +174,6 @@ namespace minicombust::particles
 
 
 
-                        
-
                         if (check_cell(cell, mesh)) // Particle is in immediately neighbouring cell
                         {
                             found_cell = true;
@@ -177,6 +186,7 @@ namespace minicombust::particles
                             if (PARTICLE_DEBUG)  cout  << "\t\tParticle isn't in neighbour cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
                         }
                     }
+                    if (parallelepiped > 1)  x1 -= 1e-8*x_delta;;
                 }
             }
 
@@ -227,10 +237,10 @@ namespace minicombust::particles
                 x1 = x0 + v1*1.0;
                 v1 = v0 + a1*1.0;
 
+               
+
+
                 // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
-
-
-                // Cube algorithm, assumes A is closer to origin. TODO.
                 update_cell(mesh);
 
                 return cell; 
