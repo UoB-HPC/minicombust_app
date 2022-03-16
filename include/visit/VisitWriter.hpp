@@ -19,9 +19,9 @@ namespace minicombust::visit
     {
 
         public:
-            Mesh<T> *global_mesh;
+            Mesh<T> *mesh;
 
-            VisitWriter(Mesh<T> *global_mesh) : global_mesh(global_mesh)
+            VisitWriter(Mesh<T> *mesh) : mesh(mesh)
             { }
 
             
@@ -38,33 +38,28 @@ namespace minicombust::visit
                 
                 // TODO: Allow different datatypes
                 // Print point data
-                vtk_file << endl << "POINTS " << global_mesh->mesh_points_size << " double" ;
-                for(int p = 0; p < global_mesh->mesh_points_size; p++)
+                vtk_file << endl << "POINTS " << mesh->points_size << " double" ;
+                for(int p = 0; p < mesh->points_size; p++)
                 {
                     const int data_per_line = 10;
                     if (p % data_per_line == 0)  vtk_file << endl;
                     else             vtk_file << "  ";
-                    vtk_file << print_vec(global_mesh->mesh_points[p]);
+                    vtk_file << print_vec(mesh->points[p]);
                 }
                 vtk_file << endl;
 
                 // Print cell data
-                vtk_file << endl << "CELLS " << global_mesh->mesh_size << " " << global_mesh->mesh_size*global_mesh->cell_size + global_mesh->mesh_size << endl;
-                for(int c = 0; c < global_mesh->mesh_size; c++)
+                vtk_file << endl << "CELLS " << mesh->mesh_size << " " << mesh->mesh_size*mesh->cell_size + mesh->mesh_size << endl;
+                for(int c = 0; c < mesh->mesh_size; c++)
                 {
-                    vtk_file << global_mesh->cell_size << " ";
-                    vec<T> *base_address = global_mesh->mesh_points;
-                    for (int v = 0; v < global_mesh->cell_size; v++)
-                    {
-                        const uint64_t point_index = global_mesh->cells[c][v] - base_address;
-                        vtk_file << point_index << " ";
-                    }
+                    vtk_file << mesh->cell_size << " ";
+                    for (int v = 0; v < mesh->cell_size; v++)  vtk_file << mesh->cells[c*mesh->cell_size + v] << " ";
                     vtk_file << endl;
                 }
 
                 // Print cell types
-                vtk_file << endl << "CELL_TYPES " << global_mesh->mesh_size;
-                for(int c = 0; c < global_mesh->mesh_size; c++)
+                vtk_file << endl << "CELL_TYPES " << mesh->mesh_size;
+                for(int c = 0; c < mesh->mesh_size; c++)
                 {
                     const int data_per_line = 30;
                     if (c % data_per_line == 0)  vtk_file << endl;
@@ -74,10 +69,10 @@ namespace minicombust::visit
                 vtk_file << endl;
 
                 // // Print temperature values for points
-                // vtk_file << endl << "POINT_DATA " << global_mesh->mesh_points_size << endl;
+                // vtk_file << endl << "POINT_DATA " << mesh->points_size << endl;
                 // vtk_file << "SCALARS Temperature float 1" << endl;
                 // vtk_file << "LOOKUP_TABLE default" << endl;
-                // for(int p = 0; p < global_mesh->mesh_points_size; p++)
+                // for(int p = 0; p < mesh->points_size; p++)
                 // {
                 //     // TODO: Instead of index, set values to be based of temperature values
                 //     const int data_per_line = 20;
@@ -88,16 +83,16 @@ namespace minicombust::visit
                 // vtk_file << endl;
 
                 // Print particle values for points
-                vtk_file << endl << "POINT_DATA " << global_mesh->mesh_points_size << endl;
+                vtk_file << endl << "POINT_DATA " << mesh->points_size << endl;
                 vtk_file << "SCALARS Particles unsigned_int 1" << endl;
                 vtk_file << "LOOKUP_TABLE default" << endl;
-                for(int p = 0; p < global_mesh->mesh_points_size; p++)
+                for(int p = 0; p < mesh->points_size; p++)
                 {
                     // TODO: Instead of index, set values to be based of temperature values
                     const int data_per_line = 20;
                     if (p % data_per_line == 0)  vtk_file << endl;
                     else             vtk_file << " ";
-                    vtk_file << global_mesh->particles_per_point[p] << " ";
+                    vtk_file << mesh->particles_per_point[p] << " ";
                 } 
                 vtk_file << endl;
 

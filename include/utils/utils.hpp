@@ -1,9 +1,11 @@
 #pragma once
 
+
 #include <string>  
 #include <iostream> 
 #include <sstream>   
 #include <math.h>
+
 
 namespace minicombust::utils 
 {
@@ -15,26 +17,34 @@ namespace minicombust::utils
         T y;
         T z;
 
-        vec<T>& operator+=(const vec<T>& rhs)
+        inline vec<T>& operator+=(const vec<T>& rhs)
         {
             x += rhs.x;
             y += rhs.y;
             z += rhs.z;
-	    return *this;
+	        return *this;
         }
 
-        vec<T>& operator/=(const T rhs)
+        inline vec<T>& operator-=(const vec<T>& rhs)
+        {
+            x -= rhs.x;
+            y -= rhs.y;
+            z -= rhs.z;
+	        return *this;
+        }
+
+        inline vec<T>& operator/=(const T rhs)
         {
             x /= rhs;
             y /= rhs;
             z /= rhs;
-	    return *this;
+	        return *this;
         }
 
     };
 
     template<typename T>
-    vec<T> operator+(vec<T> a, vec<T> b) 
+    inline vec<T> operator+(vec<T> a, vec<T> b) 
     {
         vec<T> sum = {a.x + b.x, a.y + b.y, a.z + b.z};
         return sum;
@@ -42,28 +52,28 @@ namespace minicombust::utils
 
 
     template<typename T>
-    vec<T> operator-(vec<T> a, vec<T> b) 
+    inline vec<T> operator-(vec<T> a, vec<T> b) 
     {
         vec<T> sum = {a.x - b.x, a.y - b.y, a.z - b.z};
         return sum;
     }
 
     template<typename T>
-    vec<T> operator/(vec<T> a, T b) 
+    inline vec<T> operator/(vec<T> a, T b) 
     {
         vec<T> sum = {a.x / b, a.y / b, a.z / b};
         return sum;
     }
 
     template<typename T>
-    vec<T> operator*(vec<T> a, T b) 
+    inline vec<T> operator*(vec<T> a, T b) 
     {
         vec<T> sum = {a.x * b, a.y * b, a.z * b};
         return sum;
     }
 
     template<typename T>
-    vec<T> operator*(T b, vec<T> a) 
+    inline vec<T> operator*(T b, vec<T> a) 
     {
         vec<T> sum = {a.x * b, a.y * b, a.z * b};
         return sum;
@@ -71,67 +81,67 @@ namespace minicombust::utils
 
 
     template<typename T>
-    bool operator<(vec<T> a, vec<T> b) 
+    inline bool operator<(vec<T> a, vec<T> b) 
     {
         return a.x < b.x && a.y < b.y && a.z < b.z;
     }
 
     template<typename T>
-    bool operator>(vec<T> a, vec<T> b) 
+    inline bool operator>(vec<T> a, vec<T> b) 
     {
         return a.x > b.x && a.y > b.y && a.z > b.z;
     }
 
     template<typename T>
-    bool operator<=(vec<T> a, vec<T> b) 
+    inline bool operator<=(vec<T> a, vec<T> b) 
     {
         return a.x <= b.x && a.y <= b.y && a.z <= b.z;
     }
 
     template<typename T>
-    bool operator>=(vec<T> a, vec<T> b) 
+    inline bool operator>=(vec<T> a, vec<T> b) 
     {
         return a.x >= b.x && a.y >= b.y && a.z >= b.z;
     }
 
     template<typename T> 
-    T magnitude(vec<T> v)
+    inline T magnitude(vec<T> v)
     {
         return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
     }
 
     template<typename T> 
-    vec<T> cross_product(vec<T> a, vec<T> b)
+    inline vec<T> cross_product(vec<T> a, vec<T> b)
     {
         vec<T> cross_product = {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x};
         return cross_product;
     }
 
     template<typename T> 
-    T dot_product(vec<T> a, vec<T> b)
+    inline T dot_product(vec<T> a, vec<T> b)
     {
         return a.x*b.x + a.y*b.y + a.z*b.z;
     }
 
     template<typename T> 
-    std::string print_vec(vec<T> v)
+    inline string print_vec(vec<T> v)
     {
-        std::stringstream buffer;
+        stringstream buffer;
         buffer << v.x << " " << v.y << " " << v.z;
         return buffer.str();
     }
 
     template<typename T> 
-    std::string print_cube_cell(vec<T> **cube)
+    inline string print_cube_cell(uint64_t *cube, vec<T> *points)
     {
-        std::stringstream buffer;
+        stringstream buffer;
         buffer << endl;
         for(int y=0; y < 2; y++)
         {
             for(int x=0; x < 4; x++)
             {
                 buffer << "{";
-                buffer << print_vec(*cube[y*4 + x]);
+                buffer << print_vec(points[cube[y*4 + x]]);
                 buffer << "}";
                 if (x!=3)  buffer << ", ";
             }
@@ -139,6 +149,7 @@ namespace minicombust::utils
         }
         return buffer.str();
     }
-
 }
+
+
     
