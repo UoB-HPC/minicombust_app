@@ -46,9 +46,9 @@ int main (int argc, char ** argv)
         default:
             printf("No meshes supplied. Running built in example instead.\n\n");
             const double box_dim                  = 100;
-            const uint64_t elements_per_dim       = 10;
-            const uint64_t particles_per_timestep = 1;
-            ntimesteps                            = 1;
+            const uint64_t elements_per_dim       = 100;
+            const uint64_t particles_per_timestep = 100;
+            ntimesteps                            = 100;
             mesh          = load_mesh(box_dim, elements_per_dim);
             particle_dist = load_particle_distribution(particles_per_timestep, mesh);
     }

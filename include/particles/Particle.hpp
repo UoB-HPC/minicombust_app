@@ -8,7 +8,7 @@
 #include "geometry/Mesh.hpp"
 
 
-#define PARTICLE_DEBUG 1
+#define PARTICLE_DEBUG 0
 
 namespace minicombust::particles 
 {
@@ -58,6 +58,8 @@ namespace minicombust::particles
                 if ( check_cell(cell, mesh) )
                 {
                     if (PARTICLE_DEBUG)  cout << "\t\tParticle is still in cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
+                    x0 = x1;
+                    v0 = v1;
                 } 
                 else
                 {
@@ -202,6 +204,7 @@ namespace minicombust::particles
             uint64_t cell = -1;          // cell at timestep beginning
 
             bool decayed = false;
+            
 
             
             bool wall  = false;
@@ -229,17 +232,14 @@ namespace minicombust::particles
                 if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x0: " << print_vec(x0) << " v0: " << print_vec(v0) <<  endl ;
             }
 
-            uint64_t timestep(Mesh<T> *mesh)  // Update position
+            uint64_t timestep(Mesh<T> *mesh, double delta)  // Update position
             {
                 if (decayed)  return MESH_BOUNDARY;
 
-                // TODO: Timestep needs to be definitive amount of time. For now, it is a constant 0.01s.
-                x1 = x0 + v1*1.0;
-                v1 = v0 + a1*1.0;
+                x1 = x0 + v1*delta;
+                v1 = v0 + a1*delta;
 
                
-
-
                 // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
                 update_cell(mesh);
 

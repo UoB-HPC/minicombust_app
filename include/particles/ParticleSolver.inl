@@ -69,7 +69,7 @@ namespace minicombust::particles
         // Update particle positions
         for (int p = 0; p < current_particle; p++)
         {
-            particles[p].timestep(mesh);
+            particles[p].timestep(mesh, 0.1);
         }
 
 
