@@ -13,7 +13,7 @@ bool check_particle_posistion(Mesh<double> *mesh, uint64_t correct_cell, vec<dou
     Particle<double> *p = new Particle<double>(mesh, start, velocity, vec<double>{0, 0, 0});
 
 
-    p->timestep(mesh);
+    p->timestep(mesh, 1.0);
 
 
     return p->cell == correct_cell;
@@ -38,7 +38,7 @@ void run_particle_tests()
     vec<double> start     = {15.0, 15.0, 15.0};
 
 
-    // Tests for moving to immediate neighbour
+    // // Tests for moving to immediate neighbour
     cout << "\t\tRunning immediate neighbour tests..." << endl;
     assert(((void)"Particle is not moving to FRONT cell\n", check_particle_posistion(mesh, 11,   start, 10.*FRONT_UNIT_VEC)));
     assert(((void)"Particle is not moving to BACK  cell\n", check_particle_posistion(mesh, 211,  start, 10.*BACK_UNIT_VEC)));
@@ -92,5 +92,13 @@ void run_particle_tests()
     start     = {95.0, 95.0, 95.0};
     assert(((void)"Particle is not moving to 999 cell\n",             check_particle_posistion(mesh,              0,   start, 90.*FRONT_UNIT_VEC + 90.*LEFT_UNIT_VEC + 90.*DOWN_UNIT_VEC)));
     cout << "\t\tPassed multiple cell tests." << endl << endl;
+
+    // Tests for /startinglanding on boundary/edge/vertex
+    cout << "\t\tRunning starting/ending vertex/edge tests..." << endl;
+    start     = {10.0, 10.0, 10.0};
+    assert(((void)"Particle is not moving onto face\n",    check_particle_posistion(mesh,            100,   start, 5.*BACK_UNIT_VEC)));
+    assert(((void)"Particle is not moving onto edge\n",    check_particle_posistion(mesh,            101,   start, 10.*BACK_UNIT_VEC + 5.*RIGHT_UNIT_VEC)));
+    assert(((void)"Particle is not moving onto vertex\n",  check_particle_posistion(mesh,            111,   start, 10.*BACK_UNIT_VEC + 10.*RIGHT_UNIT_VEC + 10.*UP_UNIT_VEC)));
+    cout << "\t\tRunning starting/ending vertex/edge tests." << endl << endl;
 
 }   

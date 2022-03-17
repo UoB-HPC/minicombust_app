@@ -31,7 +31,6 @@ namespace minicombust::particles
             T S_i_d;       // For momentum equation
             T Q_d;         // For energy equation
 
-            void output_data();
 
         public:
 
@@ -43,6 +42,8 @@ namespace minicombust::particles
                                                                               (float)(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>))/1000000.0);
                 particles = (Particle<T> *)malloc(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>));
             }
+
+            void output_data(int timestep);
 
             void update_flow_field(); // Synchronize point with flow solver
             
