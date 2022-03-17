@@ -47,7 +47,7 @@ int main (int argc, char ** argv)
             printf("No meshes supplied. Running built in example instead.\n\n");
             const double box_dim                  = 100;
             const uint64_t elements_per_dim       = 100;
-            const uint64_t particles_per_timestep = 100;
+            const uint64_t particles_per_timestep = 1;
             ntimesteps                            = 100;
             mesh          = load_mesh(box_dim, elements_per_dim);
             particle_dist = load_particle_distribution(particles_per_timestep, mesh);
@@ -65,8 +65,16 @@ int main (int argc, char ** argv)
     {
         printf("Timestep %d..\n\n", t);
         timestep(flow_solver, particle_solver);
+
+        
     }
-    cout << "\nProgram Runtime " << float( clock () - begin_time ) /  CLOCKS_PER_SEC << "s" << endl;
+    const clock_t prog_time = clock();
+
+    cout << "\nProgram Runtime: " << float( prog_time - begin_time ) /  CLOCKS_PER_SEC << "s" << endl;
+    particle_solver->output_data(ntimesteps-1);
+    cout <<   "Output Time:     " << float( clock () - prog_time ) /  CLOCKS_PER_SEC << "s" << endl;
+
+
 
     
 

@@ -47,7 +47,8 @@ namespace minicombust::particles
                     vec<T> partial_box_size = mesh->points[current_cell_points[i]] - x1;
                     partial_volumes += abs(partial_box_size.x*partial_box_size.y*partial_box_size.z);
                 }
-                
+
+                // if (PARTICLE_DEBUG)  cout << "\t\tpartial_volumes - total  " << partial_volumes-total_volume << endl;
                 if (abs(partial_volumes-total_volume) < 5.0e-10)  return true;
                 return false;
 
@@ -69,15 +70,28 @@ namespace minicombust::particles
                     
                     uint64_t face_mask = 0; // Prevents double interceptions     
 
+                    // Rule out faces: TODO: save face_direction
+                    vec<T> z_vec = mesh->points[mesh->cells[cell*mesh->cell_size + E_VERTEX]] - mesh->points[mesh->cells[cell*mesh->cell_size + A_VERTEX]];
+                    vec<T> x_vec = mesh->points[mesh->cells[cell*mesh->cell_size + B_VERTEX]] - mesh->points[mesh->cells[cell*mesh->cell_size + A_VERTEX]];
+                    vec<T> y_vec = mesh->points[mesh->cells[cell*mesh->cell_size + C_VERTEX]] - mesh->points[mesh->cells[cell*mesh->cell_size + A_VERTEX]];
+
+                    vec<T> x_delta   = x1 - x0;
+                    // Detects which cells you could possibly hit. Should at least halve the number of face checks.
+                    T dot = dot_product(x_delta, z_vec); 
+                    face_mask = face_mask | (((dot == 0) ? 3 : 1) << ((dot >= 0) ? 0 : 1));
+                    dot = dot_product(x_delta, x_vec); 
+                    face_mask = face_mask | (((dot == 0) ? 3 : 1) << ((dot >= 0) ? 2 : 3)); 
+                    dot = dot_product(x_delta, y_vec); 
+                    face_mask = face_mask | (((dot == 0) ? 3 : 1) << ((dot >= 0) ? 4 : 5)); 
+
                     // TODO: Fix bug where parallelepiped is formed and breaks the intersection logic
                     int parallelepiped = 0;
-                    vec<T> x_delta   = x1 - x0;
                     vec<T> cell_size = mesh->points[mesh->cells[cell*mesh->cell_size + H_VERTEX]] - mesh->points[mesh->cells[cell*mesh->cell_size + A_VERTEX]];
                     parallelepiped += (abs(x_delta.x) == abs(cell_size.x)) ? 1 : 0;
                     parallelepiped += (abs(x_delta.y) == abs(cell_size.y)) ? 1 : 0;
                     parallelepiped += (abs(x_delta.z) == abs(cell_size.z)) ? 1 : 0;
                     if (parallelepiped > 1)  {
-                        x1 += 1e-8*x_delta;
+                        x1 -= 1e-6*x_delta;
                         // x1 += numeric_limits<T>::min()*x_delta;
                         if (PARTICLE_DEBUG)  cout << "\t\tParticle parallelepiped detected." << endl;
                     }
@@ -88,11 +102,12 @@ namespace minicombust::particles
 
                         int intercepted_face = -1;
                         // TODO Check if particle goes through vertex.
-                        int edge_vertex = 0;
+                        // int edge_vertex = 0;
                         double ACDB, ADFB, AFEB, AECB; // LHS partial volumes. Also used for edge/vertex detection.
 
                         double LHS; // LHS =  ACDB + ADFB + AFEB + AECB 
                         double RHS; // RHS =  ACDF + BCDF + AECF + BECF   
+                        
                         for (int face = 0; face < 6; face++)
                         {
                             if ((1 << face) & face_mask)  continue;
@@ -119,7 +134,7 @@ namespace minicombust::particles
                             LHS += AFEB;
                             AECB = tetrahedral_volume(A, E, C, B);
                             LHS += AECB;
-                            // cout << ACDB << " " << ADFB << " " << AFEB << " " << AECB << endl;
+
                             // LHS += tetrahedral_volume(A, C, D, B);
                             // LHS += tetrahedral_volume(A, D, F, B);
                             // LHS += tetrahedral_volume(A, F, E, B);
@@ -132,18 +147,15 @@ namespace minicombust::particles
 
                                 // printf("\t%.17f %.17f\n", LHS, RHS);
 
-                            if (abs(LHS - RHS) < 5e-12)  
+                            if (abs(LHS - RHS) < 5e-12 && LHS != 0)  
                             {
                                 intercepted_face = face;
                                 if (PARTICLE_DEBUG)  cout << "\t\t\tIntercepted Face " << mesh->get_face_string(intercepted_face) << endl;
-                                // printf("\t\t\t%.17f == %.17f\n", LHS, RHS);
-                                // cout << print_vec(*C) << "  |  " << print_vec(*D) << "  |  "<< print_vec(*E) << "  |  " << print_vec(*F) << "  |  " << endl;
-                                edge_vertex = 0;
-                                edge_vertex += (ACDB == 0.) ? 1 : 0;
-                                edge_vertex += (ADFB == 0.) ? 1 : 0;
-                                edge_vertex += (AFEB == 0.) ? 1 : 0;
-                                edge_vertex += (AECB == 0.) ? 1 : 0;
+                                if (PARTICLE_DEBUG)  printf("\t\t\t%.20f == %.20f\n", LHS, RHS);
 
+                            // cout << ACDB << " " << ADFB << " " << AFEB << " " << AECB << endl;
+                            // cout << tetrahedral_volume(A, C, D, F) << " " << tetrahedral_volume(A, E, C, F) << " " << tetrahedral_volume(B, C, D, F) << " " << tetrahedral_volume(B, E, C, F) << endl;
+                                // cout << print_vec(*C) << "  |  " << print_vec(*D) << "  |  "<< print_vec(*E) << "  |  " << print_vec(*F) << "  |  " << endl;
 
                                 break;
                             }
@@ -156,12 +168,6 @@ namespace minicombust::particles
                         // edge_vertex += (AECB == 0.) ? 1 : 0;
 
                         // if (edge_vertex > 0) // Edge/Vertex detected. Edge = 1, Vertex = 2
-                        // {
-                        //     if (edge_vertex == 1)
-                        //     {
-
-                        //     }
-                        // }
                         
                         cell = mesh->cell_neighbours[cell*mesh->faces_per_cell + intercepted_face];
 
@@ -174,8 +180,6 @@ namespace minicombust::particles
                             return;
                         }
 
-
-
                         if (check_cell(cell, mesh)) // Particle is in immediately neighbouring cell
                         {
                             found_cell = true;
@@ -184,11 +188,11 @@ namespace minicombust::particles
                             if (PARTICLE_DEBUG)  cout << "\t\tParticle has moved to cell " << cell << " " << ", x1: " << print_vec(x1) << endl ;
                         }
                         else { // Particle isn't in immediate neighbour
-                            face_mask    = face_mask | (1 << (intercepted_face ^ 1));  // E.G If we detect interception with front face, don't trigger back face interception next time.
+                            face_mask    = face_mask | (1 << (intercepted_face ^ 1));  // E.G If we detect interception with front face, don't trigger back face interception next time. // TOD0: Needed now?
                             if (PARTICLE_DEBUG)  cout  << "\t\tParticle isn't in neighbour cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
                         }
                     }
-                    if (parallelepiped > 1)  x1 -= 1e-8*x_delta;;
+                    if (parallelepiped > 1)  x1 += 1e-6*x_delta;;
                 }
             }
 
@@ -236,8 +240,10 @@ namespace minicombust::particles
             {
                 if (decayed)  return MESH_BOUNDARY;
 
+                // if (PARTICLE_DEBUG)  cout << "Beginning of timestep: x0: " << print_vec(x0) << " v0 " << print_vec(v0) << endl; 
                 x1 = x0 + v1*delta;
                 v1 = v0 + a1*delta;
+                // if (PARTICLE_DEBUG)  cout << "End of timestep: x1: " << print_vec(x1) << " v1 " << print_vec(v1) << endl; 
 
                
                 // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.

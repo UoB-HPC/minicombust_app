@@ -9,9 +9,8 @@ namespace minicombust::particles
     using namespace minicombust::visit;
 
     template<class T>
-    void ParticleSolver<T>::output_data()
+    void ParticleSolver<T>::output_data(int timestep)
     {
-        static int count = 0;
         mesh->clear_particles_per_point_array();
 
         // Assign each particles to one of the vertexes of the bounding cell.
@@ -34,7 +33,7 @@ namespace minicombust::particles
         }
 
         VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
-        vtk_writer->write_file("minicombust", count++);
+        vtk_writer->write_file("minicombust", timestep);
     }
 
     template<class T> 
@@ -64,7 +63,6 @@ namespace minicombust::particles
     {
         printf("\tRunning fn: update_particle_positions.\n");
         
-        output_data();
 
         // Update particle positions
         for (int p = 0; p < current_particle; p++)
