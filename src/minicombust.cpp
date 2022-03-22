@@ -47,7 +47,7 @@ int main (int argc, char ** argv)
             printf("No meshes supplied. Running built in example instead.\n\n");
             const double box_dim                  = 100;
             const uint64_t elements_per_dim       = 100;
-            const uint64_t particles_per_timestep = 1;
+            const uint64_t particles_per_timestep = 10;
             ntimesteps                            = 100;
             mesh          = load_mesh(box_dim, elements_per_dim);
             particle_dist = load_particle_distribution(particles_per_timestep, mesh);
@@ -60,19 +60,26 @@ int main (int argc, char ** argv)
     ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, mesh);
     cout << endl;
 
-    const clock_t begin_time = clock();
+    
+    float program_ticks = 0.f, output_ticks = 0.f;
     for(int t = 0; t < ntimesteps; t++)
     {
         printf("Timestep %d..\n\n", t);
+        const clock_t timestep_time  = clock();
         timestep(flow_solver, particle_solver);
+        program_ticks += float(clock() - timestep_time);
+        if (t % 10 == 9 || t == 0)  
+        {
+            const clock_t output = clock(); 
+            particle_solver->output_data(t + 1);
+            output_ticks += float(clock() - output);
+        }
 
         
     }
-    const clock_t prog_time = clock();
 
-    cout << "\nProgram Runtime: " << float( prog_time - begin_time ) /  CLOCKS_PER_SEC << "s" << endl;
-    particle_solver->output_data(ntimesteps-1);
-    cout <<   "Output Time:     " << float( clock () - prog_time ) /  CLOCKS_PER_SEC << "s" << endl;
+    cout << "\nProgram Runtime: " << program_ticks /  CLOCKS_PER_SEC << "s" << endl;
+    cout <<   "Output Time:     " << output_ticks /  CLOCKS_PER_SEC << "s" << endl;
 
 
 

@@ -17,6 +17,8 @@ namespace minicombust::particles
         for(int p = 0; p < current_particle; p++)  // Iterate through each particle
         {
             Particle<T> *particle     = particles + p;
+            if ( particle->decayed )  continue;
+
             double closest_dist       = __DBL_MAX__;
             uint64_t closest_vertex   = UINT64_MAX;
             for (int i = 0; i < mesh->cell_size; i++)  // Iterate through the points of the cell that the particle is in
@@ -62,6 +64,7 @@ namespace minicombust::particles
     void ParticleSolver<T>::update_particle_positions()
     {
         printf("\tRunning fn: update_particle_positions.\n");
+        
         
 
         // Update particle positions

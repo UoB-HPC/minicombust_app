@@ -238,12 +238,13 @@ namespace minicombust::particles
 
             uint64_t timestep(Mesh<T> *mesh, double delta)  // Update position
             {
-                if (decayed)  return MESH_BOUNDARY;
+                if (decayed)  return cell;
 
                 // if (PARTICLE_DEBUG)  cout << "Beginning of timestep: x0: " << print_vec(x0) << " v0 " << print_vec(v0) << endl; 
                 x1 = x0 + v1*delta;
                 v1 = v0 + a1*delta;
                 // if (PARTICLE_DEBUG)  cout << "End of timestep: x1: " << print_vec(x1) << " v1 " << print_vec(v1) << endl; 
+                // cout << "End of timestep: x1: " << print_vec(x1) << " cell " << cell << " " << decayed<< endl; 
 
                
                 // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
