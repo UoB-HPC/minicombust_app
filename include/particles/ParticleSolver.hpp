@@ -2,6 +2,7 @@
 
 #include <map>
 
+#include "utils/utils.hpp"
 #include "particles/Particle.hpp"
 #include "particles/ParticleDistribution.hpp"
 
@@ -9,7 +10,7 @@ namespace minicombust::particles
 {
 
     using namespace std; 
-    
+
     template<class T>
     class ParticleSolver 
     {
@@ -20,9 +21,8 @@ namespace minicombust::particles
             ParticleDistribution<T> *particle_dist;
 
             Mesh<T> *mesh;
-
             
-
+            particle_logger logger;
             
             T flow_field;
 
@@ -38,12 +38,17 @@ namespace minicombust::particles
             ParticleSolver(uint64_t ntimesteps, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh) : particle_dist(particle_dist), mesh(mesh)
             {
                 // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
-                printf("Allocating particles array, %llu particles (%.2f MB)\n", ntimesteps * particle_dist->particles_per_timestep, 
+                printf("Particle storage requirements:\n\tAllocating particles array, %llu particles (%.2f MB)\n", ntimesteps * particle_dist->particles_per_timestep, 
                                                                               (float)(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>))/1000000.0);
                 particles = (Particle<T> *)malloc(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>));
+                
+
+                logger = {0, 0, 0, 0, 0};
             }
 
             void output_data(int timestep);
+
+            void print_logger_stats(int timesteps);
 
             void update_flow_field(); // Synchronize point with flow solver
             
@@ -60,6 +65,7 @@ namespace minicombust::particles
             void interpolate_data();
 
             void timestep();
+
 
 
     }; // class ParticleSolver

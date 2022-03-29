@@ -1,6 +1,6 @@
 ## Compilers and Flags
 CC := g++ 
-CFLAGS := -g -Wall -std=c++17
+CFLAGS := -g -Wall -std=c++17 -O3 -march=native
 LIB := -Lbuild/
 INC := -Iinclude/
 

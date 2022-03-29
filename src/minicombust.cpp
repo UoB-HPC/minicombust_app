@@ -21,7 +21,6 @@ void timestep(FlowSolver<F> *flow_solver, ParticleSolver<P> *particle_solver)
     flow_solver->timestep();
 
     particle_solver->timestep();
-    printf("\n");
 
 } 
 
@@ -47,8 +46,8 @@ int main (int argc, char ** argv)
             printf("No meshes supplied. Running built in example instead.\n\n");
             const double box_dim                  = 100;
             const uint64_t elements_per_dim       = 100;
-            const uint64_t particles_per_timestep = 10;
-            ntimesteps                            = 100;
+            const uint64_t particles_per_timestep = 1000;
+            ntimesteps                            = 70;
             mesh          = load_mesh(box_dim, elements_per_dim);
             particle_dist = load_particle_distribution(particles_per_timestep, mesh);
     }
@@ -60,26 +59,36 @@ int main (int argc, char ** argv)
     ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, mesh);
     cout << endl;
 
-    
     float program_ticks = 0.f, output_ticks = 0.f;
+    const clock_t output = clock(); 
+    VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
+    vtk_writer->write_mesh("minicombust");
+    output_ticks += float(clock() - output);
+
+    uint64_t print_iteration = 70;
+
+    printf("Starting simulation..\n");
     for(int t = 0; t < ntimesteps; t++)
     {
-        printf("Timestep %d..\n\n", t);
+        if (t % 10 == 0)  printf("Timestep %d of %llu..\n", t, ntimesteps);
         const clock_t timestep_time  = clock();
         timestep(flow_solver, particle_solver);
         program_ticks += float(clock() - timestep_time);
-        if (t % 10 == 9 || t == 0)  
+        if ((t % print_iteration == print_iteration - 1))  
         {
             const clock_t output = clock(); 
-            particle_solver->output_data(t + 1);
+            particle_solver->output_data(t+1);
             output_ticks += float(clock() - output);
         }
 
         
     }
+    printf("Done!\n\n");
+
+    particle_solver->print_logger_stats(ntimesteps);
 
     cout << "\nProgram Runtime: " << program_ticks /  CLOCKS_PER_SEC << "s" << endl;
-    cout <<   "Output Time:     " << output_ticks /  CLOCKS_PER_SEC << "s" << endl;
+    cout <<   "Output Time:     " << output_ticks /  CLOCKS_PER_SEC  << "s" << endl;
 
 
 

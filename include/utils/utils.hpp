@@ -156,6 +156,14 @@ namespace minicombust::utils
         }
         return buffer.str();
     }
+
+    struct particle_logger {
+        double num_particles;
+        double cell_checks;
+        double position_adjustments;
+        double boundary_intersections;
+        double decayed_particles;
+    };
 }
 
 
