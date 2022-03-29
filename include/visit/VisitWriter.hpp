@@ -22,15 +22,16 @@ namespace minicombust::visit
             Mesh<T> *mesh;
 
             VisitWriter(Mesh<T> *mesh) : mesh(mesh)
-            { }
+            {  }
 
             
-            void write_file(string filename, int id)
+
+            void write_mesh(string filename)
             {
-                // Print VTK Header
+                                // Print VTK Header
                 ofstream vtk_file;
-                vtk_file.open ("out/"+filename+"_timestep"+to_string(id)+".vtk");
-                vtk_file << "# vtk DataFile Version 3.2 " << endl;
+                vtk_file.open ("out/mesh.vtk");
+                vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
                 vtk_file << "ASCII " << endl;
                 vtk_file << "DATASET UNSTRUCTURED_GRID " << endl;
@@ -38,7 +39,7 @@ namespace minicombust::visit
                 
                 // TODO: Allow different datatypes
                 // Print point data
-                vtk_file << endl << "POINTS " << mesh->points_size << " double" ;
+                vtk_file << endl << "POINTS " << mesh->points_size << " double" << endl;
                 for(int p = 0; p < mesh->points_size; p++)
                 {
                     const int data_per_line = 10;
@@ -67,31 +68,51 @@ namespace minicombust::visit
                     vtk_file << VTK_VOXEL;
                 }
                 vtk_file << endl;
+            }
 
-                // // Print temperature values for points
-                // vtk_file << endl << "POINT_DATA " << mesh->points_size << endl;
-                // vtk_file << "SCALARS Temperature float 1" << endl;
-                // vtk_file << "LOOKUP_TABLE default" << endl;
-                // for(int p = 0; p < mesh->points_size; p++)
-                // {
-                //     // TODO: Instead of index, set values to be based of temperature values
-                //     const int data_per_line = 20;
-                //     if (p % data_per_line == 0)  vtk_file << endl;
-                //     else             vtk_file << " ";
-                //     vtk_file << p << " ";
-                // } 
-                // vtk_file << endl;
+
+            void write_particles(string filename, int id)
+            {
+                // Print VTK Header
+                ofstream vtk_file;
+
+                vtk_file.open ("out/"+filename+"_particle_timestep"+to_string(id)+".vtk");
+                vtk_file << "# vtk DataFile Version 3.0 " << endl;
+                vtk_file << "MiniCOMBUST " << endl;
+                vtk_file << "ASCII " << endl;
+                vtk_file << "DATASET POLYDATA " << endl;
+
+                
+                // TODO: Allow different datatypes
+                // Print point data
+                vtk_file << endl << "POINTS " << mesh->points_size << " float"  << endl;
+                for(int p = 0; p < mesh->points_size; p++)
+                {
+                    // const int data_per_line = 10;
+                    // if (p % data_per_line == 0)  vtk_file << endl;
+                    // else             vtk_file << "  ";
+                    vtk_file << print_vec(mesh->points[p]) << endl;
+                }
+                vtk_file << endl;
 
                 // Print particle values for points
+                int non_zero_points = 0;
+                for(int p = 0; p < mesh->points_size; p++)  non_zero_points += (mesh->particles_per_point[p] != 0) ? 1 : 0;
+                vtk_file << endl << "VERTICES " << mesh->points_size << " " << mesh->points_size * 2  << endl;
+                for(int p = 0; p < mesh->points_size; p++)
+                {
+                    
+                    vtk_file << "1 " << p << endl;
+                }
+                vtk_file << endl;
+
+
+
                 vtk_file << endl << "POINT_DATA " << mesh->points_size << endl;
-                vtk_file << "SCALARS Particles unsigned_int 1" << endl;
+                vtk_file << "SCALARS num_particles float" << endl;
                 vtk_file << "LOOKUP_TABLE default" << endl;
                 for(int p = 0; p < mesh->points_size; p++)
                 {
-                    // TODO: Instead of index, set values to be based of temperature values
-                    const int data_per_line = 20;
-                    if (p % data_per_line == 0)  vtk_file << endl;
-                    else             vtk_file << " ";
                     vtk_file << mesh->particles_per_point[p] << " ";
                 } 
                 vtk_file << endl;

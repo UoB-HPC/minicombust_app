@@ -79,6 +79,13 @@ namespace minicombust::utils
         return sum;
     }
 
+    template<typename T>
+    inline vec<T> operator*(vec<T> b, vec<T> a) 
+    {
+        vec<T> sum = {a.x * b.x, a.y * b.y, a.z * b.z};
+        return sum;
+    }
+
 
     template<typename T>
     inline bool operator<(vec<T> a, vec<T> b) 
@@ -149,6 +156,14 @@ namespace minicombust::utils
         }
         return buffer.str();
     }
+
+    struct particle_logger {
+        double num_particles;
+        double cell_checks;
+        double position_adjustments;
+        double boundary_intersections;
+        double decayed_particles;
+    };
 }
 
 

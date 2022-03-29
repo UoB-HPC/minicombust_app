@@ -12,8 +12,8 @@ bool check_particle_posistion(Mesh<double> *mesh, uint64_t correct_cell, vec<dou
     
     Particle<double> *p = new Particle<double>(mesh, start, velocity, vec<double>{0, 0, 0});
 
-
-    p->timestep(mesh, 1.0);
+    particle_logger logger = {0, 0, 0, 0, 0};
+    p->timestep(mesh, 1.0, &logger);
 
 
     return p->cell == correct_cell;
@@ -38,7 +38,7 @@ void run_particle_tests()
     vec<double> start     = {15.0, 15.0, 15.0};
 
 
-    // // Tests for moving to immediate neighbour
+    // Tests for moving to immediate neighbour
     cout << "\t\tRunning immediate neighbour tests..." << endl;
     assert(((void)"Particle is not moving to FRONT cell\n", check_particle_posistion(mesh, 11,   start, 10.*FRONT_UNIT_VEC)));
     assert(((void)"Particle is not moving to BACK  cell\n", check_particle_posistion(mesh, 211,  start, 10.*BACK_UNIT_VEC)));
@@ -50,7 +50,7 @@ void run_particle_tests()
     assert(((void)"Particle is not moving to UP    cell\n", check_particle_posistion(mesh, 121,  start, 10.*UP_UNIT_VEC)));
     cout << "\t\tPassed immediate neighbour tests." << endl << endl;;
 
-    // // Tests for moving diagonally through edges
+    // Tests for moving diagonally through edges
     cout << "\t\tRunning edge neighbour tests..." << endl;
     start     = {15.0, 15.0, 5.0};
     assert(((void)"Particle is not moving to FRONT+LEFT cell\n",  check_particle_posistion(mesh, MESH_BOUNDARY,   start, 10.*FRONT_UNIT_VEC + 10.*LEFT_UNIT_VEC)));
@@ -84,7 +84,7 @@ void run_particle_tests()
     assert(((void)"Particle is not moving to BACK+RIGHT+UP cell\n",     check_particle_posistion(mesh,       222,   start, 10.*BACK_UNIT_VEC + 10.*RIGHT_UNIT_VEC + 10.*UP_UNIT_VEC)));
     cout << "\t\tPassed vertex neighbour tests." << endl << endl;
 
-    // Tests for moving diagonally through vertexes
+    // // Tests for moving diagonally through vertexes
     cout << "\t\tRunning multiple cell tests..." << endl;
     start     = {15.0, 15.0, 15.0};
     assert(((void)"Particle is not moving to 999 cell\n",             check_particle_posistion(mesh,            999,   start, 80.*BACK_UNIT_VEC + 80.*RIGHT_UNIT_VEC + 80.*UP_UNIT_VEC)));

@@ -47,7 +47,6 @@ namespace minicombust::geometry
           // Calculate the centre point in each cell
           // Computed as the average of all vertex positions
           void calculate_cell_centres(void) {
-
               for (uint64_t c = 0; c < mesh_size; ++c) {
                   cell_centres[c] = vec<T>{0.0, 0.0, 0.0};
                   for (uint32_t i = 0; i < cells_vertex_count; ++i) {
@@ -65,13 +64,17 @@ namespace minicombust::geometry
             uint64_t cell_size;           // Number of points in the cell
             uint64_t faces_size;          // Number of unique faces in the mesh
             uint64_t faces_per_cell;      // Number of faces in a cell
+            
+            
+            vec<T> cell_size_vector;      // Cell size
+
 
             vec<T> *points;               // Mesh points    = {{0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, ...}:
 
-            uint64_t *cells;             // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
+            uint64_t *cells;              // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
             Face<T> *faces;               // Faces          = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...}; 
             vec<T> *cell_centres;         // Cell centres   = {{0.5, 3.0, 4.0}, {2.5, 3.0, 4.0}, ...};
-            uint64_t *cell_neighbours;   // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}}
+            uint64_t *cell_neighbours;    // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}}
  
 
             uint64_t *particles_per_point; // Number of particles in each cell
@@ -83,7 +86,7 @@ namespace minicombust::geometry
                 // Allocate space for and calculate cell centre co-ordinates
                 const size_t mesh_cell_centre_size = mesh_size * sizeof(vec<T>);
                 cell_centres = (vec<T> *)malloc(mesh_cell_centre_size);
-                printf("\n\tMesh storage requirements:\n\tAllocating %llu mesh cell centre points (%.2f MB)\n", mesh_size, (float)(mesh_cell_centre_size)/1000000.0);
+                printf("\nMesh storage requirements:\n\tAllocating %llu mesh cell centre points (%.2f MB)\n", mesh_size, (float)(mesh_cell_centre_size)/1000000.0);
                 calculate_cell_centres();
 
                 const size_t particles_per_point_size = points_size * sizeof(uint64_t);
@@ -100,6 +103,8 @@ namespace minicombust::geometry
                 printf("\tAllocating %llu cell neighbour indexes (%.2f MB)\n", mesh_size*faces_per_cell,  (float)(cell_neighbours_array_size)/1000000.0);
 
                 const size_t total_size = mesh_cell_centre_size + particles_per_point_size + points_array_size + cells_array_size + faces_array_size + cell_neighbours_array_size;
+
+                cell_size_vector = points[cells[H_VERTEX]] - points[cells[A_VERTEX]];
 
                 printf("\tAllocated mesh. Total size (%.2f MB)\n\n", (float)total_size/1000000.0);
             }

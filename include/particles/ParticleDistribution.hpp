@@ -10,6 +10,10 @@ using namespace minicombust::utils;
 
 namespace minicombust::particles 
 {
+
+    enum ProbabilityDistribution { FIXED = 0, NORMAL = 1, UNIFORM = 2};
+
+
     template<class T>
     class Distribution 
     {
@@ -58,7 +62,7 @@ namespace minicombust::particles
              { }
 
             T get_value() override {
-                T r = (T)rand() / RAND_MAX;
+                T r = T { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
                 return lower + (r * (upper - lower));
             }
 
@@ -90,6 +94,7 @@ namespace minicombust::particles
             // TODO: Change this to particles per unit of time?
             uint64_t particles_per_timestep;
             Mesh<T> *mesh;
+            
 
             Distribution<vec<T>> *start_pos;
             Distribution<T> *rate;            
@@ -105,15 +110,26 @@ namespace minicombust::particles
 
             // Generate fixed distribution
             ParticleDistribution (uint64_t particles_per_timestep, Mesh<T> *mesh, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
-                                  vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean) :
+                                  vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean, ProbabilityDistribution dist) :
                                   particles_per_timestep(particles_per_timestep), mesh(mesh)
             {   
-                start_pos        = new FixedDistribution<vec<T>>(start);
+                srand (time(NULL));
+                if (dist == UNIFORM)
+                {
+                    T var = 0.2;
+                    start_pos        = new UniformDistribution<vec<T>>(start - start*(var),       start + start*var);
+                    velocity         = new UniformDistribution<vec<T>>(vel_mean - vel_mean*(var), vel_mean + vel_mean*var);
+                    acceleration     = new UniformDistribution<vec<T>>(acc_mean - acc_mean*(var), acc_mean + acc_mean*var);
+                }
+                else 
+                {
+                    start_pos        = new FixedDistribution<vec<T>>(start);
+                    acceleration     = new FixedDistribution<vec<T>>(acc_mean);
+                    velocity         = new FixedDistribution<vec<T>>(vel_mean);
+                }
                 rate             = new FixedDistribution<T>(rate_mean);           
                 angle_xy         = new FixedDistribution<T>(angle_xy_mean);   
                 angle_rot        = new FixedDistribution<T>(angle_rot_mean);  
-                velocity         = new FixedDistribution<vec<T>>(vel_mean);
-                acceleration     = new FixedDistribution<vec<T>>(acc_mean);
                 jerk             = new FixedDistribution<vec<T>>(jerk_mean);
                 decay_rate       = new FixedDistribution<T>(decay_rate_mean);  
                 decay_threshold  = new FixedDistribution<T>(decay_threshold_mean);  
