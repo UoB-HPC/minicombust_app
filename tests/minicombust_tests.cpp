@@ -24,7 +24,7 @@ const uint64_t elements_per_dim       = 10;
 
 Mesh<double> *mesh    = load_mesh(box_dim, elements_per_dim);
 
-TEST_CASE( "Particles can move from cell to cell correctly.", "[particle]" ) {
+TEST_CASE( "Particles can move from cell to cell correctly. (Cube Mesh)", "[particle]" ) {
 
     const vec<double> FRONT_UNIT_VEC = { 0.,  0., -1.};
     const vec<double> BACK_UNIT_VEC  = { 0.,  0.,  1.};
