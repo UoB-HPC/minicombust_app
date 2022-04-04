@@ -3,7 +3,6 @@
 
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
-#include "tests/particle_tests.hpp"
 #include "geometry/Mesh.hpp"
 
 
@@ -34,14 +33,6 @@ int main (int argc, char ** argv)
 
     switch (argc)
     {
-        case 2:
-            if(strcmp(argv[1], "tests") == 0)
-            {
-                printf("Running tests\n");
-                run_particle_tests();
-                exit(0);
-            }   
-        
         default:
             printf("No meshes supplied. Running built in example instead.\n\n");
             const double box_dim                  = 100;
