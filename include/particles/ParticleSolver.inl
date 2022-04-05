@@ -81,6 +81,12 @@ namespace minicombust::particles
     void ParticleSolver<T>::solve_spray_equations()
     {
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: solve_spray_equations.\n");
+
+        // Solve spray equations
+        for (int p = 0; p < current_particle; p++)
+        {
+            particles[p].timestep(mesh, 0.1, &logger);
+        }
     }
 
     template<class T> 
@@ -91,7 +97,7 @@ namespace minicombust::particles
         // Update particle positions
         for (int p = 0; p < current_particle; p++)
         {
-            particles[p].timestep(mesh, 0.1, &logger);
+            particles[p].solve_spray(mesh, 0.1);
         }
 
     }
@@ -120,7 +126,7 @@ namespace minicombust::particles
         if (PARTICLE_SOLVER_DEBUG)  printf("Start particle timestep\n");
         // update_flow_field();
         particle_release();
-        // solve_spray_equations();
+        solve_spray_equations();
         update_particle_positions();
         // update_spray_source_terms();
         // map_source_terms_to_grid();

@@ -21,6 +21,7 @@ make clean all
 ```
 
 ## Unsupported Feature List
+- Visualise particle fields (temperature, mass, evaporated gas)
 - Spray Breakup (spawn new particles, primary and secondary breakup)
 - C API for particle side
 - Tetrahedral mesh

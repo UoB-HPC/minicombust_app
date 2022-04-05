@@ -171,6 +171,8 @@ namespace minicombust::particles
                 }
             }
 
+
+
         public:
             vec<T> x0 = 0.0;             // coordinates at timestep beginning
             vec<T> x1 = 0.0;             // coordinates at next timestep
@@ -179,18 +181,23 @@ namespace minicombust::particles
             vec<T> v1 = 0.0;             // velocity at next timestep
             
             vec<T> a1 = 0.0;             // acceleration at next timestep
+            
                         
             uint64_t cell = -1;          // cell at timestep beginning
 
             bool decayed = false;
+
             
 
             
             bool wall  = false;
 
-            T dens0 = -1.0;       
-            T diam0 =  1.0;
-            T mass0 =  1.0;
+            T mass        = 0.01;          // DUMMY_VAL Current mass (kg)
+            T temp        = 373.0;         // DUMMY_VAL Current surface temperature (Kelvin)
+            T density     = 1.0;           // DUMMY_VAL Current density (kg/m^3)
+            T diameter    = 0.1;           // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
+
+
 
             Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration) : x0(start), x1(start), v0(velocity), v1(velocity), a1(acceleration)
             { 
@@ -201,7 +208,6 @@ namespace minicombust::particles
                         cell = c;
                         break;
                     }
-
                 }
                 if (cell == -1)
                 {
@@ -216,8 +222,8 @@ namespace minicombust::particles
                 if (decayed)  return cell;
 
                 // if (PARTICLE_DEBUG)  cout << "Beginning of timestep: x0: " << print_vec(x0) << " v0 " << print_vec(v0) << endl; 
-                x1 = x0 + v1*delta;
-                v1 = v0 + a1*delta;
+                x1 = x0 + v1 * delta;
+                v1 = v0 + a1 * delta;
                 // if (PARTICLE_DEBUG)  cout << "End of timestep: x1: " << print_vec(x1) << " v1 " << print_vec(v1) << endl; 
                
                 // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
@@ -225,6 +231,64 @@ namespace minicombust::particles
 
                 return cell; 
             } 
+
+            void solve_spray(Mesh<T> *mesh, double delta)
+            {
+                // Inputs from flow: relative_acc, relative_gas_liq_vel, kinematic viscoscity?, air_temp, air_pressure
+                // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant
+                // Calculated outputs: acceleration, droplet surface temperature, droplet mass, droplet diameter
+                // Calculated outputs for flow: evaporated mass?
+
+                // TODO: Remove DUMMY_VALs
+                // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub
+                const vec<T> relative_acc                = {1.0, 1.0, 1.0};               // DUMMY_VAL Relative acceleration between the gas and liquid phase.
+                const vec<T> relative_drop_vel           = relative_acc * delta;          // DUMMY_VAL Relative velocity between the gas and liquid phase.
+                const T relative_gas_liq_vel             = 0.1;                           // DUMMY_VAL What is this?
+
+                const T omega               = 1.0;                                        // DUMMY_VAL What is this?
+                const T kinematic_viscosity = 1.48e-5;                                    // DUMMY_VAL 
+                const T reynolds            = density * relative_gas_liq_vel * diameter / kinematic_viscosity;
+
+                const T droplet_frontal_area  = M_PI * (diameter / 2.) * (diameter / 2.);
+
+                // Drag coefficient
+                const T drag_coefficient = ( reynolds <= 1000 ) ? 24 * (1 + 0.15 * pow(reynolds, 0.687)) : 0.424;
+
+                // const vec<T> body_force    = Should we account for this?
+                const vec<T> virtual_force = -0.5 * density * omega * relative_acc;
+                const vec<T> drag_force    = drag_coefficient * reynolds  * 0.5 * density * relative_gas_liq_vel * relative_drop_vel * droplet_frontal_area;
+                
+                a1 = (virtual_force + drag_force) / mass; 
+
+
+                // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
+                // Amount of spray evaporation is used in the modified transport equation of mixture fraction (each timestep).
+                const T air_pressure           = 6.e3;
+                const T fuel_vapour_pressure   = exp((14.2-2777.) / (temp - 43));                     // DUMMY_VAL fuel vapor at drop surface (kP)
+                const T pressure_relation      = air_pressure / fuel_vapour_pressure;                 // DUMMY_VAL Clausius-Clapeyron relation. air pressure / fuel vapour pressure.
+                const T fuel_pressure          = 29. / 100.;                                          // DUMMY_VAL molecular weight air / molecular weight fuel
+                const T mass_fraction          = 1 / (1 + (pressure_relation - 1) * fuel_pressure);   // Mass fraction of fuel vapour at the droplet surface  
+
+                const T thermal_conductivity = 0.4;                                                                                         // DUMMY_VAL mean thermal conductivity. Calc each iteration?
+                const T specific_heat        = (0.363 + 0.000467 * temp) * (5-0.001 * density);                                             // DUMMY_VAL specific heat of the gas
+                const T mass_transfer        = mass_fraction / (1 - mass_fraction);
+                const T mass_delta           = 2 * M_PI * diameter * (thermal_conductivity / specific_heat) * log(1 + mass_transfer);       // Rate of fuel evaporation
+
+                const T latent_heat       = 346.0 * pow((548. - temp) / (548. - 333.), 0.38);                                               // DUMMY_VAL Latent heat of fuel vaporization (kJ/kg)
+                const T air_temp          = 1500.;                                                                                          // DUMMY_VAL Gas temperature?
+                const T air_heat_transfer = 2 * M_PI * fuel_vapour_pressure * (air_temp - temp) * log(1 + mass_transfer) / mass_transfer;   // The heat transferred from air to fuel
+                const T evaporation_heat  = mass_delta * latent_heat;                                                                       // The heat absorbed through evaporation
+                const T temp_delta        = (air_heat_transfer - evaporation_heat) / (specific_heat * mass);                                // Temperature change of the droplet's surface
+
+                const T evaporation_constant = 1e-6;  // Evaporation constant
+
+                temp     = temp + temp_delta * delta; // Double check + or -
+                mass     = mass + mass_delta * delta;
+                diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
+                
+                // SOLVE SPRAY BREAKUP MODEL - 
+
+            }
 
             
     }; // class Particle
