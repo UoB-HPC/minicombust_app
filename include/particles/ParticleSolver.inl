@@ -105,7 +105,7 @@ namespace minicombust::particles
         // Solve spray equations
         for (int p = 0; p < current_particle; p++)
         {
-            particles[p].solve_spray(mesh, 0.075, &logger);
+            particles[p].solve_spray(mesh, 0.01, &logger);
         }
     }
 
@@ -117,7 +117,12 @@ namespace minicombust::particles
         // Update particle positions
         for (int p = 0; p < current_particle; p++)
         {
-            particles[p].timestep(mesh, 0.075, &logger);
+            // if (p == 0) 
+            // {
+            //     cout << particles[p].cell << endl;
+            //     cout << print_vec(particles[p].x0) << endl;
+            // }
+            particles[p].timestep(mesh, 0.01, &logger);
         }
     }
 

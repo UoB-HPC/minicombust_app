@@ -268,17 +268,19 @@ namespace minicombust::particles
             {
                 if (decayed) return;
 
-                // Inputs from flow: relative_acc, relative_gas_liq_vel, kinematic viscoscity?, air_temp, air_pressure
+                // Inputs from flow: relative_acc, kinematic viscoscity?, air_temp, air_pressure
                 // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant
                 // Calculated outputs: acceleration, droplet surface temperature, droplet mass, droplet diameter
                 // Calculated outputs for flow: evaporated mass?
                 // if (decayed) return;
 
+                // TODO Add better flop estimates for pow and ln. Also, can we get a fast approximation. Taylor series?
+
                 // TODO: Remove DUMMY_VALs
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub
-                const vec<T> relative_drop_acc           = {0.01, 0.01, 0.01};            // DUMMY_VAL Relative acceleration between droplet and the fluid
+                const vec<T> relative_drop_acc           = a1 - mesh->gas_acceleration[cell];   // DUMMY_VAL Relative acceleration between droplet and the fluid
                 const vec<T> relative_drop_vel           = relative_drop_acc * delta;     // DUMMY_VAL Relative velocity between droplet and the fluid
-                const T relative_gas_liq_vel             = 0.1;                           // DUMMY_VAL Relative acceleration between the gas and liquid phase.
+                const T relative_gas_liq_vel             = magnitude(relative_drop_acc);  // DUMMY_VAL Relative acceleration between the gas and liquid phase.
 
                 const T omega               = 0.1;                                        // DUMMY_VAL What is this?
                 const T kinematic_viscosity = 1.48e-5;                                    // DUMMY_VAL 
@@ -297,8 +299,8 @@ namespace minicombust::particles
                 
                 if (LOGGER)
                 {
-                    logger->flops  += 29;
-                    logger->loads  += 3 * sizeof(vec<T>) + 3 * sizeof(T);  // 3 vectors(drop, rel drop, gas_liq velocities), 3 fields(diameter, density, mass)
+                    logger->flops  += 38;
+                    logger->loads  += 2 * sizeof(vec<T>) + 3 * sizeof(T);  // 3 vectors(drop acc, gas acc), 3 fields(diameter, density, mass)
                     logger->stores += 1 * sizeof(vec<T>);                  // Acceleration
                 }
 
@@ -306,7 +308,7 @@ namespace minicombust::particles
 
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
                 // Amount of spray evaporation is used in the modified transport equation of mixture fraction (each timestep).
-                const T air_pressure           = 6.e3;
+                const T air_pressure           = mesh->gas_pressure[cell];
                 const T fuel_vapour_pressure   = exp((14.2-2777.) / (temp - 43));                     // DUMMY_VAL fuel vapor at drop surface (kP)
                 const T pressure_relation      = air_pressure / fuel_vapour_pressure;                 // DUMMY_VAL Clausius-Clapeyron relation. air pressure / fuel vapour pressure.
                 const T fuel_pressure          = 29. / 100.;                                          // DUMMY_VAL molecular weight air / molecular weight fuel
@@ -318,7 +320,7 @@ namespace minicombust::particles
                 const T mass_delta           = 2 * M_PI * diameter * (thermal_conductivity / specific_heat) * log(1 + mass_transfer);       // Rate of fuel evaporation
 
                 const T latent_heat       = 346.0 * pow((548. - temp) / (548. - 333.), 0.38);                                               // DUMMY_VAL Latent heat of fuel vaporization (kJ/kg)
-                const T air_temp          = 1500.;                                                                                          // DUMMY_VAL Gas temperature?
+                const T air_temp          = mesh->gas_temperature[cell];                                                                    // DUMMY_VAL Gas temperature?
                 const T air_heat_transfer = 2 * M_PI * fuel_vapour_pressure * (air_temp - temp) * log(1 + mass_transfer) / mass_transfer;   // The heat transferred from air to fuel
                 const T evaporation_heat  = mass_delta * latent_heat;                                                                       // The heat absorbed through evaporation
                 const T temp_delta        = (air_heat_transfer - evaporation_heat) / (specific_heat * mass);                                // Temperature change of the droplet's surface
@@ -330,7 +332,7 @@ namespace minicombust::particles
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
 
                 mesh->evaporated_fuel_mass_rate[cell] += mass_delta;
-                mesh->particle_energy_rate[cell]           += air_heat_transfer - evaporation_heat;
+                mesh->particle_energy_rate[cell]      += air_heat_transfer - evaporation_heat;
                 mesh->particle_momentum_rate[cell]    += mass * v1;
 
                 if (LOGGER)

@@ -9,7 +9,7 @@ ParticleDistribution<double> *load_particle_distribution(uint64_t particles_per_
 {
     vec<double> position     = {5.0, 5.0, 0.1};
     vec<double> velocity     = {20.0, 5., 0.};
-    vec<double> acceleration = {-4., 3, 0};
+    vec<double> acceleration = {4., 3, 0};
     vec<double> jerk         = {0.1, 0.1, 0.1};
     double rate              = 0.1;
     double xy_angle          = 0.1;   
