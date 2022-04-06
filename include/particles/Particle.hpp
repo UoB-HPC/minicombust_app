@@ -10,7 +10,6 @@
 #include "geometry/Mesh.hpp"
 
 
-#define PARTICLE_DEBUG 0
 
 namespace minicombust::particles 
 {
@@ -267,6 +266,8 @@ namespace minicombust::particles
 
             inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger)
             {
+                if (decayed) return;
+
                 // Inputs from flow: relative_acc, relative_gas_liq_vel, kinematic viscoscity?, air_temp, air_pressure
                 // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant
                 // Calculated outputs: acceleration, droplet surface temperature, droplet mass, droplet diameter
@@ -328,14 +329,23 @@ namespace minicombust::particles
                 mass     = mass + mass_delta * delta;
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
 
+                mesh->evaporated_fuel_mass_rate[cell] += mass_delta;
+                mesh->particle_energy_rate[cell]           += air_heat_transfer - evaporation_heat;
+                mesh->particle_momentum_rate[cell]    += mass * v1;
+
                 if (LOGGER)
                 {
                     logger->flops  += 36;
                     logger->loads  += 3 * sizeof(T);     // 3 fields (air_temp, pressure, temp)
-                    logger->stores += 3 * sizeof(T);     // 3 fields (temp, mass, diameter)
+                    logger->stores += 1 * sizeof(vec<T>) + 5 * sizeof(T);     // Momentum vector source term + 3 fields (temp, mass, diameter, mass_delta source, energy source)
                 }
+
+
                 // SOLVE SPRAY BREAKUP MODEL 
 
+
+
+                return;
             }
 
             

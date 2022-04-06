@@ -27,7 +27,6 @@ namespace minicombust::particles
             
             T flow_field;
 
-            T dm_d_dt;     // For mass equation
             T domega_Z_dt; // For mixture fraction equation
             T S_i_d;       // For momentum equation
             T Q_d;         // For energy equation
@@ -38,10 +37,12 @@ namespace minicombust::particles
             template<typename M>
             ParticleSolver(uint64_t ntimesteps, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh) : particle_dist(particle_dist), mesh(mesh)
             {
+                particles            = (Particle<T> *)malloc(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>));
                 // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                 printf("Particle storage requirements:\n\tAllocating particles array, %llu particles (%.2f MB)\n", ntimesteps * particle_dist->particles_per_timestep, 
                                                                               (float)(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>))/1000000.0);
-                particles = (Particle<T> *)malloc(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>));
+
+                
 
                 memset(&logger, 0, sizeof(particle_logger));
             }

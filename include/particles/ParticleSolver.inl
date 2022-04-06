@@ -59,11 +59,12 @@ namespace minicombust::particles
         cout << "\tDecayed Particles:                           " << round(10000.*(((double)logger.decayed_particles) / ((double)logger.num_particles)))/100. << "% " << endl;
 
         cout << endl;
-        cout << "\tGFLOPS:                                      " << ((double)logger.flops) / 1000000000.0                                                           << endl;
+        cout << "\tGFLOPS:                                      " << ((double)logger.flops)  / 1000000000.0                                                          << endl;
         cout << "\tPerformance (GFLOPS/s):                      " << (((double)logger.flops) / 1000000000.0) / runtime                                               << endl;
-        cout << "\tMemory Loads (GB):                           " << ((double)logger.loads + (double)logger.stores) / 1000000000.0                                   << endl;    
-        cout << "\tMemory Stores (GB):                          " << ((double)logger.loads + (double)logger.stores) / 1000000000.0                                   << endl;    
+        cout << "\tMemory Loads (GB):                           " << ((double)logger.loads)  / 1000000000.0                                                          << endl;    
+        cout << "\tMemory Stores (GB):                          " << ((double)logger.stores) / 1000000000.0                                                          << endl;    
         cout << "\tMemory Bandwidth (GB):                       " << (((double)logger.loads + (double)logger.stores) / 1000000000.0) /runtime                        << endl;    
+        cout << "\tOperational Intensity:                       " << (double)logger.flops / ((double)logger.loads + (double)logger.stores)                           << endl;    
     }
 
 
@@ -88,6 +89,18 @@ namespace minicombust::particles
     void ParticleSolver<T>::solve_spray_equations()
     {
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: solve_spray_equations.\n");
+
+        for (int c = 0; c < mesh->mesh_size; c++)
+        {
+            mesh->evaporated_fuel_mass_rate[c] = 0.0;
+            mesh->particle_energy_rate[c]      = 0.0;
+            mesh->particle_momentum_rate[c]    = {0.0, 0.0, 0.0};
+        }
+
+        if (LOGGER)
+        {
+            logger.stores += mesh->mesh_size * (sizeof(vec<T>) + 2 * sizeof(T)); 
+        }
 
         // Solve spray equations
         for (int p = 0; p < current_particle; p++)

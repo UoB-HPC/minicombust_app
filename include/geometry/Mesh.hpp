@@ -80,6 +80,10 @@ namespace minicombust::geometry
 
             uint64_t *particles_per_point; // Number of particles in each cell
 
+            // Particle source terms
+            T      *evaporated_fuel_mass_rate;       // particle_rate_of_mass
+            T      *particle_energy_rate;            // particle_energy
+            vec<T> *particle_momentum_rate;          // particle_momentum_rate
 
             Mesh(uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours) 
             : points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours)
@@ -98,12 +102,24 @@ namespace minicombust::geometry
                 const size_t cells_array_size            = mesh_size*cell_size*sizeof(uint64_t);
                 const size_t faces_array_size            = faces_size*sizeof(Face<T>);
                 const size_t cell_neighbours_array_size  = mesh_size*faces_per_cell*sizeof(uint64_t);
-                printf("\tAllocating %llu vertexes (%.2f MB)\n",          points_size,               (float)(points_array_size)/1000000.0);
-                printf("\tAllocating %llu cells (%.2f MB)\n",             mesh_size,                 (float)(cells_array_size)/1000000.0);
-                printf("\tAllocating %llu faces (%.2f MB)\n",             faces_size,                (float)(faces_array_size)/1000000.0);
+                printf("\tAllocating %llu vertexes (%.2f MB)\n",          points_size,                    (float)(points_array_size)/1000000.0);
+                printf("\tAllocating %llu cells (%.2f MB)\n",             mesh_size,                      (float)(cells_array_size)/1000000.0);
+                printf("\tAllocating %llu faces (%.2f MB)\n",             faces_size,                     (float)(faces_array_size)/1000000.0);
                 printf("\tAllocating %llu cell neighbour indexes (%.2f MB)\n", mesh_size*faces_per_cell,  (float)(cell_neighbours_array_size)/1000000.0);
 
-                const size_t total_size = mesh_cell_centre_size + particles_per_point_size + points_array_size + cells_array_size + faces_array_size + cell_neighbours_array_size;
+                const size_t evaporated_fuel_mass_rate_size  = mesh_size*sizeof(T);
+                const size_t particle_energy_size            = mesh_size*sizeof(T);
+                const size_t particle_momentum_rate_size     = mesh_size*sizeof(vec<T>);
+                evaporated_fuel_mass_rate = (T *)malloc(evaporated_fuel_mass_rate_size);
+                particle_energy_rate      = (T *)malloc(particle_energy_size);
+                particle_momentum_rate    = (vec<T> *)malloc(particle_momentum_rate_size);
+                printf("\tAllocating evaporated fuel mass source term  (%.2f MB)\n",  (float)(evaporated_fuel_mass_rate_size)/1000000.0);
+                printf("\tAllocating particle energy source term       (%.2f MB)\n",  (float)(particle_energy_size)/1000000.0);
+                printf("\tAllocating particle_momentum source term     (%.2f MB)\n",  (float)(particle_momentum_rate_size)/1000000.0);
+
+                const size_t total_size = mesh_cell_centre_size + particles_per_point_size + points_array_size + cells_array_size + 
+                                          faces_array_size + cell_neighbours_array_size + 
+                                          evaporated_fuel_mass_rate_size + particle_energy_size + particle_momentum_rate_size;
 
                 cell_size_vector = points[cells[H_VERTEX]] - points[cells[A_VERTEX]];
 
