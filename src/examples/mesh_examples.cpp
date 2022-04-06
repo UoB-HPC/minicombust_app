@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <string>  
-
+#include <memory.h>
 
 using namespace minicombust::geometry;
 using namespace minicombust::utils;

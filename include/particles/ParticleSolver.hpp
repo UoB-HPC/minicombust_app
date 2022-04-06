@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory.h>
 
 #include "utils/utils.hpp"
 #include "particles/Particle.hpp"

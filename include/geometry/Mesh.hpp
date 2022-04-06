@@ -2,6 +2,7 @@
 
 #include <map>
 
+#include <memory.h>
 #include "utils/utils.hpp"
 
 using namespace minicombust::utils; 
