@@ -4,6 +4,7 @@
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
 #include "geometry/Mesh.hpp"
+#include "utils/utils.hpp"
 
 
 #include "particles/ParticleSolver.inl"
@@ -44,8 +45,6 @@ int main (int argc, char ** argv)
     }
 
     
-
-
     FlowSolver<double>     *flow_solver     = new FlowSolver<double>();
     ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, particle_dist, mesh);
     cout << endl;
@@ -76,8 +75,10 @@ int main (int argc, char ** argv)
     }
     printf("Done!\n\n");
 
-    particle_solver->print_logger_stats(ntimesteps);
-
+    if (LOGGER)
+    {
+        particle_solver->print_logger_stats(ntimesteps, program_ticks /  CLOCKS_PER_SEC);
+    }
     cout << "\nProgram Runtime: " << program_ticks /  CLOCKS_PER_SEC << "s" << endl;
     cout <<   "Output Time:     " << output_ticks /  CLOCKS_PER_SEC  << "s" << endl;
 

@@ -13,7 +13,8 @@ bool check_particle_posistion(Mesh<double> *mesh, uint64_t correct_cell, vec<dou
 {
     Particle<double> *p = new Particle<double>(mesh, start, velocity, vec<double>{0, 0, 0});
 
-    particle_logger logger = {0, 0, 0, 0, 0};
+    particle_logger logger;
+    memset(&logger, 0, sizeof(particle_logger));
     p->timestep(mesh, 1.0, &logger);
 
     return p->cell == correct_cell;

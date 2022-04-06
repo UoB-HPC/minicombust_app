@@ -37,6 +37,8 @@ namespace minicombust::particles
                 const vec<T> c = *A - *C;
 
                 return abs(dot_product(cross_product(a, b), c)) / 6.0;
+
+                // logger->flops  += 31;
             }
 
             bool check_cell(uint64_t current_cell, Mesh<T> *mesh)
@@ -56,7 +58,8 @@ namespace minicombust::particles
                 // if (PARTICLE_DEBUG)  cout << "\t\tpartial_volumes - total  " << partial_volumes-total_volume << endl;
                 if (abs(partial_volumes-total_volume) < 5.0e-10)  return true;
                 return false;
-
+                
+                // logger->flops  += 48;
             }
 
             void update_cell(Mesh<T> *mesh, particle_logger *logger)
@@ -67,6 +70,14 @@ namespace minicombust::particles
                     if (PARTICLE_DEBUG)  cout << "\t\tParticle is still in cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
                     x0 = x1;
                     v0 = v1;
+
+                    if (LOGGER)
+                    {
+                        logger->flops  += 48;
+                        logger->loads  += 9 * sizeof(vec<T>) + 8 * sizeof(uint64_t);  // 8 vertexes + 8 indexes + position
+                        logger->stores += 2 * sizeof(vec<T>);     // 2 vectors(position, velocity)
+                        logger->cell_checks++;
+                    }
                 } 
                 else
                 {
@@ -98,7 +109,7 @@ namespace minicombust::particles
                         uint64_t intercepted_face_id = 0;
                         uint64_t intercepted_faces   = 0;
 
-                        logger->cell_checks++;
+                        
 
                         for (int face = 0; face < 6; face++)
                         {
@@ -131,13 +142,25 @@ namespace minicombust::particles
                                 if (PARTICLE_DEBUG)  printf("\t\t\t%.20f == %.20f\n", LHS, RHS);
                             }
                         }
+
+                        if (LOGGER)
+                        {
+                            logger->flops  += 840;
+                            logger->loads  += 10 * sizeof(vec<T>) + 9 * sizeof(uint64_t);  // 8 vertexes + 8 indexes + cell_centre + cell_id 
+                            logger->stores += 2 * sizeof(vec<T>) + 1 * sizeof(uint64_t);   // 2 vectors(position, velocity) + cell index
+                            logger->cell_checks++;
+                        }
+
                         
                         if (intercepted_faces > 1)
                         {
                             vec<T> r = vec<T> { static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX) } ;
                             artificial_A = mesh->cell_centres[cell] + 0.1 * r*mesh->cell_size_vector;
                             if (PARTICLE_DEBUG)  cout << "\t\t\tNo faces, artificial position " <<  print_vec(artificial_A) << endl;
-                            logger->position_adjustments++;
+                            if (LOGGER)
+                            {
+                                logger->position_adjustments++;
+                            }
                             continue;
                         }
 
@@ -149,8 +172,11 @@ namespace minicombust::particles
                         {
                             if (PARTICLE_DEBUG)  cout << "\t\tParticle decayed after leaving the grid, x1: " << print_vec(x1) << " " << cell <<  endl ;
                             decayed = true;
-                            logger->boundary_intersections++;
-                            logger->decayed_particles++;
+                            if (LOGGER)
+                            {   
+                                logger->boundary_intersections++;
+                                logger->decayed_particles++;
+                            }
                             return;
                         }
 
@@ -192,10 +218,10 @@ namespace minicombust::particles
             
             bool wall  = false;
 
-            T mass        = 0.01;          // DUMMY_VAL Current mass (kg)
+            T mass        = 0.1;           // DUMMY_VAL Current mass (kg)
             T temp        = 373.0;         // DUMMY_VAL Current surface temperature (Kelvin)
             T density     = 1.0;           // DUMMY_VAL Current density (kg/m^3)
-            T diameter    = 0.1;           // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
+            T diameter    = 0.01;          // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
 
 
@@ -222,8 +248,15 @@ namespace minicombust::particles
                 if (decayed)  return cell;
 
                 // if (PARTICLE_DEBUG)  cout << "Beginning of timestep: x0: " << print_vec(x0) << " v0 " << print_vec(v0) << endl; 
-                x1 = x0 + v1 * delta;
+                x1 = x0 + v0 * delta;
                 v1 = v0 + a1 * delta;
+
+                if (LOGGER)
+                {
+                    logger->flops  += 12;
+                    logger->loads  += 4 * sizeof(vec<T>);  // 3 vectors(position, velocity, acceleration)
+                    logger->stores += 2 * sizeof(vec<T>);  // 2 vectors(position, velocity)
+                }
                 // if (PARTICLE_DEBUG)  cout << "End of timestep: x1: " << print_vec(x1) << " v1 " << print_vec(v1) << endl; 
                
                 // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
@@ -232,20 +265,21 @@ namespace minicombust::particles
                 return cell; 
             } 
 
-            void solve_spray(Mesh<T> *mesh, double delta)
+            inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger)
             {
                 // Inputs from flow: relative_acc, relative_gas_liq_vel, kinematic viscoscity?, air_temp, air_pressure
                 // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant
                 // Calculated outputs: acceleration, droplet surface temperature, droplet mass, droplet diameter
                 // Calculated outputs for flow: evaporated mass?
+                // if (decayed) return;
 
                 // TODO: Remove DUMMY_VALs
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub
-                const vec<T> relative_acc                = {1.0, 1.0, 1.0};               // DUMMY_VAL Relative acceleration between the gas and liquid phase.
-                const vec<T> relative_drop_vel           = relative_acc * delta;          // DUMMY_VAL Relative velocity between the gas and liquid phase.
-                const T relative_gas_liq_vel             = 0.1;                           // DUMMY_VAL What is this?
+                const vec<T> relative_drop_acc           = {0.01, 0.01, 0.01};            // DUMMY_VAL Relative acceleration between droplet and the fluid
+                const vec<T> relative_drop_vel           = relative_drop_acc * delta;     // DUMMY_VAL Relative velocity between droplet and the fluid
+                const T relative_gas_liq_vel             = 0.1;                           // DUMMY_VAL Relative acceleration between the gas and liquid phase.
 
-                const T omega               = 1.0;                                        // DUMMY_VAL What is this?
+                const T omega               = 0.1;                                        // DUMMY_VAL What is this?
                 const T kinematic_viscosity = 1.48e-5;                                    // DUMMY_VAL 
                 const T reynolds            = density * relative_gas_liq_vel * diameter / kinematic_viscosity;
 
@@ -255,10 +289,18 @@ namespace minicombust::particles
                 const T drag_coefficient = ( reynolds <= 1000 ) ? 24 * (1 + 0.15 * pow(reynolds, 0.687)) : 0.424;
 
                 // const vec<T> body_force    = Should we account for this?
-                const vec<T> virtual_force = -0.5 * density * omega * relative_acc;
-                const vec<T> drag_force    = drag_coefficient * reynolds  * 0.5 * density * relative_gas_liq_vel * relative_drop_vel * droplet_frontal_area;
+                const vec<T> virtual_force = (-0.5 * density * omega) * relative_drop_acc;
+                const vec<T> drag_force    = (drag_coefficient * reynolds  * 0.5 * density * relative_gas_liq_vel *  droplet_frontal_area) * relative_drop_vel;
                 
                 a1 = (virtual_force + drag_force) / mass; 
+                
+                if (LOGGER)
+                {
+                    logger->flops  += 29;
+                    logger->loads  += 3 * sizeof(vec<T>) + 3 * sizeof(T);  // 3 vectors(drop, rel drop, gas_liq velocities), 3 fields(diameter, density, mass)
+                    logger->stores += 1 * sizeof(vec<T>);                  // Acceleration
+                }
+
 
 
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
@@ -285,8 +327,14 @@ namespace minicombust::particles
                 temp     = temp + temp_delta * delta; // Double check + or -
                 mass     = mass + mass_delta * delta;
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
-                
-                // SOLVE SPRAY BREAKUP MODEL - 
+
+                if (LOGGER)
+                {
+                    logger->flops  += 36;
+                    logger->loads  += 3 * sizeof(T);     // 3 fields (air_temp, pressure, temp)
+                    logger->stores += 3 * sizeof(T);     // 3 fields (temp, mass, diameter)
+                }
+                // SOLVE SPRAY BREAKUP MODEL 
 
             }
 

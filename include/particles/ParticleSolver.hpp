@@ -41,14 +41,13 @@ namespace minicombust::particles
                 printf("Particle storage requirements:\n\tAllocating particles array, %llu particles (%.2f MB)\n", ntimesteps * particle_dist->particles_per_timestep, 
                                                                               (float)(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>))/1000000.0);
                 particles = (Particle<T> *)malloc(ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>));
-                
 
-                logger = {0, 0, 0, 0, 0};
+                memset(&logger, 0, sizeof(particle_logger));
             }
 
             void output_data(int timestep);
 
-            void print_logger_stats(int timesteps);
+            void print_logger_stats(int timesteps, double runtime);
 
             void update_flow_field(); // Synchronize point with flow solver
             

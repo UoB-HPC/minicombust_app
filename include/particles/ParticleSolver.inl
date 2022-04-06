@@ -41,22 +41,29 @@ namespace minicombust::particles
     }
 
     template<class T>
-    void ParticleSolver<T>::print_logger_stats(int timesteps)
+    void ParticleSolver<T>::print_logger_stats(int timesteps, double runtime)
     {
         cout << "Particle Solver Stats:                         " << endl;
-        cout << "\tParticles:                                   " << logger.num_particles                                                         << endl;
-        cout << "\tParticles (per iter):                        " << particle_dist->particles_per_timestep                                        << endl;
+        cout << "\tParticles:                                   " << ((double)logger.num_particles)                                                                   << endl;
+        cout << "\tParticles (per iter):                        " << particle_dist->particles_per_timestep                                                            << endl;
         cout << endl;
-        cout << "\tCell checks:                                 " << logger.cell_checks                                                           << endl;
-        cout << "\tCell checks (per iter):                      " << logger.cell_checks / timesteps                                               << endl;
-        cout << "\tCell checks (per particle, per iter):        " << logger.cell_checks / (logger.num_particles*timesteps)                        << endl;
+        cout << "\tCell checks:                                 " << ((double)logger.cell_checks)                                                                     << endl;
+        cout << "\tCell checks (per iter):                      " << ((double)logger.cell_checks) / timesteps                                                         << endl;
+        cout << "\tCell checks (per particle, per iter):        " << ((double)logger.cell_checks) / (((double)logger.num_particles)*timesteps)                        << endl;
         cout << endl;
-        cout << "\tStart adjustments:                           " << logger.position_adjustments                                                           << endl;
-        cout << "\tStart adjustments (per iter):                " << logger.position_adjustments / timesteps                                               << endl;
-        cout << "\tStart adjustments (per particle, per iter):  " << logger.position_adjustments / (logger.num_particles*timesteps)                        << endl;
+        cout << "\tEdge adjustments:                            " << ((double)logger.position_adjustments)                                                            << endl;
+        cout << "\tEdge adjustments (per iter):                 " << ((double)logger.position_adjustments) / timesteps                                                << endl;
+        cout << "\tEdge adjustments (per particle, per iter):   " << ((double)logger.position_adjustments) / (((double)logger.num_particles)*timesteps)               << endl;
         cout << endl;
-        cout << "\tBoundary Intersections:                      " << logger.boundary_intersections                                                << endl;
-        cout << "\tDecayed Particles:                           " << round(10000.*(logger.decayed_particles / logger.num_particles))/100. << "% " << endl;
+        cout << "\tBoundary Intersections:                      " << ((double)logger.boundary_intersections)                                                          << endl;
+        cout << "\tDecayed Particles:                           " << round(10000.*(((double)logger.decayed_particles) / ((double)logger.num_particles)))/100. << "% " << endl;
+
+        cout << endl;
+        cout << "\tGFLOPS:                                      " << ((double)logger.flops) / 1000000000.0                                                           << endl;
+        cout << "\tPerformance (GFLOPS/s):                      " << (((double)logger.flops) / 1000000000.0) / runtime                                               << endl;
+        cout << "\tMemory Loads (GB):                           " << ((double)logger.loads + (double)logger.stores) / 1000000000.0                                   << endl;    
+        cout << "\tMemory Stores (GB):                          " << ((double)logger.loads + (double)logger.stores) / 1000000000.0                                   << endl;    
+        cout << "\tMemory Bandwidth (GB):                       " << (((double)logger.loads + (double)logger.stores) / 1000000000.0) /runtime                        << endl;    
     }
 
 
@@ -73,7 +80,7 @@ namespace minicombust::particles
         // TODO: Reuse decaying particle space
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: particle_release.\n");
         particle_dist->emit_particles(particles + current_particle);
-        current_particle += particle_dist->particles_per_timestep;
+        current_particle     += particle_dist->particles_per_timestep;
         logger.num_particles += particle_dist->particles_per_timestep;
     }
 
@@ -85,7 +92,7 @@ namespace minicombust::particles
         // Solve spray equations
         for (int p = 0; p < current_particle; p++)
         {
-            particles[p].timestep(mesh, 0.1, &logger);
+            particles[p].solve_spray(mesh, 0.075, &logger);
         }
     }
 
@@ -97,12 +104,11 @@ namespace minicombust::particles
         // Update particle positions
         for (int p = 0; p < current_particle; p++)
         {
-            particles[p].solve_spray(mesh, 0.1);
+            particles[p].timestep(mesh, 0.075, &logger);
         }
-
     }
 
-    template<class T> 
+    template<class T>
     void ParticleSolver<T>::update_spray_source_terms()
     {
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_spray_source_terms.\n");
