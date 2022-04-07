@@ -55,7 +55,7 @@ int main (int argc, char ** argv)
     vtk_writer->write_mesh("minicombust");
     output_ticks += float(clock() - output);
 
-    uint64_t print_iteration = 70;
+    uint64_t print_iteration = 10;
 
     printf("Starting simulation..\n");
     for(int t = 0; t < ntimesteps; t++)

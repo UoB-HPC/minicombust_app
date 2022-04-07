@@ -264,7 +264,7 @@ namespace minicombust::particles
                 return cell; 
             } 
 
-            inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger)
+            inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vec<T> gas_acc, T gas_pressure, T gas_temperature)
             {
                 if (decayed) return;
 
@@ -278,7 +278,7 @@ namespace minicombust::particles
 
                 // TODO: Remove DUMMY_VALs
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub
-                const vec<T> relative_drop_acc           = a1 - mesh->gas_acceleration[cell];   // DUMMY_VAL Relative acceleration between droplet and the fluid
+                const vec<T> relative_drop_acc           = a1 - gas_acc;                  // DUMMY_VAL Relative acceleration between droplet and the fluid
                 const vec<T> relative_drop_vel           = relative_drop_acc * delta;     // DUMMY_VAL Relative velocity between droplet and the fluid
                 const T relative_gas_liq_vel             = magnitude(relative_drop_acc);  // DUMMY_VAL Relative acceleration between the gas and liquid phase.
 
@@ -308,7 +308,7 @@ namespace minicombust::particles
 
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
                 // Amount of spray evaporation is used in the modified transport equation of mixture fraction (each timestep).
-                const T air_pressure           = mesh->gas_pressure[cell];
+                const T air_pressure           = gas_pressure;
                 const T fuel_vapour_pressure   = exp((14.2-2777.) / (temp - 43));                     // DUMMY_VAL fuel vapor at drop surface (kP)
                 const T pressure_relation      = air_pressure / fuel_vapour_pressure;                 // DUMMY_VAL Clausius-Clapeyron relation. air pressure / fuel vapour pressure.
                 const T fuel_pressure          = 29. / 100.;                                          // DUMMY_VAL molecular weight air / molecular weight fuel
@@ -320,7 +320,7 @@ namespace minicombust::particles
                 const T mass_delta           = 2 * M_PI * diameter * (thermal_conductivity / specific_heat) * log(1 + mass_transfer);       // Rate of fuel evaporation
 
                 const T latent_heat       = 346.0 * pow((548. - temp) / (548. - 333.), 0.38);                                               // DUMMY_VAL Latent heat of fuel vaporization (kJ/kg)
-                const T air_temp          = mesh->gas_temperature[cell];                                                                    // DUMMY_VAL Gas temperature?
+                const T air_temp          = gas_temperature;                                                                    // DUMMY_VAL Gas temperature?
                 const T air_heat_transfer = 2 * M_PI * fuel_vapour_pressure * (air_temp - temp) * log(1 + mass_transfer) / mass_transfer;   // The heat transferred from air to fuel
                 const T evaporation_heat  = mass_delta * latent_heat;                                                                       // The heat absorbed through evaporation
                 const T temp_delta        = (air_heat_transfer - evaporation_heat) / (specific_heat * mass);                                // Temperature change of the droplet's surface

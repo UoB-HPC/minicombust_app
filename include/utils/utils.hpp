@@ -8,6 +8,8 @@
 
 #define PARTICLE_DEBUG 0
 #define LOGGER 1
+#define PARTICLE_SOLVER_DEBUG 0
+
 
 namespace minicombust::utils 
 {
@@ -43,12 +45,32 @@ namespace minicombust::utils
 	        return *this;
         }
 
+        inline vec<T>& operator/=(const vec<T> rhs)
+        {
+            x /= rhs.x;
+            y /= rhs.y;
+            z /= rhs.z;
+	        return *this;
+        }
+
     };
 
     template<typename T>
     inline vec<T> operator+(vec<T> a, vec<T> b) 
     {
         vec<T> sum = {a.x + b.x, a.y + b.y, a.z + b.z};
+        return sum;
+    }
+    template<typename T>
+    inline vec<T> operator+(vec<T> a, T b) 
+    {
+        vec<T> sum = {a.x + b, a.y + b, a.z + b};
+        return sum;
+    }
+    template<typename T>
+    inline vec<T> operator+(T a, vec<T> b) 
+    {
+        vec<T> sum = {a + b.x, a + b.y, a + b.z};
         return sum;
     }
 
@@ -64,6 +86,13 @@ namespace minicombust::utils
     inline vec<T> operator/(vec<T> a, T b) 
     {
         vec<T> sum = {a.x / b, a.y / b, a.z / b};
+        return sum;
+    }
+
+    template<typename T>
+    inline vec<T> operator/(T a, vec<T> b) 
+    {
+        vec<T> sum = {a / b.x, a / b.y, a / b.z};
         return sum;
     }
 
@@ -130,6 +159,12 @@ namespace minicombust::utils
     inline T dot_product(vec<T> a, vec<T> b)
     {
         return a.x*b.x + a.y*b.y + a.z*b.z;
+    }
+
+    template<typename T> 
+    inline T dot_product(T a, vec<T> b)
+    {
+        return a*b.x + a*b.y + a*b.z;
     }
 
     template<typename T> 

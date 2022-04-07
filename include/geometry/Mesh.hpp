@@ -83,62 +83,71 @@ namespace minicombust::geometry
             vec<T> *particle_momentum_rate;          // particle_momentum_rate
 
             // Flow source terms
-                // Inputs from flow: relative_acc, relative_gas_liq_vel, kinematic viscoscity?, air_temp, air_pressure
+            // Inputs from flow: relative_acc, relative_gas_liq_vel, kinematic viscoscity?, air_temp, air_pressure
             vec<T> *gas_acceleration;
+            vec<T> *gas_acceleration_gradient;
             T      *gas_pressure;
+            T      *gas_pressure_gradient;
             T      *gas_temperature;
+            T      *gas_temperature_gradient;
 
             Mesh(uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours) 
             : points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours)
             {
                 // Allocate space for and calculate cell centre co-ordinates
                 const size_t mesh_cell_centre_size = mesh_size * sizeof(vec<T>);
-                cell_centres = (vec<T> *)malloc(mesh_cell_centre_size);
-                printf("\nMesh storage requirements:\n\tAllocating %llu mesh cell centre points (%.2f MB)\n", mesh_size, (float)(mesh_cell_centre_size)/1000000.0);
-                calculate_cell_centres();
-
                 const size_t particles_per_point_size = points_size * sizeof(uint64_t);
-                particles_per_point = (uint64_t *)malloc(particles_per_point_size);
-                printf("\tAllocating array of particles per cell (%.2f MB)\n", (float)(particles_per_point_size)/1000000.0);
-
                 const size_t points_array_size           = points_size*sizeof(vec<double>);
                 const size_t cells_array_size            = mesh_size*cell_size*sizeof(uint64_t);
                 const size_t faces_array_size            = faces_size*sizeof(Face<T>);
                 const size_t cell_neighbours_array_size  = mesh_size*faces_per_cell*sizeof(uint64_t);
-                printf("\tAllocating %llu vertexes (%.2f MB)\n",          points_size,                    (float)(points_array_size)/1000000.0);
-                printf("\tAllocating %llu cells (%.2f MB)\n",             mesh_size,                      (float)(cells_array_size)/1000000.0);
-                printf("\tAllocating %llu faces (%.2f MB)\n",             faces_size,                     (float)(faces_array_size)/1000000.0);
-                printf("\tAllocating %llu cell neighbour indexes (%.2f MB)\n", mesh_size*faces_per_cell,  (float)(cell_neighbours_array_size)/1000000.0);
-
                 const size_t evaporated_fuel_mass_rate_size  = mesh_size*sizeof(T);
                 const size_t particle_energy_size            = mesh_size*sizeof(T);
                 const size_t particle_momentum_rate_size     = mesh_size*sizeof(vec<T>);
+                const size_t gas_acceleration_size           = mesh_size*sizeof(vec<T>);
+                const size_t gas_acceleration_gradient_size  = mesh_size*sizeof(vec<T>);
+                const size_t gas_pressure_size               = mesh_size*sizeof(T);
+                const size_t gas_pressure_gradient_size      = mesh_size*sizeof(T);
+                const size_t gas_temperature_size            = mesh_size*sizeof(T);
+                const size_t gas_temperature_gradient_size   = mesh_size*sizeof(T);
+                cell_centres = (vec<T> *)malloc(mesh_cell_centre_size);
+                particles_per_point = (uint64_t *)malloc(particles_per_point_size);
                 evaporated_fuel_mass_rate = (T *)     malloc(evaporated_fuel_mass_rate_size);
                 particle_energy_rate      = (T *)     malloc(particle_energy_size);
                 particle_momentum_rate    = (vec<T> *)malloc(particle_momentum_rate_size);
-                printf("\tAllocating evaporated fuel mass source term  (%.2f MB)\n",  (float)(evaporated_fuel_mass_rate_size)/1000000.0);
-                printf("\tAllocating particle energy source term       (%.2f MB)\n",  (float)(particle_energy_size)/1000000.0);
-                printf("\tAllocating particle_momentum source term     (%.2f MB)\n",  (float)(particle_momentum_rate_size)/1000000.0);
-
-                const size_t gas_acceleration_size  = mesh_size*sizeof(vec<T>);
-                const size_t gas_pressure_size      = mesh_size*sizeof(T);
-                const size_t gas_temperature_size   = mesh_size*sizeof(T);
-                gas_acceleration                    = (vec<T> *)malloc(gas_acceleration_size);
-                gas_pressure                        = (T *)     malloc(gas_pressure_size);
-                gas_temperature                     = (T *)     malloc(gas_temperature_size);
-                printf("\tAllocating gas acceleration source term  (%.2f MB)\n",  (float)(gas_acceleration_size)/1000000.0);
-                printf("\tAllocating gas pressure source term      (%.2f MB)\n",  (float)(gas_pressure_size)/1000000.0);
-                printf("\tAllocating gas temperature source term   (%.2f MB)\n",  (float)(gas_temperature_size)/1000000.0);
-
+                gas_acceleration                             = (vec<T> *)malloc(gas_acceleration_size);
+                gas_acceleration_gradient                    = (vec<T> *)malloc(gas_acceleration_size);
+                gas_pressure                                 = (T *)     malloc(gas_pressure_size);
+                gas_pressure_gradient                        = (T *)     malloc(gas_pressure_size);
+                gas_temperature                              = (T *)     malloc(gas_temperature_size);
+                gas_temperature_gradient                     = (T *)     malloc(gas_temperature_size);
                 const size_t total_size = mesh_cell_centre_size + particles_per_point_size + points_array_size + cells_array_size + 
                                           faces_array_size + cell_neighbours_array_size + 
                                           evaporated_fuel_mass_rate_size + particle_energy_size + particle_momentum_rate_size + 
-                                          gas_acceleration_size + gas_pressure_size + gas_temperature_size;
+                                          gas_acceleration_size + gas_pressure_size + gas_temperature_size +
+                                          gas_acceleration_gradient_size + gas_pressure_gradient_size + gas_temperature_gradient_size;
 
+                
+                printf("\nMesh storage requirements:\n");
+                printf("\tAllocating mesh cell centres                                (%.2f MB)\n",                 (float)(mesh_cell_centre_size)/1000000.0);
+                printf("\tAllocating array of particles per cell                      (%.2f MB)\n",                 (float)(particles_per_point_size)/1000000.0);
+                printf("\tAllocating vertexes                                         (%.2f MB) (%llu vertexes)\n", (float)(points_array_size)/1000000.0, points_size);
+                printf("\tAllocating cells                                            (%.2f MB) (%llu cells)\n",    (float)(cells_array_size)/1000000.0, mesh_size);
+                printf("\tAllocating faces                                            (%.2f MB) (%llu faces)\n",    (float)(faces_array_size)/1000000.0, faces_size);
+                printf("\tAllocating cell neighbour indexes                           (%.2f MB)\n",                 (float)(cell_neighbours_array_size)/1000000.0);
+                printf("\tAllocating evaporated fuel mass source term                 (%.2f MB)\n",                 (float)(evaporated_fuel_mass_rate_size)/1000000.0);
+                printf("\tAllocating particle energy source term                      (%.2f MB)\n",                 (float)(particle_energy_size)/1000000.0);
+                printf("\tAllocating particle_momentum source term                    (%.2f MB)\n",                 (float)(particle_momentum_rate_size)/1000000.0);
+                printf("\tAllocating gas acceleration source term                     (%.2f MB)\n",                 (float)(gas_acceleration_size)/1000000.0);
+                printf("\tAllocating gas acceleration gradient source term            (%.2f MB)\n",                 (float)(gas_acceleration_size)/1000000.0);
+                printf("\tAllocating gas pressure source term                         (%.2f MB)\n",                 (float)(gas_pressure_size)/1000000.0);
+                printf("\tAllocating gas pressure gradient source term                (%.2f MB)\n",                 (float)(gas_pressure_size)/1000000.0);
+                printf("\tAllocating gas temperature source term                      (%.2f MB)\n",                 (float)(gas_temperature_size)/1000000.0);
+                printf("\tAllocating gas temperature gradient source term             (%.2f MB)\n",                 (float)(gas_temperature_size)/1000000.0);
+                printf("\tAllocated mesh. Total size                                  (%.2f MB)\n\n",               (float)total_size/1000000.0);
+
+                calculate_cell_centres();
                 cell_size_vector = points[cells[H_VERTEX]] - points[cells[A_VERTEX]];
-
-                printf("\tAllocated mesh. Total size (%.2f MB)\n\n", (float)total_size/1000000.0);
-
 
                 // DUMMY VALUES 
                 for (int c = 0; c < mesh_size; c++)
