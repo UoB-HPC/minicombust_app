@@ -10,7 +10,7 @@ using namespace minicombust::utils;
 using namespace std;
 
 
-Mesh<double> *load_mesh(double mesh_dim, uint64_t elements_per_dim)
+Mesh<double> *load_mesh(double mesh_dim, uint64_t elements_per_dim, uint64_t max_cell_particles)
 {
     const uint64_t cell_size  = 8; // Cube
     const uint64_t faces_per_cell = 6; // Cube
@@ -164,7 +164,7 @@ Mesh<double> *load_mesh(double mesh_dim, uint64_t elements_per_dim)
         }
     }
 
-    Mesh<double> *mesh = new Mesh<double>(num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, cubes, faces, cell_neighbours);
+    Mesh<double> *mesh = new Mesh<double>(num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, cubes, faces, cell_neighbours, max_cell_particles);
 
     return mesh;
 }

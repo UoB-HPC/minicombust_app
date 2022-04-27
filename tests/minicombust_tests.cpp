@@ -11,7 +11,7 @@ using namespace minicombust::particles;
 
 bool check_particle_posistion(Mesh<double> *mesh, uint64_t correct_cell, vec<double> start, vec<double> velocity)
 {
-    Particle<double> *p = new Particle<double>(mesh, start, velocity, vec<double>{0, 0, 0});
+    Particle<double> *p = new Particle<double>(mesh, start, velocity, vec<double>{0, 0, 0}, 300.);
 
     particle_logger logger;
     memset(&logger, 0, sizeof(particle_logger));
@@ -23,7 +23,7 @@ bool check_particle_posistion(Mesh<double> *mesh, uint64_t correct_cell, vec<dou
 const double box_dim                  = 100;
 const uint64_t elements_per_dim       = 10;
 
-Mesh<double> *mesh    = load_mesh(box_dim, elements_per_dim);
+Mesh<double> *mesh    = load_mesh(box_dim, elements_per_dim, 0);
 
 TEST_CASE( "Particles can move from cell to cell correctly. (Cube Mesh)", "[particle]" ) {
 

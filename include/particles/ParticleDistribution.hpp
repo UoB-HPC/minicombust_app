@@ -62,7 +62,14 @@ namespace minicombust::particles
              { }
 
             T get_value() override {
-                T r = T { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
+                T r;
+                if constexpr(std::is_same_v<T, double>)
+                {
+                    r = static_cast<double>(rand())/RAND_MAX;
+                }
+                else{
+                    r = T { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
+                }
                 return lower + (r * (upper - lower));
             }
 
@@ -105,21 +112,23 @@ namespace minicombust::particles
             Distribution<vec<T>> *jerk;
             Distribution<T> *decay_rate;      
             Distribution<T> *decay_threshold; 
+            Distribution<T> *temperature; 
 
             // TODO: Read particle distribution from file
 
             // Generate fixed distribution
             ParticleDistribution (uint64_t particles_per_timestep, Mesh<T> *mesh, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
-                                  vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean, ProbabilityDistribution dist) :
+                                  vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean, T temp, ProbabilityDistribution dist) :
                                   particles_per_timestep(particles_per_timestep), mesh(mesh)
             {   
                 srand (time(NULL));
                 if (dist == UNIFORM)
                 {
-                    T var = 0.2;
-                    start_pos        = new UniformDistribution<vec<T>>(start - start*(var),       start + start*var);
+                    T var = 0.25;
+                    start_pos        = new UniformDistribution<vec<T>>(start - start*(var),       start    + start*var);
                     velocity         = new UniformDistribution<vec<T>>(vel_mean - vel_mean*(var), vel_mean + vel_mean*var);
                     acceleration     = new UniformDistribution<vec<T>>(acc_mean - acc_mean*(var), acc_mean + acc_mean*var);
+                    temperature      = new UniformDistribution<T>(temp - temp*(var), temp + temp*var);
                 }
                 else 
                 {
@@ -135,11 +144,16 @@ namespace minicombust::particles
                 decay_threshold  = new FixedDistribution<T>(decay_threshold_mean);  
             }
 
-            void emit_particles(Particle<T> *particles)
+            void emit_particles(Particle<T> *particles, uint64_t current_particle)
             {
-                for (int p = 0; p < particles_per_timestep; p++)
+                if (current_particle + particles_per_timestep >= mesh->max_cell_particles * mesh->mesh_size)
                 {
-                    particles[p] = Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value());
+                    cout << "Emitting more particles will cause an overflow. Not emitting." << endl;
+                    return;
+                }
+                for (int p = current_particle; p < current_particle + particles_per_timestep; p++)
+                {
+                    particles[p] = Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value(), temperature->get_value());
                 }
             }
                                   

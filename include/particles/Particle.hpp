@@ -10,7 +10,6 @@
 #include "geometry/Mesh.hpp"
 
 
-
 namespace minicombust::particles 
 {
     using namespace std; 
@@ -25,6 +24,12 @@ namespace minicombust::particles
     class Particle 
     {
         private:
+
+            inline T get_uniform_random(T lower, T upper) 
+            {
+                T r = ((T) rand()) / RAND_MAX;
+                return lower + (r * (upper - lower));
+            }
 
             double tetrahedral_volume(vec<T> *A, vec<T> *B, vec<T> *C, vec<T> *D)
             {
@@ -208,23 +213,23 @@ namespace minicombust::particles
             vec<T> a1 = 0.0;             // acceleration at next timestep
             
                         
-            uint64_t cell = -1;          // cell at timestep beginning
 
             bool decayed = false;
 
-            
-
-            
-            bool wall  = false;
-
             T mass        = 0.1;           // DUMMY_VAL Current mass (kg)
-            T temp        = 373.0;         // DUMMY_VAL Current surface temperature (Kelvin)
-            T density     = 1.0;           // DUMMY_VAL Current density (kg/m^3)
-            T diameter    = 0.01;          // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
+            T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
+            T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
+
+
+            T age = 0.0;
+
+            uint64_t cell = -1;          // cell at timestep beginning
 
 
 
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration) : x0(start), x1(start), v0(velocity), v1(velocity), a1(acceleration)
+
+
+            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp) : x0(start), x1(start), v0(velocity), v1(velocity), a1(acceleration), temp(temp)
             { 
                 for (int c = 0; c < mesh->mesh_size; c++)
                 {
@@ -239,8 +244,16 @@ namespace minicombust::particles
                     cout << "Particle is not in mesh!!!!" << endl;
                     exit(0);
                 }
+
+                diameter = 2 * pow(0.75 * mass / ( M_PI * 724.), 1./3.);
+
                 if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x0: " << print_vec(x0) << " v0: " << print_vec(v0) <<  endl ;
             }
+
+            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T mass, T temp, T diameter, uint64_t cell) : 
+                     x0(start), x1(start), v0(velocity), v1(velocity), a1(acceleration),
+                     mass(mass), temp(temp), diameter(diameter), cell(cell)
+            { }
 
             uint64_t timestep(Mesh<T> *mesh, double delta, particle_logger *logger)  // Update position
             {
@@ -248,7 +261,6 @@ namespace minicombust::particles
 
                 // if (PARTICLE_DEBUG)  cout << "Beginning of timestep: x0: " << print_vec(x0) << " v0 " << print_vec(v0) << endl; 
                 x1 = x0 + v0 * delta;
-                v1 = v0 + a1 * delta;
 
                 if (LOGGER)
                 {
@@ -264,9 +276,9 @@ namespace minicombust::particles
                 return cell; 
             } 
 
-            inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vec<T> gas_acc, T gas_pressure, T gas_temperature)
+            inline Particle<T> *solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vec<T> gas_vel, T gas_pressure, T gas_temperature)
             {
-                if (decayed) return;
+                if (decayed) return nullptr;
 
                 // Inputs from flow: relative_acc, kinematic viscoscity?, air_temp, air_pressure
                 // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant
@@ -278,24 +290,34 @@ namespace minicombust::particles
 
                 // TODO: Remove DUMMY_VALs
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub
-                const vec<T> relative_drop_acc           = a1 - gas_acc;                  // DUMMY_VAL Relative acceleration between droplet and the fluid
-                const vec<T> relative_drop_vel           = relative_drop_acc * delta;     // DUMMY_VAL Relative velocity between droplet and the fluid
-                const T relative_gas_liq_vel             = magnitude(relative_drop_acc);  // DUMMY_VAL Relative acceleration between the gas and liquid phase.
+                const vec<T> relative_drop_vel           = gas_vel - v1;                                         // DUMMY_VAL Relative velocity between droplet and the fluid
+                const T relative_drop_vel_mag            = magnitude(relative_drop_vel);                         // DUMMY_VAL Relative acceleration between the gas and liquid phase.
+                const vec<T> relative_drop_acc           = a1 ;                  // DUMMY_VAL Relative acceleration between droplet and the fluid
 
-                const T omega               = 0.1;                                        // DUMMY_VAL What is this?
-                const T kinematic_viscosity = 1.48e-5;                                    // DUMMY_VAL 
-                const T reynolds            = density * relative_gas_liq_vel * diameter / kinematic_viscosity;
+
+                const T gas_density  = 0.59;                                               // DUMMY VAL
+                const T fuel_density =  724. * (1 - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * pow(temp - 288.6, 2) / pow(548. - 288.6, 2));
+
+
+                const T omega               = 1;                                                                  // DUMMY_VAL What is this?
+                const T kinematic_viscosity = 1.48e-5 * pow(gas_temperature, 1.5) / (gas_temperature + 110.4);    // DUMMY_VAL 
+                const T reynolds            = gas_density * relative_drop_vel_mag * diameter / kinematic_viscosity;
 
                 const T droplet_frontal_area  = M_PI * (diameter / 2.) * (diameter / 2.);
 
                 // Drag coefficient
-                const T drag_coefficient = ( reynolds <= 1000 ) ? 24 * (1 + 0.15 * pow(reynolds, 0.687)) : 0.424;
+                const T drag_coefficient = ( reynolds <= 1000 ) ? 24 * (1 + 0.15 * pow(reynolds, 0.687))/reynolds : 0.424;
 
                 // const vec<T> body_force    = Should we account for this?
-                const vec<T> virtual_force = (-0.5 * density * omega) * relative_drop_acc;
-                const vec<T> drag_force    = (drag_coefficient * reynolds  * 0.5 * density * relative_gas_liq_vel *  droplet_frontal_area) * relative_drop_vel;
+                const vec<T> virtual_force = (-0.5 * gas_density * omega) * relative_drop_acc;
+                const vec<T> drag_force    = (drag_coefficient * reynolds  * 0.5 * gas_density * relative_drop_vel_mag *  droplet_frontal_area) * relative_drop_vel;
                 
-                a1 = (virtual_force + drag_force) / mass; 
+                
+
+                // cout << "vf " << print_vec(virtual_force) << " df " << print_vec(drag_force) << " m " << mass << endl;
+                a1 = ((virtual_force + drag_force) / mass) * delta;
+                v1 = v0 + a1 * delta;
+
                 
                 if (LOGGER)
                 {
@@ -304,36 +326,50 @@ namespace minicombust::particles
                     logger->stores += 1 * sizeof(vec<T>);                  // Acceleration
                 }
 
-
-
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
                 // Amount of spray evaporation is used in the modified transport equation of mixture fraction (each timestep).
                 const T air_pressure           = gas_pressure;
-                const T fuel_vapour_pressure   = exp((14.2-2777.) / (temp - 43));                     // DUMMY_VAL fuel vapor at drop surface (kP)
-                const T pressure_relation      = air_pressure / fuel_vapour_pressure;                 // DUMMY_VAL Clausius-Clapeyron relation. air pressure / fuel vapour pressure.
-                const T fuel_pressure          = 29. / 100.;                                          // DUMMY_VAL molecular weight air / molecular weight fuel
-                const T mass_fraction          = 1 / (1 + (pressure_relation - 1) * fuel_pressure);   // Mass fraction of fuel vapour at the droplet surface  
+                const T boiling_temp           = 333.;
+                const T critical_temp          = 548.;
+                const T a_constant             = (temp < boiling_temp) ? 13.7600 : 14.1964;
+                const T b_constant             = (temp < boiling_temp) ? 2651.13 : 2777.65;
+                const T fuel_vapour_pressure   = exp(a_constant - b_constant / (temp - 43));                         // DUMMY_VAL fuel vapor at drop surface (kP)
+                const T pressure_relation      = (air_pressure + fuel_vapour_pressure) / fuel_vapour_pressure;                     // DUMMY_VAL Clausius-Clapeyron relation. air pressure / fuel vapour pressure.
+                const T molecular_ratio        = 29. / 108.;                                              // DUMMY_VAL molecular weight air / molecular weight fuel
+                const T mass_fraction_fuel     = 1 / (1 + (pressure_relation - 1) * molecular_ratio);     // Mass fraction of fuel vapour at the droplet surface  
+                const T mass_fraction_fuel_ref = (2./3.) * mass_fraction_fuel;                            // Mass fraction of fuel vapour ref at the droplet surface  
+                const T mass_fraction_air_ref  = 1 - mass_fraction_fuel_ref;                              // Mass fraction of air vapour  ref at the droplet surface  
 
-                const T thermal_conductivity = 0.4;                                                                                         // DUMMY_VAL mean thermal conductivity. Calc each iteration?
-                const T specific_heat        = (0.363 + 0.000467 * temp) * (5-0.001 * density);                                             // DUMMY_VAL specific heat of the gas
-                const T mass_transfer        = mass_fraction / (1 - mass_fraction);
-                const T mass_delta           = 2 * M_PI * diameter * (thermal_conductivity / specific_heat) * log(1 + mass_transfer);       // Rate of fuel evaporation
+                const T thermal_conduct_air      = 0.04418;                                                                                                                        // DUMMY_VAL mean thermal conduct. Calc each iteration?
+                const T thermal_conduct_fuel     = 1.e-6*(13.2 - 0.0313 * (boiling_temp - 273)) * pow(temp / 273, 2 - 0.0372 * ((temp * temp) / (boiling_temp * boiling_temp)));   // DUMMY_VAL mean thermal conductivity. Calc each iteration?
+                const T thermal_conductivity     = mass_fraction_air_ref * thermal_conduct_air + mass_fraction_fuel_ref * thermal_conduct_fuel;                                    // DUMMY_VAL specific heat of the gas
 
-                const T latent_heat       = 346.0 * pow((548. - temp) / (548. - 333.), 0.38);                                               // DUMMY_VAL Latent heat of fuel vaporization (kJ/kg)
-                const T air_temp          = gas_temperature;                                                                    // DUMMY_VAL Gas temperature?
+
+                const T specific_heat_fuel       = (0.363 + 0.000467 * temp) * (5 - 0.001 * fuel_density);                                      // DUMMY_VAL specific heat of the gas
+                const T specific_heat_air        = 1044;                                                                                        // DUMMY_VAL specific heat of the gas
+                const T specific_heat            = mass_fraction_air_ref * specific_heat_air + mass_fraction_fuel_ref * specific_heat_fuel;     // DUMMY_VAL specific heat of the gas
+
+
+                const T mass_transfer        = mass_fraction_fuel / (1 - mass_fraction_fuel);
+                const T mass_delta           = 2 * M_PI * diameter * (thermal_conductivity / specific_heat_fuel) * log(1 + mass_transfer);       // Rate of fuel evaporation
+
+                
+                const T latent_heat       = 346.0 * pow((critical_temp - temp) / (critical_temp - boiling_temp), 0.38);                                               // DUMMY_VAL Latent heat of fuel vaporization (kJ/kg)
+                const T air_temp          = gas_temperature;                                                                                // DUMMY_VAL Gas temperature?
                 const T air_heat_transfer = 2 * M_PI * fuel_vapour_pressure * (air_temp - temp) * log(1 + mass_transfer) / mass_transfer;   // The heat transferred from air to fuel
                 const T evaporation_heat  = mass_delta * latent_heat;                                                                       // The heat absorbed through evaporation
                 const T temp_delta        = (air_heat_transfer - evaporation_heat) / (specific_heat * mass);                                // Temperature change of the droplet's surface
 
-                const T evaporation_constant = 1e-6;  // Evaporation constant
+                const T evaporation_constant = 8 * log(1 + mass_transfer) * thermal_conductivity / (fuel_density * specific_heat_fuel);  // Evaporation constant
 
                 temp     = temp + temp_delta * delta; // Double check + or -
-                mass     = mass + mass_delta * delta;
+                mass     = mass - mass_delta * delta;
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
 
-                mesh->evaporated_fuel_mass_rate[cell] += mass_delta;
-                mesh->particle_energy_rate[cell]      += air_heat_transfer - evaporation_heat;
-                mesh->particle_momentum_rate[cell]    += mass * v1;
+
+                mesh->evaporated_fuel_mass_rate[cell] += mass_delta * delta;                             // Do we need to worry about the if the particle is vaporized
+                mesh->particle_energy_rate[cell]      += (air_heat_transfer - evaporation_heat)*delta;
+                mesh->particle_momentum_rate[cell]    += mass * v1 * delta;
 
                 if (LOGGER)
                 {
@@ -341,13 +377,123 @@ namespace minicombust::particles
                     logger->loads  += 3 * sizeof(T);     // 3 fields (air_temp, pressure, temp)
                     logger->stores += 1 * sizeof(vec<T>) + 5 * sizeof(T);     // Momentum vector source term + 3 fields (temp, mass, diameter, mass_delta source, energy source)
                 }
+                // cout << endl << "Particle Drag Effects" << endl;
+                // cout << "\ta                     "     << print_vec(a1)     << endl;
+                // cout << "\tvel0                  "     << print_vec(v0)     << endl;
+                // cout << "\tvel1                  "     << print_vec(v1)     << endl;
+                // cout << "\tcell                  "     << cell     << endl;
+                // cout << "\tgas_vel               "     << print_vec(gas_vel)     << endl;
+                // cout << "\trelative_drop_acc     "     << print_vec(relative_drop_acc)     << endl;
+                // cout << "\trelative_drop_vel     "     << print_vec(relative_drop_vel)     << endl;
+                // cout << "\trelative_drop_vel_mag "  << relative_drop_vel_mag << endl;
+                // cout << "\tdroplet_frontal_area  "  << droplet_frontal_area << endl;
+                // cout << "\treynolds              "  << reynolds << endl;
+                // cout << "\tdrag_coefficient      "  << drag_coefficient << endl;
+                // cout << "\tkinematic_viscosity   "  << kinematic_viscosity << endl;
+                // cout << "\tmass                  "  << mass << endl;
+                // cout << "\tdiameter              "  << diameter << endl;
+                // cout << "\tvirtual_force         "  << print_vec(virtual_force) << endl;
+                // cout << "\tdrag_force            "  << print_vec(drag_force) << endl;
+                // cout << "\tnet force             "  << print_vec(drag_force + virtual_force) << endl;
+                // cout << "\tacc_delta             "  << print_vec(((virtual_force + drag_force) / mass) * delta) << endl;
+                // cout << "\tvel_delta             "  << print_vec(a1 * delta) << endl;
+                // cout << "\tpos_delta             "  << print_vec(a1 * delta * delta) << endl;
+                // cout << "\tposition              "  << print_vec(x1) << endl << endl ;
 
 
-                // SOLVE SPRAY BREAKUP MODEL 
+                // cout << "\ttemp                  "  << temp << endl;
+                // cout << "\tgas_temperature       "  << gas_temperature << endl;
+                // cout << "\tfuel_vapour_pressure  "  << fuel_vapour_pressure << endl;
+                // cout << "\tair_pressure          "  << air_pressure << endl;
+                // cout << "\tpressure_relation     "  << pressure_relation << endl;
+                // cout << "\tmass_fraction_fuel    "  << mass_fraction_fuel << endl;
+                // cout << "\tmass_fraction_air_ref "  << mass_fraction_air_ref << endl;
+                // cout << "\tmass_fraction_fuel_ref"  << mass_fraction_fuel_ref << endl;
+                // cout << "\tthermal_conduct_fuel  "  << thermal_conduct_fuel << endl;
+                // cout << "\tthermal_conductivity  "  << thermal_conductivity << endl;
+                // cout << "\tfuel_density          "  << fuel_density << endl;
+                // cout << "\tspecific_heat_fuel    "  << specific_heat_fuel << endl;
+                // cout << "\tspecific_heat_air     "  << specific_heat_air << endl;
+                // cout << "\tspecific_heat         "  << specific_heat << endl;
+                // cout << "\tmass_transfer         "  << mass_transfer << endl;
+                // cout << "\tlatent_heat           "  << latent_heat << endl;
+                // cout << "\tair_heat_transfer     "  << air_heat_transfer << endl;
+                // cout << "\tevaporation_heat      "  << evaporation_heat << endl;
+                // cout << "\tevaporation_constant  "  << evaporation_constant << endl;
+                // cout << "\ttemp_delta            "  << temp_delta << endl;
+                // cout << "\tmass_delta            "  << mass_delta << endl << endl;
+                // cout << "\tdecayed               "  << decayed << endl << endl;
+
+                if (mass < 0 || diameter < 0 || temp > critical_temp) // TODO: Diameter is actually NAN in this case. FIX.
+                {
+                    decayed = true;
+                    if (LOGGER)
+                    {   
+                        logger->decayed_particles++;
+                    }
+                    return nullptr;
+                }
+
+
+                // SOLVE SPRAY BREAKUP MODEL
+                age += delta;
+
+                const T breakup_age   = sqrt(fuel_density / (3*gas_density)) * (diameter / relative_drop_vel_mag);
+
+                const T surface_tension  = fuel_vapour_pressure * diameter / 4;
+                const T weber_droplet    = fuel_density * (relative_drop_vel_mag * relative_drop_vel_mag) * diameter / surface_tension;
+                const T weber_critical   = 0.5;
 
 
 
-                return;
+
+
+                if (age > breakup_age && weber_droplet > weber_critical)  // Ternary?
+                {
+                    // const T first_moment   = 0.6 * log(weber_critical / weber_droplet); 
+                    // const T second_moment  = - first_moment * weber_droplet; 
+                    
+                    // TODO: How do you get a random number from distribution 0.5 * (1 + erf((x - diameter - first_moment) / sqrt(2*second_moment))); 
+                    const T rand_prop = get_uniform_random(0.4, 0.6);
+                    const T diameter1 = rand_prop * diameter;
+                    const T diameter2 = diameter - diameter1;
+
+                    const T droplet1_ratio = diameter1 / diameter;
+
+                    const T mass1 = droplet1_ratio * mass;
+                    const T mass2 = mass - mass1;
+
+                    // Product droplet velocity is computed by adding a factor to the parent velocity
+                    const T magnitude = diameter / (2.0 * breakup_age);
+                    
+                    // Direction is a random unit vector normal to the relative velocity
+                    // Randomly seed x component of velocities, with knowledge that direction magnitude = 1 
+                    vec<T> velocity1, velocity2;
+                    velocity1.x = get_uniform_random(-1.0, 1.0);
+                    velocity2.x = get_uniform_random(-1.0, 1.0);
+
+                    // Random seed y component of velocities, with knowledge that direction magnitude = 1
+                    const T remaining_mag1 = 1 - (velocity1.x * velocity1.x);
+                    const T remaining_mag2 = 1 - (velocity2.x * velocity2.x);
+                    velocity1.y = get_uniform_random(-remaining_mag1, remaining_mag1);
+                    velocity2.y = get_uniform_random(-remaining_mag2, remaining_mag2);
+
+                    // Dot product = 0 for perpendicular vectors, solve for direction z components
+                    velocity1.z = - (relative_drop_vel.x * velocity1.x + relative_drop_vel.y * velocity1.y) / relative_drop_vel.z;
+                    velocity2.z = - (relative_drop_vel.x * velocity2.x + relative_drop_vel.y * velocity2.y) / relative_drop_vel.z;
+
+                    
+                    Particle<T> *droplet2 = new Particle<T>(mesh, x0, velocity2 * magnitude + v0, a1, mass2, temp, diameter2, cell);
+
+                    // Update parent to droplet1;
+                    v0   += velocity1 * magnitude;
+                    mass = mass1;
+                    age  = 0.0;
+
+                    return droplet2;
+
+                }
+                return nullptr;
             }
 
             

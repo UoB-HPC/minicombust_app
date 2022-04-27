@@ -17,7 +17,9 @@ namespace minicombust::particles
     {
         private:
 
-            uint64_t current_particle;
+            T delta;
+
+           
             Particle<T> *particles;
             ParticleDistribution<T> *particle_dist;
 
@@ -33,24 +35,26 @@ namespace minicombust::particles
 
             uint8_t *nodal_counter;
 
-            vec<T> *nodal_gas_acceleration;
+            vec<T> *nodal_gas_velocity;
             T      *nodal_gas_pressure;
             T      *nodal_gas_temperature;
 
         public:
 
+            uint64_t current_particle0;
+            uint64_t current_particle1;
+
             template<typename M>
-            ParticleSolver(uint64_t ntimesteps, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh) : particle_dist(particle_dist), mesh(mesh)
+            ParticleSolver(uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh) : delta(delta), particle_dist(particle_dist), mesh(mesh)
             {
-                
-                const size_t particles_array_size     = ntimesteps * particle_dist->particles_per_timestep * sizeof(Particle<T>);
+                const size_t particles_array_size     = mesh->max_cell_particles * mesh->mesh_size * sizeof(Particle<T>);
                 const size_t source_vector_array_size = mesh->points_size * sizeof(vec<T>);
                 const size_t source_scalar_array_size = mesh->points_size * sizeof(T);
                 const size_t source_uint8t_array_size = mesh->points_size * sizeof(uint8_t);
 
 
                 particles                         = (Particle<T> *)malloc(particles_array_size);
-                nodal_gas_acceleration            = (vec<T> *)     malloc(source_vector_array_size);
+                nodal_gas_velocity                = (vec<T> *)     malloc(source_vector_array_size);
                 nodal_gas_pressure                = (T *)          malloc(source_scalar_array_size);
                 nodal_gas_temperature             = (T *)          malloc(source_scalar_array_size);
 
@@ -59,8 +63,8 @@ namespace minicombust::particles
 
                 // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                 printf("Particle solver storage requirements:\n");
-                printf("\tAllocating particles array, particles                       (%.2f MB)\n",   (float)(particles_array_size)/1000000.0);
-                printf("\tAllocating nodal_gas_acceleration array                     (%.2f MB)\n",  ((float)source_vector_array_size)/1000000.);
+                printf("\tAllocating particles array, particles                       (%.2f MB)  particles_array_size %llu\n",   (float)(particles_array_size)/1000000.0, mesh->max_cell_particles * mesh->mesh_size);
+                printf("\tAllocating nodal_gas_velocity array                         (%.2f MB)\n",  ((float)source_vector_array_size)/1000000.);
                 printf("\tAllocating nodal_gas_pressure array                         (%.2f MB)\n",  ((float)source_scalar_array_size)/1000000.);
                 printf("\tAllocating nodal_gas_temperature array                      (%.2f MB)\n",  ((float)source_scalar_array_size)/1000000.);
                 printf("\tAllocating nodal_counter array,                             (%.2f MB)\n",  ((float)source_uint8t_array_size)/1000000.);
@@ -72,7 +76,7 @@ namespace minicombust::particles
                 memset(nodal_counter, 0, mesh->points_size*sizeof(uint8_t));
                 for (int n = 0; n < mesh->points_size; n++)
                 {
-                    nodal_gas_acceleration[n] = {0.0, 0.0, 0.0};
+                    nodal_gas_velocity[n]     = {0.0, 0.0, 0.0};
                     nodal_gas_pressure[n]     = 0.0;
                     nodal_gas_temperature[n]  = 0.0;
                 }
