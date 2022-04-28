@@ -126,7 +126,7 @@ namespace minicombust::particles
                 {
                     T var = 0.25;
                     start_pos        = new UniformDistribution<vec<T>>(start - start*(var),       start    + start*var);
-                    velocity         = new UniformDistribution<vec<T>>(vel_mean - vel_mean*(var), vel_mean + vel_mean*var);
+                    velocity         = new UniformDistribution<vec<T>>(vel_mean - vel_mean*(0.5), vel_mean + vel_mean*0.5);
                     acceleration     = new UniformDistribution<vec<T>>(acc_mean - acc_mean*(var), acc_mean + acc_mean*var);
                     temperature      = new UniformDistribution<T>(temp - temp*(var), temp + temp*var);
                 }
@@ -146,11 +146,7 @@ namespace minicombust::particles
 
             void emit_particles(Particle<T> *particles, uint64_t current_particle)
             {
-                if (current_particle + particles_per_timestep >= mesh->max_cell_particles * mesh->mesh_size)
-                {
-                    cout << "Emitting more particles will cause an overflow. Not emitting." << endl;
-                    return;
-                }
+                
                 for (int p = current_particle; p < current_particle + particles_per_timestep; p++)
                 {
                     particles[p] = Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value(), temperature->get_value());

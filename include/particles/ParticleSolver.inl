@@ -45,6 +45,7 @@ namespace minicombust::particles
         cout << "Particle Solver Stats:                         " << endl;
         cout << "\tParticles:                                   " << ((double)logger.num_particles)                                                                   << endl;
         cout << "\tParticles (per iter):                        " << particle_dist->particles_per_timestep                                                            << endl;
+        cout << "\tEmitted Particles:                           " << logger.emitted_particles                                                            << endl;
         cout << endl;
         cout << "\tCell checks:                                 " << ((double)logger.cell_checks)                                                                     << endl;
         cout << "\tCell checks (per iter):                      " << ((double)logger.cell_checks) / timesteps                                                         << endl;
@@ -56,6 +57,9 @@ namespace minicombust::particles
         cout << endl;
         cout << "\tBoundary Intersections:                      " << ((double)logger.boundary_intersections)                                                          << endl;
         cout << "\tDecayed Particles:                           " << round(10000.*(((double)logger.decayed_particles) / ((double)logger.num_particles)))/100. << "% " << endl;
+        cout << "\tBurnt Particles:                             " << ((double)logger.burnt_particles) << " " << endl;
+        cout << "\tBreakups:                                    " << ((double)logger.breakups) << " " << endl;
+        cout << "\tUnallowed breakups:                          " << ((double)logger.unsplit_particles) << " " << endl;
 
         cout << endl;
         cout << "\tGFLOPS:                                      " << ((double)logger.flops)  / 1000000000.0                                                          << endl;
@@ -78,11 +82,17 @@ namespace minicombust::particles
     void ParticleSolver<T>::particle_release()
     {
         // TODO: Reuse decaying particle space
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: particle_release.\n");
-        particle_dist->emit_particles(particles, current_particle1);
-        current_particle1     += particle_dist->particles_per_timestep;
-        logger.num_particles  += particle_dist->particles_per_timestep;
-        current_particle0 = current_particle1;
+        if ((current_particle1 + particle_dist->particles_per_timestep) < (mesh->max_cell_particles * mesh->mesh_size))
+        {
+            if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: particle_release.\n");
+            particle_dist->emit_particles(particles, current_particle1);
+            current_particle1         += particle_dist->particles_per_timestep;
+            logger.num_particles      += particle_dist->particles_per_timestep;
+            logger.emitted_particles  += particle_dist->particles_per_timestep;
+            current_particle0          = current_particle1;
+            return;
+        }
+        
     }
 
     template<class T> 
@@ -130,13 +140,13 @@ namespace minicombust::particles
             interp_gas_pre /= total_scalar_weight;
             interp_gas_tem /= total_scalar_weight;
             // if (p == 0)    cout << p << " " << print_vec(particles[p].a1) << " " << print_vec(particles[p].x1) << " " << particles[p].decayed << endl;
-            Particle<T> *daughter_droplet = particles[p].solve_spray(mesh, delta, &logger, interp_gas_vel, interp_gas_pre, interp_gas_tem);
+            Particle<T> *daughter_droplet = particles[p].solve_spray(mesh, delta, &logger, interp_gas_vel, interp_gas_pre, interp_gas_tem, current_particle1 < (mesh->max_cell_particles * mesh->mesh_size));
             // if (p == 0)    cout << p << " " << print_vec(particles[p].a1) << " " << print_vec(particles[p].x1) << " " << particles[p].decayed << endl << endl;
             
-            if (daughter_droplet != nullptr && current_particle1 < mesh->max_cell_particles * mesh->mesh_size)
+            if (daughter_droplet != nullptr )
             {
                 particles[current_particle1] = *daughter_droplet;
-                current_particle1++; 
+                current_particle1++;
                 logger.num_particles++;
             }
             // else if (current_particle1 >= mesh->max_cell_particles * mesh->mesh_size)

@@ -196,10 +196,14 @@ namespace minicombust::utils
 
     struct particle_logger {
         uint64_t num_particles;
+        uint64_t emitted_particles;
         uint64_t cell_checks;
         uint64_t position_adjustments;
         uint64_t boundary_intersections;
         uint64_t decayed_particles;
+        uint64_t unsplit_particles;
+        uint64_t breakups;
+        uint64_t burnt_particles;
         uint64_t flops;
         uint64_t loads; 
         uint64_t stores;

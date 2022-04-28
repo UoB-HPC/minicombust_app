@@ -154,7 +154,7 @@ namespace minicombust::geometry
                 // DUMMY VALUES 
                 for (int c = 0; c < mesh_size; c++)
                 {
-                    gas_velocity[c]     = {100., 100., 100.};
+                    gas_velocity[c]     = {100., 150., 25.};
                     gas_pressure[c]     = 960.;
                     gas_temperature[c]  = 550.;
                 }

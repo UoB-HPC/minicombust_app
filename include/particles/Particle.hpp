@@ -73,7 +73,6 @@ namespace minicombust::particles
                 {
                     if (PARTICLE_DEBUG)  cout << "\t\tParticle is still in cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
                     x0 = x1;
-                    v0 = v1;
 
                     if (LOGGER)
                     {
@@ -189,7 +188,6 @@ namespace minicombust::particles
                         {
                             found_cell = true;
                             x0 = x1;
-                            v0 = v1;
                             if (PARTICLE_DEBUG)  cout << "\t\tParticle has moved to cell " << cell << " " << ", x1: " << print_vec(x1) << endl ;
                         }
                         else { // Particle isn't in immediate neighbour
@@ -207,12 +205,9 @@ namespace minicombust::particles
             vec<T> x0 = 0.0;             // coordinates at timestep beginning
             vec<T> x1 = 0.0;             // coordinates at next timestep
 
-            vec<T> v0 = 0.0;             // velocity at timestep beginning
             vec<T> v1 = 0.0;             // velocity at next timestep
             
             vec<T> a1 = 0.0;             // acceleration at next timestep
-            
-                        
 
             bool decayed = false;
 
@@ -229,7 +224,7 @@ namespace minicombust::particles
 
 
 
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp) : x0(start), x1(start), v0(velocity), v1(velocity), a1(acceleration), temp(temp)
+            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp) : x0(start), x1(start), v1(velocity), a1(acceleration), temp(temp)
             { 
                 for (int c = 0; c < mesh->mesh_size; c++)
                 {
@@ -241,17 +236,16 @@ namespace minicombust::particles
                 }
                 if (cell == -1)
                 {
-                    cout << "Particle is not in mesh!!!!" << endl;
-                    exit(0);
+                    decayed = true;
                 }
 
                 diameter = 2 * pow(0.75 * mass / ( M_PI * 724.), 1./3.);
 
-                if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x0: " << print_vec(x0) << " v0: " << print_vec(v0) <<  endl ;
+                if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x0: " << print_vec(x0) << " v1: " << print_vec(v1) <<  endl ;
             }
 
             Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T mass, T temp, T diameter, uint64_t cell) : 
-                     x0(start), x1(start), v0(velocity), v1(velocity), a1(acceleration),
+                     x0(start), x1(start), v1(velocity), a1(acceleration),
                      mass(mass), temp(temp), diameter(diameter), cell(cell)
             { }
 
@@ -260,7 +254,7 @@ namespace minicombust::particles
                 if (decayed)  return cell;
 
                 // if (PARTICLE_DEBUG)  cout << "Beginning of timestep: x0: " << print_vec(x0) << " v0 " << print_vec(v0) << endl; 
-                x1 = x0 + v0 * delta;
+                x1 = x0 + v1 * delta;
 
                 if (LOGGER)
                 {
@@ -276,7 +270,7 @@ namespace minicombust::particles
                 return cell; 
             } 
 
-            inline Particle<T> *solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vec<T> gas_vel, T gas_pressure, T gas_temperature)
+            inline Particle<T> *solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vec<T> gas_vel, T gas_pressure, T gas_temperature, bool breakup)
             {
                 if (decayed) return nullptr;
 
@@ -316,7 +310,7 @@ namespace minicombust::particles
 
                 // cout << "vf " << print_vec(virtual_force) << " df " << print_vec(drag_force) << " m " << mass << endl;
                 a1 = ((virtual_force + drag_force) / mass) * delta;
-                v1 = v0 + a1 * delta;
+                v1 = v1 + a1 * delta;
 
                 
                 if (LOGGER)
@@ -379,7 +373,6 @@ namespace minicombust::particles
                 }
                 // cout << endl << "Particle Drag Effects" << endl;
                 // cout << "\ta                     "     << print_vec(a1)     << endl;
-                // cout << "\tvel0                  "     << print_vec(v0)     << endl;
                 // cout << "\tvel1                  "     << print_vec(v1)     << endl;
                 // cout << "\tcell                  "     << cell     << endl;
                 // cout << "\tgas_vel               "     << print_vec(gas_vel)     << endl;
@@ -430,68 +423,81 @@ namespace minicombust::particles
                     if (LOGGER)
                     {   
                         logger->decayed_particles++;
+                        logger->burnt_particles++;
                     }
                     return nullptr;
                 }
 
 
-                // SOLVE SPRAY BREAKUP MODEL
-                age += delta;
-
-                const T breakup_age   = sqrt(fuel_density / (3*gas_density)) * (diameter / relative_drop_vel_mag);
-
-                const T surface_tension  = fuel_vapour_pressure * diameter / 4;
-                const T weber_droplet    = fuel_density * (relative_drop_vel_mag * relative_drop_vel_mag) * diameter / surface_tension;
-                const T weber_critical   = 0.5;
-
-
-
-
-
-                if (age > breakup_age && weber_droplet > weber_critical)  // Ternary?
+                if (breakup)
                 {
-                    // const T first_moment   = 0.6 * log(weber_critical / weber_droplet); 
-                    // const T second_moment  = - first_moment * weber_droplet; 
-                    
-                    // TODO: How do you get a random number from distribution 0.5 * (1 + erf((x - diameter - first_moment) / sqrt(2*second_moment))); 
-                    const T rand_prop = get_uniform_random(0.4, 0.6);
-                    const T diameter1 = rand_prop * diameter;
-                    const T diameter2 = diameter - diameter1;
 
-                    const T droplet1_ratio = diameter1 / diameter;
+                    // SOLVE SPRAY BREAKUP MODEL
+                    age += delta;
 
-                    const T mass1 = droplet1_ratio * mass;
-                    const T mass2 = mass - mass1;
+                    const T breakup_age   = sqrt(fuel_density / (3*gas_density)) * (diameter / (2.0*relative_drop_vel_mag));
 
-                    // Product droplet velocity is computed by adding a factor to the parent velocity
-                    const T magnitude = diameter / (2.0 * breakup_age);
-                    
-                    // Direction is a random unit vector normal to the relative velocity
-                    // Randomly seed x component of velocities, with knowledge that direction magnitude = 1 
-                    vec<T> velocity1, velocity2;
-                    velocity1.x = get_uniform_random(-1.0, 1.0);
-                    velocity2.x = get_uniform_random(-1.0, 1.0);
+                    const T surface_tension  = fuel_vapour_pressure * diameter / 4;
+                    const T weber_droplet    = fuel_density * (relative_drop_vel_mag * relative_drop_vel_mag) * diameter / surface_tension;
+                    const T weber_critical   = 0.5;
 
-                    // Random seed y component of velocities, with knowledge that direction magnitude = 1
-                    const T remaining_mag1 = 1 - (velocity1.x * velocity1.x);
-                    const T remaining_mag2 = 1 - (velocity2.x * velocity2.x);
-                    velocity1.y = get_uniform_random(-remaining_mag1, remaining_mag1);
-                    velocity2.y = get_uniform_random(-remaining_mag2, remaining_mag2);
+                    if (age > breakup_age && weber_droplet > weber_critical)  // Ternary?
+                    {
+                        // const T first_moment   = 0.6 * log(weber_critical / weber_droplet); 
+                        // const T second_moment  = - first_moment * weber_droplet; 
+                        
+                        // TODO: How do you get a random number from distribution 0.5 * (1 + erf((x - diameter - first_moment) / sqrt(2*second_moment))); 
+                        const T rand_prop = get_uniform_random(0.3, 0.7);
+                        const T diameter1 = rand_prop * diameter;
+                        const T diameter2 = diameter - diameter1;
 
-                    // Dot product = 0 for perpendicular vectors, solve for direction z components
-                    velocity1.z = - (relative_drop_vel.x * velocity1.x + relative_drop_vel.y * velocity1.y) / relative_drop_vel.z;
-                    velocity2.z = - (relative_drop_vel.x * velocity2.x + relative_drop_vel.y * velocity2.y) / relative_drop_vel.z;
+                        const T droplet1_ratio = diameter1 / diameter;
 
-                    
-                    Particle<T> *droplet2 = new Particle<T>(mesh, x0, velocity2 * magnitude + v0, a1, mass2, temp, diameter2, cell);
+                        const T mass1 = droplet1_ratio * mass;
+                        const T mass2 = mass - mass1;
 
-                    // Update parent to droplet1;
-                    v0   += velocity1 * magnitude;
-                    mass = mass1;
-                    age  = 0.0;
+                        // Product droplet velocity is computed by adding a factor to the parent velocity
+                        const T magnitude = diameter / (2.0 * breakup_age);
+                        
+                        // Direction is a random unit vector normal to the relative velocity
+                        // Randomly seed x component of velocities, with knowledge that direction magnitude = 1 
+                        vec<T> velocity1, velocity2;
+                        velocity1.x = get_uniform_random(-1.0, 1.0);
+                        velocity2.x = get_uniform_random(-1.0, 1.0);
 
-                    return droplet2;
+                        // Random seed y component of velocities, with knowledge that direction magnitude = 1
+                        const T remaining_mag1 = sqrt(1 - (velocity1.x * velocity1.x));
+                        const T remaining_mag2 = sqrt(1 - (velocity2.x * velocity2.x));
+                        velocity1.y = get_uniform_random(-remaining_mag1, remaining_mag1);
+                        velocity2.y = get_uniform_random(-remaining_mag2, remaining_mag2);
 
+                        // Dot product = 0 for perpendicular vectors, solve for direction z components
+                        velocity1.z = - (relative_drop_vel.x * velocity1.x + relative_drop_vel.y * velocity1.y) / relative_drop_vel.z;
+                        velocity2.z = - (relative_drop_vel.x * velocity2.x + relative_drop_vel.y * velocity2.y) / relative_drop_vel.z;
+ 
+                        
+                        Particle<T> *droplet2 = new Particle<T>(mesh, x0, velocity2 * magnitude + v1, a1, mass2, temp, diameter2, cell);
+
+                        // Update parent to droplet1;
+                        v1   += velocity1 * magnitude;
+                        mass = mass1;
+                        age  = 0.0;
+
+                        if (LOGGER)
+                        {   
+                            logger->breakups++;
+                        }
+
+                        return droplet2;
+                    }
+
+                }
+                else
+                {
+                    if (LOGGER)
+                    {   
+                        logger->unsplit_particles++;
+                    }
                 }
                 return nullptr;
             }

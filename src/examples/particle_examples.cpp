@@ -7,7 +7,7 @@ using namespace minicombust::utils;
 
 ParticleDistribution<double> *load_particle_distribution(uint64_t particles_per_timestep, Mesh<double> *mesh)
 {
-    vec<double> position     = {5., 5., 5.};
+    vec<double> position     = {2., 2., 2.};
     vec<double> velocity     = {500., 150., 150.};
     vec<double> acceleration = {2., 10., 10.};
     vec<double> jerk         = {0.1, 0.1, 0.1};

@@ -11,7 +11,10 @@ TESTS := tests
 EXE := bin/minicombust
 TEST_EXE := bin/minicombust_tests
 
-
+ ifdef PAPI
+   MGCFD_INCS += -DPAPI
+   MGCFD_LIBS := -lpapi -lpfm
+ endif
 
 SOURCES := $(shell find $(SRC) -type f -name *.c -o -name *.cpp ! -name minicombust.cpp)
 OBJECTS := $(patsubst $(SRC)/%,build/%,$(SOURCES:.cpp=.o))

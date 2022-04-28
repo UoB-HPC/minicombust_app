@@ -136,17 +136,6 @@ namespace minicombust::visit
 
 
 
-
-
-
-
-
-
-
-
-
-
-
                 // // Print particle values for points
                 // int non_zero_points = 0;
                 // for(int p = 0; p < mesh->points_size; p++)  non_zero_points += (mesh->particles_per_point[p] != 0) ? 1 : 0;
@@ -168,19 +157,6 @@ namespace minicombust::visit
                 //     if (mesh->particles_per_point[p] > 0)  cout << mesh->particles_per_point[p] << " particles are present at " << p << endl;
                 // } 
                 // vtk_file << endl;
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
                 
@@ -210,7 +186,15 @@ namespace minicombust::visit
                 {
                     if (!particles[p].decayed) vtk_file << particles[p].mass << "\t";
                 } 
-                vtk_file << endl << endl;
+                vtk_file << endl;
+
+                vtk_file << "SCALARS temp float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(int p = 0; p < num_particles; p++)
+                {
+                    if (!particles[p].decayed) vtk_file << particles[p].temp << "\t";
+                } 
+                vtk_file << endl;
 
                 vtk_file << "VECTORS velocity float" << endl;
                 for(int p = 0; p < num_particles; p++)
