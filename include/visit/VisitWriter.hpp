@@ -46,7 +46,7 @@ namespace minicombust::visit
                 // TODO: Allow different datatypes
                 // Print point data
                 vtk_file << endl << "POINTS " << mesh->points_size << " double" << endl;
-                for(int p = 0; p < mesh->points_size; p++)
+                for(uint64_t p = 0; p < mesh->points_size; p++)
                 {
                     const int data_per_line = 10;
                     if (p % data_per_line == 0)  vtk_file << endl;
@@ -57,16 +57,16 @@ namespace minicombust::visit
 
                 // Print cell data
                 vtk_file << endl << "CELLS " << mesh->mesh_size << " " << mesh->mesh_size*mesh->cell_size + mesh->mesh_size << endl;
-                for(int c = 0; c < mesh->mesh_size; c++)
+                for(uint64_t c = 0; c < mesh->mesh_size; c++)
                 {
                     vtk_file << mesh->cell_size << " ";
-                    for (int v = 0; v < mesh->cell_size; v++)  vtk_file << mesh->cells[c*mesh->cell_size + v] << " ";
+                    for (uint64_t v = 0; v < mesh->cell_size; v++)  vtk_file << mesh->cells[c*mesh->cell_size + v] << " ";
                     vtk_file << endl;
                 }
 
                 // Print cell types
                 vtk_file << endl << "CELL_TYPES " << mesh->mesh_size;
-                for(int c = 0; c < mesh->mesh_size; c++)
+                for(uint64_t c = 0; c < mesh->mesh_size; c++)
                 {
                     const int data_per_line = 30;
                     if (c % data_per_line == 0)  vtk_file << endl;
@@ -161,9 +161,9 @@ namespace minicombust::visit
 
                 
                 uint64_t non_decayed = 0;
-                for (int p = 0; p < num_particles; p++)   if (!particles[p].decayed) non_decayed++;
+                for (uint64_t p = 0; p < num_particles; p++)   if (!particles[p].decayed) non_decayed++;
                 vtk_file << endl << "POINTS " << non_decayed << " float"  << endl;
-                for (int p = 0; p < num_particles; p++)
+                for (uint64_t p = 0; p < num_particles; p++)
                 {
                     if (!particles[p].decayed) vtk_file << print_vec(particles[p].x0) << endl;
                 }
@@ -173,7 +173,7 @@ namespace minicombust::visit
                 // Print particle values for points
                 vtk_file << endl << "VERTICES " << non_decayed << " " << non_decayed * 2  << endl;
                 uint64_t count = 0;
-                for(int p = 0; p < num_particles; p++)
+                for(uint64_t p = 0; p < num_particles; p++)
                 {
                     if (!particles[p].decayed) vtk_file << "1 " << count++ << "\t";
                 }
@@ -182,7 +182,7 @@ namespace minicombust::visit
                 vtk_file << endl << "POINT_DATA " << non_decayed << endl;
                 vtk_file << "SCALARS mass float" << endl;
                 vtk_file << "LOOKUP_TABLE default" << endl;
-                for(int p = 0; p < num_particles; p++)
+                for(uint64_t p = 0; p < num_particles; p++)
                 {
                     if (!particles[p].decayed) vtk_file << particles[p].mass << "\t";
                 } 
@@ -190,14 +190,14 @@ namespace minicombust::visit
 
                 vtk_file << "SCALARS temp float" << endl;
                 vtk_file << "LOOKUP_TABLE default" << endl;
-                for(int p = 0; p < num_particles; p++)
+                for(uint64_t p = 0; p < num_particles; p++)
                 {
                     if (!particles[p].decayed) vtk_file << particles[p].temp << "\t";
                 } 
                 vtk_file << endl;
 
                 vtk_file << "VECTORS velocity float" << endl;
-                for(int p = 0; p < num_particles; p++)
+                for(uint64_t p = 0; p < num_particles; p++)
                 {
                     if (!particles[p].decayed) vtk_file << print_vec(particles[p].v1) << "\t";
                 } 

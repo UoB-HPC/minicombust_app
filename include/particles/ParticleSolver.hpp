@@ -63,7 +63,7 @@ namespace minicombust::particles
 
                 // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                 printf("Particle solver storage requirements:\n");
-                printf("\tAllocating particles array, particles                       (%.2f MB)  particles_array_size %llu\n",   (float)(particles_array_size)/1000000.0, mesh->max_cell_particles * mesh->mesh_size);
+                printf("\tAllocating particles array, particles                       (%.2f MB)  particles_array_size %lu\n",   (float)(particles_array_size)/1000000.0, mesh->max_cell_particles * mesh->mesh_size);
                 printf("\tAllocating nodal_gas_velocity array                         (%.2f MB)\n",  ((float)source_vector_array_size)/1000000.);
                 printf("\tAllocating nodal_gas_pressure array                         (%.2f MB)\n",  ((float)source_scalar_array_size)/1000000.);
                 printf("\tAllocating nodal_gas_temperature array                      (%.2f MB)\n",  ((float)source_scalar_array_size)/1000000.);
@@ -74,7 +74,7 @@ namespace minicombust::particles
                 memset(&logger,           0, sizeof(particle_logger));
 
                 memset(nodal_counter, 0, mesh->points_size*sizeof(uint8_t));
-                for (int n = 0; n < mesh->points_size; n++)
+                for (uint64_t n = 0; n < mesh->points_size; n++)
                 {
                     nodal_gas_velocity[n]     = {0.0, 0.0, 0.0};
                     nodal_gas_pressure[n]     = 0.0;
@@ -82,9 +82,9 @@ namespace minicombust::particles
                 }
             }
 
-            void output_data(int timestep);
+            void output_data(uint64_t timestep);
 
-            void print_logger_stats(int timesteps, double runtime);
+            void print_logger_stats(uint64_t timesteps, double runtime);
 
             void update_flow_field(); // Synchronize point with flow solver
             

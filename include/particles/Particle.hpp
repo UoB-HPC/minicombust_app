@@ -53,7 +53,7 @@ namespace minicombust::particles
                 double total_volume  = abs(box_size.x*box_size.y*box_size.z);
 
                 double partial_volumes = 0.0;
-                for (int i=0; i < mesh->cell_size; i++)
+                for (uint64_t i=0; i < mesh->cell_size; i++)
                 {
                     vec<T> partial_box_size = mesh->points[current_cell_points[i]] - x1;
                     partial_volumes += abs(partial_box_size.x*partial_box_size.y*partial_box_size.z);
@@ -114,7 +114,7 @@ namespace minicombust::particles
 
                         
 
-                        for (int face = 0; face < 6; face++)
+                        for (uint64_t face = 0; face < 6; face++)
                         {
                             if ((1 << face) & face_mask)  continue;
 
@@ -218,7 +218,7 @@ namespace minicombust::particles
 
             T age = 0.0;
 
-            uint64_t cell = -1;          // cell at timestep beginning
+            uint64_t cell = MESH_BOUNDARY;          // cell at timestep beginning
 
 
 
@@ -226,7 +226,7 @@ namespace minicombust::particles
 
             Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp) : x0(start), x1(start), v1(velocity), a1(acceleration), temp(temp)
             { 
-                for (int c = 0; c < mesh->mesh_size; c++)
+                for (uint64_t c = 0; c < mesh->mesh_size; c++)
                 {
                     if (check_cell(c, mesh))  
                     {
@@ -234,7 +234,7 @@ namespace minicombust::particles
                         break;
                     }
                 }
-                if (cell == -1)
+                if (cell == MESH_BOUNDARY)
                 {
                     decayed = true;
                 }

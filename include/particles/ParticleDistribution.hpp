@@ -147,7 +147,7 @@ namespace minicombust::particles
             void emit_particles(Particle<T> *particles, uint64_t current_particle)
             {
                 
-                for (int p = current_particle; p < current_particle + particles_per_timestep; p++)
+                for (uint64_t p = current_particle; p < current_particle + particles_per_timestep; p++)
                 {
                     particles[p] = Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value(), temperature->get_value());
                 }

@@ -59,9 +59,9 @@ int main (int argc, char ** argv)
     uint64_t print_iteration = 1;
 
     printf("Starting simulation..\n");
-    for(int t = 0; t < ntimesteps; t++)
+    for(uint64_t t = 0; t < ntimesteps; t++)
     {
-        if (t % 10 == 0)  printf("Timestep %d of %llu..\n", t, ntimesteps);
+        if (t % 10 == 0)  printf("Timestep %lu of %lu..\n", t, ntimesteps);
         const clock_t timestep_time  = clock();
         cout << endl << "################################## Timestep" << t << " particles " << particle_solver->current_particle1 << " max " << (mesh->max_cell_particles * mesh->mesh_size) << endl;
         timestep(flow_solver, particle_solver);

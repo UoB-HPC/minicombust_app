@@ -10,19 +10,19 @@ namespace minicombust::particles
     using namespace minicombust::visit;
 
     template<class T>
-    void ParticleSolver<T>::output_data(int timestep)
+    void ParticleSolver<T>::output_data(uint64_t timestep)
     {
         mesh->clear_particles_per_point_array();
 
         // Assign each particles to one of the vertexes of the bounding cell.
-        for(int p = 0; p < current_particle1; p++)  // Iterate through each particle
+        for(uint64_t p = 0; p < current_particle1; p++)  // Iterate through each particle
         {
             Particle<T> *particle     = particles + p;
             if ( particle->decayed )  continue;
 
             double closest_dist       = __DBL_MAX__;
             uint64_t closest_vertex   = UINT64_MAX;
-            for (int i = 0; i < mesh->cell_size; i++)  // Iterate through the points of the cell that the particle is in
+            for (uint64_t i = 0; i < mesh->cell_size; i++)  // Iterate through the points of the cell that the particle is in
             {
                 const uint64_t point_index = mesh->cells[particle->cell*mesh->cell_size + i];
                 const double dist = magnitude(particle->x1 - mesh->points[point_index]);
@@ -40,7 +40,7 @@ namespace minicombust::particles
     }
 
     template<class T>
-    void ParticleSolver<T>::print_logger_stats(int timesteps, double runtime)
+    void ParticleSolver<T>::print_logger_stats(uint64_t timesteps, double runtime)
     {
         cout << "Particle Solver Stats:                         " << endl;
         cout << "\tParticles:                                   " << ((double)logger.num_particles)                                                                   << endl;
@@ -100,7 +100,7 @@ namespace minicombust::particles
     {
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: solve_spray_equations.\n");
 
-        for (int c = 0; c < mesh->mesh_size; c++)
+        for (uint64_t c = 0; c < mesh->mesh_size; c++)
         {
             mesh->evaporated_fuel_mass_rate[c] = 0.0;
             mesh->particle_energy_rate[c]      = 0.0;
@@ -113,7 +113,7 @@ namespace minicombust::particles
         }
 
         // Solve spray equations
-        for (int p = 0; p < current_particle0; p++)
+        for (uint64_t p = 0; p < current_particle0; p++)
         {
             vec<T> total_vector_weight   = {0.0, 0.0, 0.0};
             T total_scalar_weight        = 0.0;
@@ -121,7 +121,7 @@ namespace minicombust::particles
             vec<T> interp_gas_vel = {0.0, 0.0, 0.0};
             T interp_gas_pre      = 0.0;
             T interp_gas_tem      = 0.0;
-            for (int n = 0; n < mesh->cell_size; n++)
+            for (uint64_t n = 0; n < mesh->cell_size; n++)
             {
                 const uint64_t node           = mesh->cells[particles[p].cell*mesh->cell_size + n]; 
                 const vec<T> node_to_particle = particles[p].x1 - mesh->points[mesh->cells[particles[p].cell*mesh->cell_size + n]];
@@ -162,7 +162,7 @@ namespace minicombust::particles
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_particle_positions.\n");
         
         // Update particle positions
-        for (int p = 0; p < current_particle0; p++)
+        for (uint64_t p = 0; p < current_particle0; p++)
         {   
             particles[p].timestep(mesh, delta, &logger);
         }
@@ -186,7 +186,7 @@ namespace minicombust::particles
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: interpolate_data.\n");
 
         memset(nodal_counter, 0, mesh->points_size * sizeof(uint8_t));
-        for (int n = 0; n < mesh->points_size; n++)
+        for (uint64_t n = 0; n < mesh->points_size; n++)
         {
             nodal_gas_velocity[n]     = {0.0, 0.0, 0.0};
             nodal_gas_pressure[n]     = 0.0;
@@ -194,7 +194,7 @@ namespace minicombust::particles
         }
 
         
-        for (int c = 0; c < mesh->mesh_size; c++)
+        for (uint64_t c = 0; c < mesh->mesh_size; c++)
         {
             // Can we mark all neighbours that we need for average
             vec<T> vel           = mesh->gas_velocity[c];
@@ -204,7 +204,7 @@ namespace minicombust::particles
             T temp               = mesh->gas_temperature[c];
             T temp_grad          = mesh->gas_temperature_gradient[c];
             
-            for (int n = 0; n < mesh->cell_size; n++)
+            for (uint64_t n = 0; n < mesh->cell_size; n++)
             {
                 const uint64_t point_id = mesh->cells[c*mesh->cell_size + n];
                 nodal_counter[point_id]++;
@@ -220,7 +220,7 @@ namespace minicombust::particles
 
 
         
-        for (int n = 0; n < mesh->points_size; n++)
+        for (uint64_t n = 0; n < mesh->points_size; n++)
         {
             const T node_neighbours       = 8; // Cube specific
             const T boundary_neighbours   = node_neighbours - nodal_counter[n]; // If nodal counter is not 4, we are on a boundary

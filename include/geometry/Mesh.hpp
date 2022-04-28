@@ -133,9 +133,9 @@ namespace minicombust::geometry
                 printf("\nMesh storage requirements:\n");
                 printf("\tAllocating mesh cell centres                                (%.2f MB)\n",                 (float)(mesh_cell_centre_size)/1000000.0);
                 printf("\tAllocating array of particles per cell                      (%.2f MB)\n",                 (float)(particles_per_point_size)/1000000.0);
-                printf("\tAllocating vertexes                                         (%.2f MB) (%llu vertexes)\n", (float)(points_array_size)/1000000.0, points_size);
-                printf("\tAllocating cells                                            (%.2f MB) (%llu cells)\n",    (float)(cells_array_size)/1000000.0, mesh_size);
-                printf("\tAllocating faces                                            (%.2f MB) (%llu faces)\n",    (float)(faces_array_size)/1000000.0, faces_size);
+                printf("\tAllocating vertexes                                         (%.2f MB) (%lu vertexes)\n", (float)(points_array_size)/1000000.0, points_size);
+                printf("\tAllocating cells                                            (%.2f MB) (%lu cells)\n",    (float)(cells_array_size)/1000000.0, mesh_size);
+                printf("\tAllocating faces                                            (%.2f MB) (%lu faces)\n",    (float)(faces_array_size)/1000000.0, faces_size);
                 printf("\tAllocating cell neighbour indexes                           (%.2f MB)\n",                 (float)(cell_neighbours_array_size)/1000000.0);
                 printf("\tAllocating evaporated fuel mass source term                 (%.2f MB)\n",                 (float)(evaporated_fuel_mass_rate_size)/1000000.0);
                 printf("\tAllocating particle energy source term                      (%.2f MB)\n",                 (float)(particle_energy_size)/1000000.0);
@@ -152,7 +152,7 @@ namespace minicombust::geometry
                 cell_size_vector = points[cells[H_VERTEX]] - points[cells[A_VERTEX]];
 
                 // DUMMY VALUES 
-                for (int c = 0; c < mesh_size; c++)
+                for (uint64_t c = 0; c < mesh_size; c++)
                 {
                     gas_velocity[c]     = {100., 150., 25.};
                     gas_pressure[c]     = 960.;
