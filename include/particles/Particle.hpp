@@ -272,7 +272,7 @@ namespace minicombust::particles
 
             inline Particle<T> *solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vec<T> gas_vel, T gas_pressure, T gas_temperature, bool breakup)
             {
-                if (decayed) return nullptr;
+                // if (decayed) return nullptr;
 
                 // Inputs from flow: relative_acc, kinematic viscoscity?, air_temp, air_pressure
                 // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant

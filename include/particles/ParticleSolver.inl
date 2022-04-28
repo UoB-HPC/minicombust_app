@@ -115,6 +115,7 @@ namespace minicombust::particles
         // Solve spray equations
         for (uint64_t p = 0; p < current_particle0; p++)
         {
+            if (particles[p].decayed)  continue;;
             vec<T> total_vector_weight   = {0.0, 0.0, 0.0};
             T total_scalar_weight        = 0.0;
 
@@ -131,9 +132,9 @@ namespace minicombust::particles
                 
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
-                interp_gas_vel += weight           * nodal_gas_velocity[node];
-                interp_gas_pre += weight_magnitude * nodal_gas_pressure[node];
-                interp_gas_tem += weight_magnitude * nodal_gas_temperature[node];
+                interp_gas_vel        += weight           * nodal_gas_velocity[node];
+                interp_gas_pre        += weight_magnitude * nodal_gas_pressure[node];
+                interp_gas_tem        += weight_magnitude * nodal_gas_temperature[node];
             }
 
             interp_gas_vel /= total_vector_weight;
