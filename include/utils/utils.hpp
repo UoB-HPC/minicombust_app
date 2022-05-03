@@ -54,7 +54,13 @@ namespace minicombust::utils
             z /= rhs.z;
 	        return *this;
         }
+    };
 
+    template <typename T> 
+    struct vec_soa {
+        T *x;
+        T *y;
+        T *z;
     };
 
     template<typename T>
@@ -166,7 +172,7 @@ namespace minicombust::utils
     template<typename T> 
     inline T dot_product(T a, vec<T> b)
     {
-        return a*b.x + a*b.y + a*b.z;
+        return a*(b.x + b.y + b.z);
     }
 
     template<typename T> 
@@ -194,6 +200,16 @@ namespace minicombust::utils
             buffer << endl;
         }
         return buffer.str();
+    }
+
+    template<typename T> 
+    inline vec_soa<T> allocate_vec_soa(uint64_t n)
+    {
+        vec_soa<T> v;
+        v.x = (T*)malloc(n*sizeof(T));
+        v.y = (T*)malloc(n*sizeof(T));
+        v.z = (T*)malloc(n*sizeof(T));
+        return v;
     }
 
     struct particle_logger {

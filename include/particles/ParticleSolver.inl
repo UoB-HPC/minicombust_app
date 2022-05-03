@@ -210,56 +210,47 @@ namespace minicombust::particles
         const uint64_t mesh_size  = mesh->mesh_size; 
         const uint64_t cell_size  = mesh->cell_size; 
 
-        const vec<T> zero_vector = {0.0, 0.0, 0.0};
-
-        memset(nodal_counter,         0, point_size * sizeof(uint8_t));
-        memset(nodal_gas_velocity,    0, point_size * sizeof(vec<T>));
-        memset(nodal_gas_pressure,    0, point_size * sizeof(double));
-        memset(nodal_gas_temperature, 0, point_size * sizeof(double));
-        // for (uint64_t n = 0; n < point_size; n++)
-        // {
-        //     nodal_gas_velocity[n]     = zero_vector;
-        //     nodal_gas_pressure[n]     = 0.0;
-        //     nodal_gas_temperature[n]  = 0.0;
-        // }
+        memset(nodal_gas_velocity_soa.x,    0, point_size * sizeof(T));
+        memset(nodal_gas_velocity_soa.y,    0, point_size * sizeof(T));
+        memset(nodal_gas_velocity_soa.z,    0, point_size * sizeof(T));
+        memset(nodal_gas_pressure,          0, point_size * sizeof(T));
+        memset(nodal_gas_temperature,       0, point_size * sizeof(T));
 
         #pragma ivdep
         for (uint64_t c = 0; c < mesh_size; c++)
         {
             const uint64_t *cell       = mesh->cells + c*cell_size;
 
-            const vec<T> vel           = mesh->gas_velocity[c];
-            const vec<T> vel_grad      = mesh->gas_velocity_gradient[c];
-            const T pressure           = mesh->gas_pressure[c];
-            const T pressure_grad      = mesh->gas_pressure_gradient[c];
-            const T temp               = mesh->gas_temperature[c];
-            const T temp_grad          = mesh->gas_temperature_gradient[c];
-
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
             {
                 const uint64_t point_id = cell[n];
-                nodal_counter[point_id]++;
 
+                const T direction_x = mesh->points_soa.x[point_id] - mesh->cell_centres_soa.x[c];
+                const T direction_y = mesh->points_soa.y[point_id] - mesh->cell_centres_soa.y[c];
+                const T direction_z = mesh->points_soa.z[point_id] - mesh->cell_centres_soa.z[c];
 
-                vec<T> direction                  = mesh->points[point_id] - mesh->cell_centres[c];
-                nodal_gas_velocity[point_id]     += vel      + dot_product(vel_grad,      direction);
-                nodal_gas_pressure[point_id]     += pressure + dot_product(pressure_grad, direction);
-                nodal_gas_temperature[point_id]  += temp     + dot_product(temp_grad,     direction);
+                nodal_gas_velocity_soa.x[point_id] += mesh->gas_velocity_soa.x[c] + mesh->gas_velocity_gradient_soa.x[c] * (direction_x + direction_y + direction_z);
+                nodal_gas_velocity_soa.y[point_id] += mesh->gas_velocity_soa.y[c] + mesh->gas_velocity_gradient_soa.y[c] * (direction_x + direction_y + direction_z);
+                nodal_gas_velocity_soa.z[point_id] += mesh->gas_velocity_soa.z[c] + mesh->gas_velocity_gradient_soa.z[c] * (direction_x + direction_y + direction_z);
+                nodal_gas_pressure[point_id]       += mesh->gas_pressure[c]       + mesh->gas_pressure_gradient[c]       * (direction_x + direction_y + direction_z);
+                nodal_gas_temperature[point_id]    += mesh->gas_temperature[c]    + mesh->gas_temperature_gradient[c]    * (direction_x + direction_y + direction_z);
             }
         }
 
 
 
-        
+        #pragma ivdep
         for (uint64_t n = 0; n < point_size; n++)
         {
-            const T node_neighbours       = 8; // Cube specific
-            const T boundary_neighbours   = node_neighbours - nodal_counter[n]; // If nodal counter is not 4, we are on a boundary
+            const T node_neighbours       = 8;                                          // Cube specific
+            const T boundary_neighbours   = node_neighbours - mesh->cells_per_point[n]; // If nodal counter is not 8, we are on a boundary
 
-            nodal_gas_velocity[n]     = (nodal_gas_velocity[n]     + boundary_neighbours * (vec<T>){0.1, 0.1, 0.1}) / node_neighbours;
-            nodal_gas_pressure[n]     = (nodal_gas_pressure[n]     + boundary_neighbours * 960) / node_neighbours;
-            nodal_gas_temperature[n]  = (nodal_gas_temperature[n]  + boundary_neighbours * 560.) / node_neighbours;
+            nodal_gas_velocity_soa.x[n]    = (nodal_gas_velocity_soa.x[n]  + boundary_neighbours * mesh->dummy_gas_vel.x) / node_neighbours;
+            nodal_gas_velocity_soa.y[n]    = (nodal_gas_velocity_soa.y[n]  + boundary_neighbours * mesh->dummy_gas_vel.y) / node_neighbours;
+            nodal_gas_velocity_soa.z[n]    = (nodal_gas_velocity_soa.z[n]  + boundary_neighbours * mesh->dummy_gas_vel.z) / node_neighbours;
+            nodal_gas_pressure[n]          = (nodal_gas_pressure[n]        + boundary_neighbours * mesh->dummy_gas_pre)   / node_neighbours;
+            nodal_gas_temperature[n]       = (nodal_gas_temperature[n]     + boundary_neighbours * mesh->dummy_gas_tem)   / node_neighbours;
         }
 
         #ifdef PAPI
