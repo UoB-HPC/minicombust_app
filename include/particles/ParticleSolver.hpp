@@ -6,6 +6,11 @@
 #include "utils/utils.hpp"
 #include "particles/Particle.hpp"
 #include "particles/ParticleDistribution.hpp"
+#include "performance/PerformanceLogger.hpp"
+
+#ifdef PAPI
+using namespace minicombust::performance; 
+#endif
 
 namespace minicombust::particles 
 {
@@ -27,6 +32,10 @@ namespace minicombust::particles
             
             particle_logger logger;
             
+            #ifdef PAPI
+            PerformanceLogger<T> performance_logger;
+            #endif
+
             T flow_field;
 
             T domega_Z_dt; // For mixture fraction equation
@@ -80,6 +89,12 @@ namespace minicombust::particles
                     nodal_gas_pressure[n]     = 0.0;
                     nodal_gas_temperature[n]  = 0.0;
                 }
+
+                #ifdef PAPI
+                performance_logger.init_papi();
+                performance_logger.load_papi_events();
+                #endif
+
             }
 
             void output_data(uint64_t timestep);

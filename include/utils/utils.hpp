@@ -10,6 +10,8 @@
 #define LOGGER 1
 #define PARTICLE_SOLVER_DEBUG 0
 
+typedef long long int int128_t;
+typedef unsigned long long int uint128_t;
 
 namespace minicombust::utils 
 {
@@ -204,10 +206,6 @@ namespace minicombust::utils
         uint64_t unsplit_particles;
         uint64_t breakups;
         uint64_t burnt_particles;
-        uint64_t flops;
-        uint64_t loads; 
-        uint64_t stores;
-        uint64_t branches;
     };
 }
 

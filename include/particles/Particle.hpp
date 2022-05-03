@@ -42,7 +42,6 @@ namespace minicombust::particles
 
                 return abs(dot_product(cross_product(a, b), c)) / 6.0;
 
-                // logger->flops  += 31;
             }
 
             bool check_cell(uint64_t current_cell, Mesh<T> *mesh)
@@ -63,7 +62,6 @@ namespace minicombust::particles
                 if (abs(partial_volumes-total_volume) < 5.0e-10)  return true;
                 return false;
                 
-                // logger->flops  += 48;
             }
 
             void update_cell(Mesh<T> *mesh, particle_logger *logger)
@@ -76,9 +74,6 @@ namespace minicombust::particles
 
                     if (LOGGER)
                     {
-                        logger->flops  += 48;
-                        logger->loads  += 9 * sizeof(vec<T>) + 8 * sizeof(uint64_t);  // 8 vertexes + 8 indexes + position
-                        logger->stores += 2 * sizeof(vec<T>);     // 2 vectors(position, velocity)
                         logger->cell_checks++;
                     }
                 } 
@@ -148,9 +143,6 @@ namespace minicombust::particles
 
                         if (LOGGER)
                         {
-                            logger->flops  += 840;
-                            logger->loads  += 10 * sizeof(vec<T>) + 9 * sizeof(uint64_t);  // 8 vertexes + 8 indexes + cell_centre + cell_id 
-                            logger->stores += 2 * sizeof(vec<T>) + 1 * sizeof(uint64_t);   // 2 vectors(position, velocity) + cell index
                             logger->cell_checks++;
                         }
 
@@ -255,13 +247,6 @@ namespace minicombust::particles
 
                 // if (PARTICLE_DEBUG)  cout << "Beginning of timestep: x0: " << print_vec(x0) << " v0 " << print_vec(v0) << endl; 
                 x1 = x0 + v1 * delta;
-
-                if (LOGGER)
-                {
-                    logger->flops  += 12;
-                    logger->loads  += 4 * sizeof(vec<T>);  // 3 vectors(position, velocity, acceleration)
-                    logger->stores += 2 * sizeof(vec<T>);  // 2 vectors(position, velocity)
-                }
                 // if (PARTICLE_DEBUG)  cout << "End of timestep: x1: " << print_vec(x1) << " v1 " << print_vec(v1) << endl; 
                
                 // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
@@ -290,17 +275,17 @@ namespace minicombust::particles
 
 
                 const T gas_density  = 0.59;                                               // DUMMY VAL
-                const T fuel_density =  724. * (1 - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * pow(temp - 288.6, 2) / pow(548. - 288.6, 2));
+                const T fuel_density =  724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * pow(temp - 288.6, 2.) / pow(548. - 288.6, 2.));
 
 
-                const T omega               = 1;                                                                  // DUMMY_VAL What is this?
+                const T omega               = 1.;                                                                  // DUMMY_VAL What is this?
                 const T kinematic_viscosity = 1.48e-5 * pow(gas_temperature, 1.5) / (gas_temperature + 110.4);    // DUMMY_VAL 
                 const T reynolds            = gas_density * relative_drop_vel_mag * diameter / kinematic_viscosity;
 
                 const T droplet_frontal_area  = M_PI * (diameter / 2.) * (diameter / 2.);
 
                 // Drag coefficient
-                const T drag_coefficient = ( reynolds <= 1000 ) ? 24 * (1 + 0.15 * pow(reynolds, 0.687))/reynolds : 0.424;
+                const T drag_coefficient = ( reynolds <= 1000. ) ? 24 * (1. + 0.15 * pow(reynolds, 0.687))/reynolds : 0.424;
 
                 // const vec<T> body_force    = Should we account for this?
                 const vec<T> virtual_force = (-0.5 * gas_density * omega) * relative_drop_acc;
@@ -312,13 +297,6 @@ namespace minicombust::particles
                 a1 = ((virtual_force + drag_force) / mass) * delta;
                 v1 = v1 + a1 * delta;
 
-                
-                if (LOGGER)
-                {
-                    logger->flops  += 38;
-                    logger->loads  += 2 * sizeof(vec<T>) + 3 * sizeof(T);  // 3 vectors(drop acc, gas acc), 3 fields(diameter, density, mass)
-                    logger->stores += 1 * sizeof(vec<T>);                  // Acceleration
-                }
 
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
                 // Amount of spray evaporation is used in the modified transport equation of mixture fraction (each timestep).
@@ -356,7 +334,7 @@ namespace minicombust::particles
 
                 const T evaporation_constant = 8 * log(1 + mass_transfer) * thermal_conductivity / (fuel_density * specific_heat_fuel);  // Evaporation constant
 
-                temp     = temp + temp_delta * delta; // Double check + or -
+                temp     = temp + temp_delta * delta;
                 mass     = mass - mass_delta * delta;
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
 
@@ -365,12 +343,6 @@ namespace minicombust::particles
                 mesh->particle_energy_rate[cell]      += (air_heat_transfer - evaporation_heat)*delta;
                 mesh->particle_momentum_rate[cell]    += mass * v1 * delta;
 
-                if (LOGGER)
-                {
-                    logger->flops  += 36;
-                    logger->loads  += 3 * sizeof(T);     // 3 fields (air_temp, pressure, temp)
-                    logger->stores += 1 * sizeof(vec<T>) + 5 * sizeof(T);     // Momentum vector source term + 3 fields (temp, mass, diameter, mass_delta source, energy source)
-                }
                 // cout << endl << "Particle Drag Effects" << endl;
                 // cout << "\ta                     "     << print_vec(a1)     << endl;
                 // cout << "\tvel1                  "     << print_vec(v1)     << endl;

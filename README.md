@@ -20,6 +20,11 @@ make clean all
 ./bin/minicombust_tests
 ```
 
+## Get roofline CMD
+```
+python analysis/get_roofline_cmd.py CASCADE_LAKE out/performance.csv
+```
+
 ## Unsupported Feature List
 - Visualise particle fields (temperature, mass, evaporated gas)
 - Spray Breakup (spawn new particles, primary and secondary breakup)

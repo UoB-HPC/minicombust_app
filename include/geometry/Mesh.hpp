@@ -60,11 +60,11 @@ namespace minicombust::geometry
         public:
             const uint32_t cells_vertex_count = 3; // Generic, 3 = triangle etc
 
-            uint64_t points_size;         // Number of points in the mesh
-            uint64_t mesh_size;           // Number of polygons in the mesh
-            uint64_t cell_size;           // Number of points in the cell
-            uint64_t faces_size;          // Number of unique faces in the mesh
-            uint64_t faces_per_cell;      // Number of faces in a cell
+            const uint64_t points_size;         // Number of points in the mesh
+            const uint64_t mesh_size;           // Number of polygons in the mesh
+            const uint64_t cell_size;           // Number of points in the cell
+            const uint64_t faces_size;          // Number of unique faces in the mesh
+            const uint64_t faces_per_cell;      // Number of faces in a cell
 
             
             

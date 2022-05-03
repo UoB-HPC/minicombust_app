@@ -1,6 +1,7 @@
 ## Compilers and Flags
-CC := g++ 
-CFLAGS := -g -Wall -std=c++17 -O3 -march=native
+CC := icpc 
+#CFLAGS := -g -Wall -std=c++17 -O3 -march=native
+CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
 LIB := -Lbuild/
 INC := -Iinclude/
 
@@ -11,10 +12,11 @@ TESTS := tests
 EXE := bin/minicombust
 TEST_EXE := bin/minicombust_tests
 
- ifdef PAPI
-   MGCFD_INCS += -DPAPI
-   MGCFD_LIBS := -lpapi -lpfm
- endif
+
+ifdef PAPI
+	INC += -DPAPI -I/opt/cray/pe/papi/6.0.0.7/include
+	LIB += -L/opt/cray/pe/papi/6.0.0.7/lib64 -lpapi -lpfm
+endif
 
 SOURCES := $(shell find $(SRC) -type f -name *.c -o -name *.cpp ! -name minicombust.cpp)
 OBJECTS := $(patsubst $(SRC)/%,build/%,$(SOURCES:.cpp=.o))
