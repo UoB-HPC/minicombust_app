@@ -63,6 +63,20 @@ namespace minicombust::utils
         T *z;
     };
 
+    template <typename T> 
+    struct flow_aos {
+        vec<T> vel;
+        T pressure;
+        T temp;
+    };
+
+
+    template<typename T>
+    inline T sum(vec<T> a) 
+    {
+        return a.x + a.y + a.z;
+    }
+
     template<typename T>
     inline vec<T> operator+(vec<T> a, vec<T> b) 
     {

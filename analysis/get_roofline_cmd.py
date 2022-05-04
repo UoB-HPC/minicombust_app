@@ -5,12 +5,12 @@ import sys
 
 options = ["CASCADE_LAKE"]
 
-if (len(sys.argv) != 3):
-    print("No argument supplied. Run './get_roofline_cmd.py ARCH CSV'")
+if (len(sys.argv) != 4):
+    print("No argument supplied. Run './get_roofline_cmd.py ARCH CONFIG CSV'")
     print("ARCH options are: " + str(options))
     exit()
 
-perf_file = open(sys.argv[2])
+perf_file = open(sys.argv[3])
    
 command = ""
 point_string = ""
@@ -46,10 +46,8 @@ if (sys.argv[1] == "CASCADE_LAKE"):
         mem_bandwidth  = cacheline*kernel_vals["PAPI_LST_INS"] / kernel_vals["time"]
         mem_bandwidth /= 1000000000
         print(kernel + " time " + str(kernel_vals["time"]) + " mem_bandwidth: " + str(mem_bandwidth))
-    
-
-
-print("\n\npython roofline.py procs/cascade-lake-6230-2socket.yaml --cacheaware " + point_string)
+        
+    print("\n\npython roofline.py procs/cascade-lake-6230-"+sys.argv[2]+".yaml --cacheaware " + point_string)
 
 
     

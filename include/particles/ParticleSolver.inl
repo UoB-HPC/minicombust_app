@@ -109,55 +109,51 @@ namespace minicombust::particles
 
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: solve_spray_equations.\n");
 
-        for (uint64_t c = 0; c < mesh->mesh_size; c++)
-        {
-            mesh->evaporated_fuel_mass_rate[c] = 0.0;
-            mesh->particle_energy_rate[c]      = 0.0;
-            mesh->particle_momentum_rate[c]    = {0.0, 0.0, 0.0};
-        }
+        const uint64_t mesh_size  = mesh->mesh_size; 
+        const uint64_t cell_size  = mesh->cell_size; 
+
+
+        memset(mesh->particle_momentum_rate,    0,    mesh_size*sizeof(vec<T>));
+        memset(mesh->particle_energy_rate,      0,    mesh_size*sizeof(T));
+        memset(mesh->evaporated_fuel_mass_rate, 0,    mesh_size*sizeof(T));
 
         // Solve spray equations
+        #pragma ivdep
         for (uint64_t p = 0; p < current_particle0; p++)
         {
-            if (particles[p].decayed)  continue;;
+            if (particles[p].decayed)  continue;
             vec<T> total_vector_weight   = {0.0, 0.0, 0.0};
             T total_scalar_weight        = 0.0;
 
             vec<T> interp_gas_vel = {0.0, 0.0, 0.0};
             T interp_gas_pre      = 0.0;
             T interp_gas_tem      = 0.0;
-            for (uint64_t n = 0; n < mesh->cell_size; n++)
+            
+            #pragma ivdep
+            for (uint64_t n = 0; n < cell_size; n++)
             {
-                const uint64_t node           = mesh->cells[particles[p].cell*mesh->cell_size + n]; 
-                const vec<T> node_to_particle = particles[p].x1 - mesh->points[mesh->cells[particles[p].cell*mesh->cell_size + n]];
+                const uint64_t node           = mesh->cells[particles[p].cell*cell_size + n]; 
+                const vec<T> node_to_particle = particles[p].x1 - mesh->points[mesh->cells[particles[p].cell*cell_size + n]];
 
                 vec<T> weight      = 1.0 / (node_to_particle * node_to_particle);
                 T weight_magnitude = magnitude(weight);
                 
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
-                interp_gas_vel        += weight           * nodal_gas_velocity[node];
-                interp_gas_pre        += weight_magnitude * nodal_gas_pressure[node];
-                interp_gas_tem        += weight_magnitude * nodal_gas_temperature[node];
+                interp_gas_vel        += weight           * nodal_flow_aos[node].vel;
+                interp_gas_pre        += weight_magnitude * nodal_flow_aos[node].pressure;
+                interp_gas_tem        += weight_magnitude * nodal_flow_aos[node].temp;
             }
 
             interp_gas_vel /= total_vector_weight;
             interp_gas_pre /= total_scalar_weight;
             interp_gas_tem /= total_scalar_weight;
+
+
             // if (p == 0)    cout << p << " " << print_vec(particles[p].a1) << " " << print_vec(particles[p].x1) << " " << particles[p].decayed << endl;
-            Particle<T> *daughter_droplet = particles[p].solve_spray(mesh, delta, &logger, interp_gas_vel, interp_gas_pre, interp_gas_tem, current_particle1 < (mesh->max_cell_particles * mesh->mesh_size));
+            particles[p].solve_spray(mesh, delta, &logger, interp_gas_vel, interp_gas_pre, interp_gas_tem, &current_particle1, particles);
             // if (p == 0)    cout << p << " " << print_vec(particles[p].a1) << " " << print_vec(particles[p].x1) << " " << particles[p].decayed << endl << endl;
-            
-            if (daughter_droplet != nullptr )
-            {
-                particles[current_particle1] = *daughter_droplet;
-                current_particle1++;
-                logger.num_particles++;
-            }
-            // else if (current_particle1 >= mesh->max_cell_particles * mesh->mesh_size)
-            // {
-            //     cout << "Splitting a particle but will cause overflow. Not breaking up." << endl;
-            // }
+
         }
 
         #ifdef PAPI
@@ -177,7 +173,9 @@ namespace minicombust::particles
         // Update particle positions
         for (uint64_t p = 0; p < current_particle0; p++)
         {   
-            particles[p].timestep(mesh, delta, &logger);
+            if ( particles[current_particle0].decayed)  continue;
+            // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
+            particles[current_particle0].update_cell(mesh, &logger);
         }
 
         #ifdef PAPI
@@ -210,52 +208,80 @@ namespace minicombust::particles
         const uint64_t mesh_size  = mesh->mesh_size; 
         const uint64_t cell_size  = mesh->cell_size; 
 
-        memset(nodal_gas_velocity_soa.x,    0, point_size * sizeof(T));
-        memset(nodal_gas_velocity_soa.y,    0, point_size * sizeof(T));
-        memset(nodal_gas_velocity_soa.z,    0, point_size * sizeof(T));
-        memset(nodal_gas_pressure,          0, point_size * sizeof(T));
-        memset(nodal_gas_temperature,       0, point_size * sizeof(T));
+        const T node_neighbours       = 8; // Cube specific
+
+        memset(nodal_flow_aos, 0, point_size * sizeof(flow_aos<T>));
+
+
+        // memset(nodal_gas_velocity_soa.x,    0, point_size * sizeof(vec<T>));
+        // memset(nodal_gas_velocity_soa.y,    0, point_size * sizeof(vec<T>));
+        // memset(nodal_gas_velocity_soa.z,    0, point_size * sizeof(vec<T>));
+        // memset(nodal_gas_pressure,    0, point_size * sizeof(double));
+        // memset(nodal_gas_temperature, 0, point_size * sizeof(double));
+        
 
         #pragma ivdep
         for (uint64_t c = 0; c < mesh_size; c++)
         {
             const uint64_t *cell       = mesh->cells + c*cell_size;
+            const vec<T> cell_centre         = mesh->cell_centres[c];
+
+            const flow_aos<T> flow_term      = mesh->flow_terms[c];      
+            const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
+            
+            // const T gas_vel_x          = mesh->gas_velocity_soa.x[c];
+            // const T gas_vel_y          = mesh->gas_velocity_soa.y[c];
+            // const T gas_vel_z          = mesh->gas_velocity_soa.z[c];
+            // const T pressure           = mesh->gas_pressure[c];
+            // const T pressure_grad      = mesh->gas_pressure_gradient[c];
+            // const T temp               = mesh->gas_temperature[c];
+            // const T temp_grad          = mesh->gas_temperature_gradient[c];
 
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
             {
                 const uint64_t point_id = cell[n];
 
-                const T direction_x = mesh->points_soa.x[point_id] - mesh->cell_centres_soa.x[c];
-                const T direction_y = mesh->points_soa.y[point_id] - mesh->cell_centres_soa.y[c];
-                const T direction_z = mesh->points_soa.z[point_id] - mesh->cell_centres_soa.z[c];
+                const vec<T> direction             = mesh->points[point_id] - cell_centre;
+                nodal_flow_aos[point_id].vel      += flow_term.vel      + dot_product(flow_grad_term.vel,      direction);
+                nodal_flow_aos[point_id].pressure += flow_term.pressure + dot_product(flow_grad_term.pressure, direction);
+                nodal_flow_aos[point_id].temp     += flow_term.temp     + dot_product(flow_grad_term.temp,     direction);
 
-                nodal_gas_velocity_soa.x[point_id] += mesh->gas_velocity_soa.x[c] + mesh->gas_velocity_gradient_soa.x[c] * (direction_x + direction_y + direction_z);
-                nodal_gas_velocity_soa.y[point_id] += mesh->gas_velocity_soa.y[c] + mesh->gas_velocity_gradient_soa.y[c] * (direction_x + direction_y + direction_z);
-                nodal_gas_velocity_soa.z[point_id] += mesh->gas_velocity_soa.z[c] + mesh->gas_velocity_gradient_soa.z[c] * (direction_x + direction_y + direction_z);
-                nodal_gas_pressure[point_id]       += mesh->gas_pressure[c]       + mesh->gas_pressure_gradient[c]       * (direction_x + direction_y + direction_z);
-                nodal_gas_temperature[point_id]    += mesh->gas_temperature[c]    + mesh->gas_temperature_gradient[c]    * (direction_x + direction_y + direction_z);
+                // const T direction_x = mesh->points_soa.x[point_id] - mesh->cell_centres_soa.x[c];
+                // const T direction_y = mesh->points_soa.y[point_id] - mesh->cell_centres_soa.y[c];
+                // const T direction_z = mesh->points_soa.z[point_id] - mesh->cell_centres_soa.z[c];
+
+                // nodal_gas_velocity_soa.x[point_id] += gas_vel_x +     gas_vel_x * (direction_x + direction_y + direction_z);
+                // nodal_gas_velocity_soa.y[point_id] += gas_vel_y +     gas_vel_y * (direction_x + direction_y + direction_z);
+                // nodal_gas_velocity_soa.z[point_id] += gas_vel_z +     gas_vel_z * (direction_x + direction_y + direction_z);
+                // nodal_gas_pressure[point_id]       += pressure  + pressure_grad * (direction_x + direction_y + direction_z);
+                // nodal_gas_temperature[point_id]    += temp      +     temp_grad * (direction_x + direction_y + direction_z);
             }
         }
-
-
 
         #pragma ivdep
         for (uint64_t n = 0; n < point_size; n++)
         {
-            const T node_neighbours       = 8;                                          // Cube specific
             const T boundary_neighbours   = node_neighbours - mesh->cells_per_point[n]; // If nodal counter is not 8, we are on a boundary
 
-            nodal_gas_velocity_soa.x[n]    = (nodal_gas_velocity_soa.x[n]  + boundary_neighbours * mesh->dummy_gas_vel.x) / node_neighbours;
-            nodal_gas_velocity_soa.y[n]    = (nodal_gas_velocity_soa.y[n]  + boundary_neighbours * mesh->dummy_gas_vel.y) / node_neighbours;
-            nodal_gas_velocity_soa.z[n]    = (nodal_gas_velocity_soa.z[n]  + boundary_neighbours * mesh->dummy_gas_vel.z) / node_neighbours;
-            nodal_gas_pressure[n]          = (nodal_gas_pressure[n]        + boundary_neighbours * mesh->dummy_gas_pre)   / node_neighbours;
-            nodal_gas_temperature[n]       = (nodal_gas_temperature[n]     + boundary_neighbours * mesh->dummy_gas_tem)   / node_neighbours;
+            nodal_flow_aos[n].vel        = (nodal_flow_aos[n].vel       + boundary_neighbours * mesh->dummy_gas_vel) / node_neighbours;
+            nodal_flow_aos[n].pressure   = (nodal_flow_aos[n].pressure  + boundary_neighbours * mesh->dummy_gas_pre) / node_neighbours;
+            nodal_flow_aos[n].temp       = (nodal_flow_aos[n].temp      + boundary_neighbours * mesh->dummy_gas_tem) / node_neighbours;
         }
+
+        
+
 
         #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_ticks);
         #endif
+
+        // for (uint64_t n = 0; n < point_size; n++)
+        // {
+        //     nodal_gas_velocity[n]     = nodal_flow_aos[n].vel;
+        //     nodal_gas_pressure[n]     = nodal_flow_aos[n].pressure;
+        //     nodal_gas_temperature[n]  = nodal_flow_aos[n].temp;
+        // }
         
     }
 
@@ -265,6 +291,7 @@ namespace minicombust::particles
     void ParticleSolver<T>::timestep()
     {
         if (PARTICLE_SOLVER_DEBUG)  printf("Start particle timestep\n");
+        cout << "Particles in simulation: " << logger.num_particles - logger.decayed_particles << endl;
         // update_flow_field();
         interpolate_nodal_data();            
         particle_release();

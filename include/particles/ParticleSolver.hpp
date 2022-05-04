@@ -42,11 +42,8 @@ namespace minicombust::particles
             T S_i_d;       // For momentum equation
             T Q_d;         // For energy equation
 
-            vec<T> *nodal_gas_velocity;
-            T      *nodal_gas_pressure;
-            T      *nodal_gas_temperature;
-
-            vec_soa<T> nodal_gas_velocity_soa;
+            vec_soa<T>   nodal_gas_velocity_soa;
+            flow_aos<T> *nodal_flow_aos;
         public:
 
             uint64_t current_particle0;
@@ -60,9 +57,8 @@ namespace minicombust::particles
                 const size_t source_scalar_array_size = mesh->points_size * sizeof(T);
 
                 particles                         = (Particle<T> *)malloc(particles_array_size);
-                nodal_gas_velocity                = (vec<T> *)     malloc(source_vector_array_size);
-                nodal_gas_pressure                = (T *)          malloc(source_scalar_array_size);
-                nodal_gas_temperature             = (T *)          malloc(source_scalar_array_size);
+                nodal_gas_velocity_soa            = allocate_vec_soa<T>(mesh->points_size);
+                nodal_flow_aos                    = (flow_aos<T> *)malloc(mesh->points_size * sizeof(flow_aos<T>));
 
                 // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                 printf("Particle solver storage requirements:\n");
@@ -76,7 +72,7 @@ namespace minicombust::particles
 
                 memset(&logger,           0, sizeof(particle_logger));
 
-                nodal_gas_velocity_soa = allocate_vec_soa<T>(mesh->points_size);
+                
 
                 #ifdef PAPI
                 performance_logger.init_papi();
