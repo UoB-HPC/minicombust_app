@@ -37,7 +37,7 @@ int main (int argc, char ** argv)
             printf("No meshes supplied. Running built in example instead.\n\n");
             const double box_dim                  = 1;
             const uint64_t elements_per_dim       = 50;
-            const uint64_t particles_per_timestep = 10;
+            const uint64_t particles_per_timestep = 100;
             const uint64_t max_cell_particles     = particles_per_timestep * 2;
             ntimesteps                            = 1000;
             delta                                 = 2.5e-6;
@@ -53,7 +53,7 @@ int main (int argc, char ** argv)
     float program_ticks = 0.f, output_ticks = 0.f;
     const clock_t output = clock(); 
     VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
-    vtk_writer->write_mesh("minicombust");
+    // vtk_writer->write_mesh("minicombust");
     output_ticks += float(clock() - output);
 
     uint64_t print_iteration = 20;

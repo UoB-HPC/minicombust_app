@@ -153,7 +153,11 @@ namespace minicombust::particles
             // if (p == 0)    cout << p << " " << print_vec(particles[p].a1) << " " << print_vec(particles[p].x1) << " " << particles[p].decayed << endl;
             particles[p].solve_spray(mesh, delta, &logger, interp_gas_vel, interp_gas_pre, interp_gas_tem, &current_particle1, particles);
             // if (p == 0)    cout << p << " " << print_vec(particles[p].a1) << " " << print_vec(particles[p].x1) << " " << particles[p].decayed << endl << endl;
+<<<<<<< HEAD
             
+=======
+
+>>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
         }
 
         #ifdef PAPI
@@ -173,10 +177,16 @@ namespace minicombust::particles
         // Update particle positions
         for (uint64_t p = 0; p < current_particle0; p++)
         {   
+<<<<<<< HEAD
             if ( particles[p].decayed)  continue;
             // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
             particles[p].update_cell(mesh, &logger);
 
+=======
+            if ( particles[current_particle0].decayed)  continue;
+            // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
+            particles[current_particle0].update_cell(mesh, &logger);
+>>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
         }
 
         #ifdef PAPI
@@ -295,7 +305,7 @@ namespace minicombust::particles
         static int  count = 0;
         if ((count++ % 20) == 0)  cout << "\tParticles in simulation: " << logger.num_particles - logger.decayed_particles << " max " << (mesh->max_cell_particles * mesh->mesh_size) << endl;
         // update_flow_field();
-        interpolate_nodal_data();    
+        interpolate_nodal_data(); 
         particle_release();
         solve_spray_equations();
         update_particle_positions();

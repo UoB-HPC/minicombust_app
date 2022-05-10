@@ -15,7 +15,11 @@ bool check_particle_posistion(Mesh<double> *mesh, uint64_t correct_cell, vec<dou
 
     particle_logger logger;
     memset(&logger, 0, sizeof(particle_logger));
+<<<<<<< HEAD
     p->x1 += p->v1 * 1.0;
+=======
+    p->x1 = p->x0 + p->v1 * 1.0;
+>>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
     p->update_cell(mesh, &logger);
 
     return p->cell == correct_cell;
