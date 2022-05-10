@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <ctime>
+#include <inttypes.h>
 
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
@@ -53,7 +54,7 @@ int main (int argc, char ** argv)
     float program_ticks = 0.f, output_ticks = 0.f;
     const clock_t output = clock(); 
     VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
-    // vtk_writer->write_mesh("minicombust");
+    vtk_writer->write_mesh("minicombust");
     output_ticks += float(clock() - output);
 
     uint64_t print_iteration = 20;
@@ -61,7 +62,6 @@ int main (int argc, char ** argv)
     printf("Starting simulation..\n");
     for(uint64_t t = 0; t < ntimesteps; t++)
     {
-        if (t % 10 == 0)  printf("Timestep %lu of %lu..\n", t, ntimesteps);
         const clock_t timestep_time  = clock();
         timestep(flow_solver, particle_solver);
         program_ticks += float(clock() - timestep_time);

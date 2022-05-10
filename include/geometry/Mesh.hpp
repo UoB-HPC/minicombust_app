@@ -3,6 +3,7 @@
 #include <map>
 
 #include <memory.h>
+
 #include "utils/utils.hpp"
 
 using namespace minicombust::utils; 
@@ -153,9 +154,9 @@ namespace minicombust::geometry
                 printf("\nMesh storage requirements:\n");
                 printf("\tAllocating mesh cell centres                                (%.2f MB)\n",                 (float)(mesh_cell_centre_size)/1000000.0);
                 printf("\tAllocating array of particles per cell                      (%.2f MB)\n",                 (float)(particles_per_point_size)/1000000.0);
-                printf("\tAllocating vertexes                                         (%.2f MB) (%lu vertexes)\n",  (float)(points_array_size)/1000000.0, points_size);
-                printf("\tAllocating cells                                            (%.2f MB) (%lu cells)\n",     (float)(cells_array_size)/1000000.0, mesh_size);
-                printf("\tAllocating faces                                            (%.2f MB) (%lu faces)\n",     (float)(faces_array_size)/1000000.0, faces_size);
+                printf("\tAllocating vertexes                                         (%.2f MB) (%" PRIu64 " vertexes)\n",  (float)(points_array_size)/1000000.0, points_size);
+                printf("\tAllocating cells                                            (%.2f MB) (%" PRIu64 " cells)\n",     (float)(cells_array_size)/1000000.0, mesh_size);
+                printf("\tAllocating faces                                            (%.2f MB) (%" PRIu64 " faces)\n",     (float)(faces_array_size)/1000000.0, faces_size);
                 printf("\tAllocating cell neighbour indexes                           (%.2f MB)\n",                 (float)(cell_neighbours_array_size)/1000000.0);
                 printf("\tAllocating cells_per_point array                            (%.2f MB)\n",                 ((float)cells_per_point_size)/1000000.);
                 printf("\tAllocating evaporated fuel mass source term                 (%.2f MB)\n",                 (float)(evaporated_fuel_mass_rate_size)/1000000.0);

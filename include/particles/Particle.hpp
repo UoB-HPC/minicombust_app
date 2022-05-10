@@ -70,21 +70,13 @@ namespace minicombust::particles
 
 
         public:
-<<<<<<< HEAD
-=======
-            vec<T> x0 = 0.0;             // coordinates at timestep beginning
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
             vec<T> x1 = 0.0;             // coordinates at next timestep
             vec<T> v1 = 0.0;             // velocity at next timestep
             vec<T> a1 = 0.0;             // acceleration at next timestep
 
             bool decayed = false;
 
-<<<<<<< HEAD
             T mass        = 0.05;           // DUMMY_VAL Current mass (kg)
-=======
-            T mass        = 0.1;           // DUMMY_VAL Current mass (kg)
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
             T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
             T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
@@ -94,14 +86,7 @@ namespace minicombust::particles
             uint64_t cell = MESH_BOUNDARY;          // cell at timestep beginning
 
 
-<<<<<<< HEAD
             Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp) : x1(start), v1(velocity), a1(acceleration), temp(temp)
-=======
-
-
-
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp) : x0(start), x1(start), v1(velocity), a1(acceleration), temp(temp)
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
             { 
                 for (uint64_t c = 0; c < mesh->mesh_size; c++)
                 {
@@ -118,19 +103,11 @@ namespace minicombust::particles
 
                 diameter = 2 * pow(0.75 * mass / ( M_PI * 724.), 1./3.);
 
-<<<<<<< HEAD
                 if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x1: " << print_vec(x1) << " v1: " << print_vec(v1) <<  endl ;
             }
 
             Particle(Mesh<T> *mesh, vec<T> position, vec<T> velocity, vec<T> acceleration, T mass, T temp, T diameter, uint64_t cell) : 
                      x1(position), v1(velocity), a1(acceleration),
-=======
-                if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x0: " << print_vec(x0) << " v1: " << print_vec(v1) <<  endl ;
-            }
-
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> finish, vec<T> velocity, vec<T> acceleration, T mass, T temp, T diameter, uint64_t cell) : 
-                     x0(start), x1(finish), v1(velocity), a1(acceleration),
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
                      mass(mass), temp(temp), diameter(diameter), cell(cell)
             { }
 
@@ -140,20 +117,10 @@ namespace minicombust::particles
                 if ( check_cell(cell, mesh) )
                 {
                     if (PARTICLE_DEBUG)  cout << "\t\tParticle is still in cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
-<<<<<<< HEAD
 
                     if (LOGGER)  logger->cell_checks++;
 
                     return cell;
-=======
-                    x0 = x1;
-                    return cell;
-
-                    if (LOGGER)
-                    {
-                        logger->cell_checks++;
-                    }
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
                 } 
                 else
                 {
@@ -282,19 +249,11 @@ namespace minicombust::particles
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub
                 const vec<T> relative_drop_vel           = gas_vel - v1;                                         // DUMMY_VAL Relative velocity between droplet and the fluid
                 const T relative_drop_vel_mag            = magnitude(relative_drop_vel);                         // DUMMY_VAL Relative acceleration between the gas and liquid phase.
-<<<<<<< HEAD
                 const vec<T> relative_drop_acc           = a1 * delta ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 
 
                 const T gas_density  = 1.4;                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);
-=======
-                const vec<T> relative_drop_acc           = a1 ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid
-
-
-                const T gas_density  = 0.59;                                               // DUMMY VAL
-                const T fuel_density =  724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * pow(temp - 288.6, 2.) / pow(548. - 288.6, 2.));
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
 
 
                 const T omega               = 1.;                                                                  // DUMMY_VAL What is this?
@@ -315,11 +274,7 @@ namespace minicombust::particles
                 // cout << "vf " << print_vec(virtual_force) << " df " << print_vec(drag_force) << " m " << mass << endl;
                 a1 = ((virtual_force + drag_force) / mass);
                 v1 = v1 + a1 * delta;
-<<<<<<< HEAD
                 x1 = x1 + v1 * delta;
-=======
-                x1 = x0 + v1 * delta;
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
 
 
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
@@ -329,21 +284,12 @@ namespace minicombust::particles
                 const T critical_temp          = 548.;
                 const T a_constant             = (temp < boiling_temp) ? 13.7600 : 14.1964;
                 const T b_constant             = (temp < boiling_temp) ? 2651.13 : 2777.65;
-<<<<<<< HEAD
                 const T fuel_vapour_pressure   = exp(a_constant - b_constant / (temp - 43.));                         // DUMMY_VAL fuel vapor at drop surface (kP)
                 const T pressure_relation      = (air_pressure + fuel_vapour_pressure) / fuel_vapour_pressure;       // DUMMY_VAL Clausius-Clapeyron relation. air pressure / fuel vapour pressure.
                 const T molecular_ratio        = 29. / 108.;                                                         // DUMMY_VAL molecular weight air / molecular weight fuel
                 const T mass_fraction_fuel     = 1. / (1. + (pressure_relation - 1.) * molecular_ratio);                // Mass fraction of fuel vapour at the droplet surface  
                 const T mass_fraction_fuel_ref = (2./3.) * mass_fraction_fuel;                                       // Mass fraction of fuel vapour ref at the droplet surface  
                 const T mass_fraction_air_ref  = 1. - mass_fraction_fuel_ref;                                         // Mass fraction of air vapour  ref at the droplet surface  
-=======
-                const T fuel_vapour_pressure   = exp(a_constant - b_constant / (temp - 43));                         // DUMMY_VAL fuel vapor at drop surface (kP)
-                const T pressure_relation      = (air_pressure + fuel_vapour_pressure) / fuel_vapour_pressure;       // DUMMY_VAL Clausius-Clapeyron relation. air pressure / fuel vapour pressure.
-                const T molecular_ratio        = 29. / 108.;                                                         // DUMMY_VAL molecular weight air / molecular weight fuel
-                const T mass_fraction_fuel     = 1 / (1 + (pressure_relation - 1) * molecular_ratio);                // Mass fraction of fuel vapour at the droplet surface  
-                const T mass_fraction_fuel_ref = (2./3.) * mass_fraction_fuel;                                       // Mass fraction of fuel vapour ref at the droplet surface  
-                const T mass_fraction_air_ref  = 1 - mass_fraction_fuel_ref;                                         // Mass fraction of air vapour  ref at the droplet surface  
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
 
                 const T thermal_conduct_air      = 0.04418;                                                                                                                        // DUMMY_VAL mean thermal conduct. Calc each iteration?
                 const T thermal_conduct_fuel     = 1.e-6*(13.2 - 0.0313 * (boiling_temp - 273.)) * pow(temp / 273., 2. - 0.0372 * ((temp * temp) / (boiling_temp * boiling_temp)));   // DUMMY_VAL mean thermal conductivity. Calc each iteration?
@@ -361,20 +307,11 @@ namespace minicombust::particles
 
                 
                 const T latent_heat       = 346.0 * pow((critical_temp - temp) / (critical_temp - boiling_temp), 0.38);                     // DUMMY_VAL Latent heat of fuel vaporization (kJ/kg)
-<<<<<<< HEAD
                 const T air_heat_transfer = 2. * M_PI * fuel_vapour_pressure * (gas_temperature - temp) * log_mass_transfer / mass_transfer;   // The heat transferred from air to fuel
                 const T evaporation_heat  = mass_delta * latent_heat;                                                                       // The heat absorbed through evaporation
                 const T temp_delta        = (air_heat_transfer - evaporation_heat) / (specific_heat * mass);                                // Temperature change of the droplet's surface
 
                 const T evaporation_constant = 8. * log_mass_transfer * thermal_conductivity / (fuel_density * specific_heat_fuel);     // Evaporation constant
-=======
-                const T air_temp          = gas_temperature;                                                                                // DUMMY_VAL Gas temperature?
-                const T air_heat_transfer = 2 * M_PI * fuel_vapour_pressure * (air_temp - temp) * log(1 + mass_transfer) / mass_transfer;   // The heat transferred from air to fuel
-                const T evaporation_heat  = mass_delta * latent_heat;                                                                       // The heat absorbed through evaporation
-                const T temp_delta        = (air_heat_transfer - evaporation_heat) / (specific_heat * mass);                                // Temperature change of the droplet's surface
-
-                const T evaporation_constant = 8 * log(1 + mass_transfer) * thermal_conductivity / (fuel_density * specific_heat_fuel);     // Evaporation constant
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
 
                 temp     = temp + temp_delta * delta;
                 mass     = mass - mass_delta * delta;
@@ -385,20 +322,7 @@ namespace minicombust::particles
                 mesh->particle_energy_rate[cell]      += (air_heat_transfer - evaporation_heat) * delta;
                 mesh->particle_momentum_rate[cell]    += mass * v1 * delta;
 
-<<<<<<< HEAD
                 decayed = (mass < 0 || temp > critical_temp);
-=======
-                if (mass < 0 || temp > critical_temp) 
-                {
-                    decayed = true;
-                    if (LOGGER)
-                    {   
-                        logger->decayed_particles++;
-                        logger->burnt_particles++;
-                    }
-                    return;
-                }
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
 
                 // cout << endl << "Particle Drag Effects" << endl;
                 // cout << "\ta                     "     << print_vec(a1)     << endl;
@@ -451,11 +375,7 @@ namespace minicombust::particles
                 
 
 
-<<<<<<< HEAD
                 if (*current_particle < (mesh->max_cell_particles * mesh->mesh_size) && !decayed)
-=======
-                if (*current_particle < (mesh->max_cell_particles * mesh->mesh_size))
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
                 {
 
                     // SOLVE SPRAY BREAKUP MODEL
@@ -503,11 +423,7 @@ namespace minicombust::particles
                         velocity1.z = - (relative_drop_vel.x * velocity1.x + relative_drop_vel.y * velocity1.y) / relative_drop_vel.z;
                         velocity2.z = - velocity1.z;
                         
-<<<<<<< HEAD
                         particles[*current_particle] = Particle<T>(mesh, x1, velocity2 * magnitude + v1, a1, mass2, temp, diameter2, cell);
-=======
-                        particles[*current_particle] = Particle<T>(mesh, x0, x1, velocity2 * magnitude + v1, a1, mass2, temp, diameter2, cell);
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
                         (*current_particle)++;
 
                         // Update parent to droplet1;
@@ -521,7 +437,6 @@ namespace minicombust::particles
                             logger->num_particles++;     
                         }
                     }
-<<<<<<< HEAD
                 } 
                 else if (LOGGER)
                 {
@@ -534,13 +449,6 @@ namespace minicombust::particles
                     {
                         logger->unsplit_particles++;
                     }
-=======
-
-                }
-                else if (LOGGER)
-                {
-                    logger->unsplit_particles++;
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
                 }
             }
 

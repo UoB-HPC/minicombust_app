@@ -62,7 +62,7 @@ namespace minicombust::particles
 
                 // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                 printf("Particle solver storage requirements:\n");
-                printf("\tAllocating particles array, particles                       (%.2f MB)  particles_array_size %lu\n",   (float)(particles_array_size)/1000000.0, mesh->max_cell_particles * mesh->mesh_size);
+                printf("\tAllocating particles array, particles                       (%.2f MB)  particles_array_size %" PRIu64 "\n",   (float)(particles_array_size)/1000000.0, mesh->max_cell_particles * mesh->mesh_size);
                 printf("\tAllocating nodal_gas_velocity array                         (%.2f MB)\n",  ((float)source_vector_array_size)/1000000.);
                 printf("\tAllocating nodal_gas_pressure array                         (%.2f MB)\n",  ((float)source_scalar_array_size)/1000000.);
                 printf("\tAllocating nodal_gas_temperature array                      (%.2f MB)\n",  ((float)source_scalar_array_size)/1000000.);

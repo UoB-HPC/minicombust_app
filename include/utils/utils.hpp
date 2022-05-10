@@ -5,6 +5,7 @@
 #include <iostream> 
 #include <sstream>   
 #include <math.h>
+#include <inttypes.h>
 
 #define PARTICLE_DEBUG 0
 #define LOGGER 1

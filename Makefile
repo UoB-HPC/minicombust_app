@@ -1,12 +1,8 @@
 ## Compilers and Flags
-CC := icpc 
-<<<<<<< HEAD
-#CC := CC 
-#CFLAGS := -g -Wall -std=c++17 -O3 -march=native -Rpass='(loop-vectorize|inline)' -fsave-optimization-record 
-=======
-#CFLAGS := -g -Wall -std=c++17 -O3 -march=native
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
-CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
+CC := g++ 
+# CC := icpc 
+CFLAGS := -g -Wall -std=c++17 -O3 -march=native -Wno-unknown-pragmas
+# CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
 LIB := -Lbuild/
 INC := -Iinclude/
 

@@ -35,13 +35,9 @@ namespace minicombust::performance
             int128_t *spray_kernel_event_counts;
             int128_t *interpolation_kernel_event_counts;
 
-<<<<<<< HEAD
             double position_ticks = 0.f;
             double interpolation_ticks = 0.f;
             double spray_ticks = 0.f;
-=======
-            double position_ticks = 0.f, spray_ticks = 0.f, interpolation_ticks = 0.f;
->>>>>>> 4314827005de94e14f5f26ecabdcb96fd00f44a7
             clock_t output; 
             
             vector<string> event_names;
