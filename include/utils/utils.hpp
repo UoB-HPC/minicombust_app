@@ -10,6 +10,8 @@
 #define LOGGER 1
 #define PARTICLE_SOLVER_DEBUG 0
 
+typedef long long int int128_t;
+typedef unsigned long long int uint128_t;
 
 namespace minicombust::utils 
 {
@@ -52,8 +54,28 @@ namespace minicombust::utils
             z /= rhs.z;
 	        return *this;
         }
-
     };
+
+    template <typename T> 
+    struct vec_soa {
+        T *x;
+        T *y;
+        T *z;
+    };
+
+    template <typename T> 
+    struct flow_aos {
+        vec<T> vel;
+        T pressure;
+        T temp;
+    };
+
+
+    template<typename T>
+    inline T sum(vec<T> a) 
+    {
+        return a.x + a.y + a.z;
+    }
 
     template<typename T>
     inline vec<T> operator+(vec<T> a, vec<T> b) 
@@ -81,6 +103,14 @@ namespace minicombust::utils
         vec<T> sum = {a.x - b.x, a.y - b.y, a.z - b.z};
         return sum;
     }
+
+    template<typename T>
+    inline vec<T> operator-(const vec<T> b) 
+    {
+        vec<T> negative = {b.x, b.y, b.z};
+        return negative;
+    }
+
 
     template<typename T>
     inline vec<T> operator/(vec<T> a, T b) 
@@ -164,7 +194,7 @@ namespace minicombust::utils
     template<typename T> 
     inline T dot_product(T a, vec<T> b)
     {
-        return a*b.x + a*b.y + a*b.z;
+        return a*(b.x + b.y + b.z);
     }
 
     template<typename T> 
@@ -194,6 +224,16 @@ namespace minicombust::utils
         return buffer.str();
     }
 
+    template<typename T> 
+    inline vec_soa<T> allocate_vec_soa(uint64_t n)
+    {
+        vec_soa<T> v;
+        v.x = (T*)malloc(n*sizeof(T));
+        v.y = (T*)malloc(n*sizeof(T));
+        v.z = (T*)malloc(n*sizeof(T));
+        return v;
+    }
+
     struct particle_logger {
         uint64_t num_particles;
         uint64_t emitted_particles;
@@ -204,10 +244,6 @@ namespace minicombust::utils
         uint64_t unsplit_particles;
         uint64_t breakups;
         uint64_t burnt_particles;
-        uint64_t flops;
-        uint64_t loads; 
-        uint64_t stores;
-        uint64_t branches;
     };
 }
 

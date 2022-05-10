@@ -35,12 +35,12 @@ int main (int argc, char ** argv)
     {
         default:
             printf("No meshes supplied. Running built in example instead.\n\n");
-            const double box_dim                  = 20;
+            const double box_dim                  = 1;
             const uint64_t elements_per_dim       = 50;
             const uint64_t particles_per_timestep = 10;
             const uint64_t max_cell_particles     = particles_per_timestep * 2;
             ntimesteps                            = 1000;
-            delta                                 = 0.001;
+            delta                                 = 2.5e-6;
             mesh          = load_mesh(box_dim, elements_per_dim, max_cell_particles);
             particle_dist = load_particle_distribution(particles_per_timestep, mesh);
     }
@@ -56,14 +56,13 @@ int main (int argc, char ** argv)
     vtk_writer->write_mesh("minicombust");
     output_ticks += float(clock() - output);
 
-    uint64_t print_iteration = 1;
+    uint64_t print_iteration = 20;
 
     printf("Starting simulation..\n");
     for(uint64_t t = 0; t < ntimesteps; t++)
     {
         if (t % 10 == 0)  printf("Timestep %lu of %lu..\n", t, ntimesteps);
         const clock_t timestep_time  = clock();
-        cout << endl << "################################## Timestep" << t << " particles " << particle_solver->current_particle1 << " max " << (mesh->max_cell_particles * mesh->mesh_size) << endl;
         timestep(flow_solver, particle_solver);
         program_ticks += float(clock() - timestep_time);
         if ((t % print_iteration == print_iteration - 1))  

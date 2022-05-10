@@ -124,11 +124,11 @@ namespace minicombust::particles
                 srand (time(NULL));
                 if (dist == UNIFORM)
                 {
-                    T var = 0.25;
+                    T var = 0.2;
                     start_pos        = new UniformDistribution<vec<T>>(start - start*(var),       start    + start*var);
-                    velocity         = new UniformDistribution<vec<T>>(vel_mean - vel_mean*(0.5), vel_mean + vel_mean*0.5);
+                    velocity         = new UniformDistribution<vec<T>>(vel_mean - vel_mean*(var), vel_mean + vel_mean*var);
                     acceleration     = new UniformDistribution<vec<T>>(acc_mean - acc_mean*(var), acc_mean + acc_mean*var);
-                    temperature      = new UniformDistribution<T>(temp - temp*(var), temp + temp*var);
+                    temperature      = new UniformDistribution<T>(temp - temp*0.05, temp + temp*0.05);
                 }
                 else 
                 {

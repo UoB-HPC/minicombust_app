@@ -165,7 +165,7 @@ namespace minicombust::visit
                 vtk_file << endl << "POINTS " << non_decayed << " float"  << endl;
                 for (uint64_t p = 0; p < num_particles; p++)
                 {
-                    if (!particles[p].decayed) vtk_file << print_vec(particles[p].x0) << endl;
+                    if (!particles[p].decayed) vtk_file << print_vec(particles[p].x1) << endl;
                 }
                 vtk_file << endl;
 
