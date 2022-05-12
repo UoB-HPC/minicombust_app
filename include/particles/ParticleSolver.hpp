@@ -53,7 +53,7 @@ namespace minicombust::particles
         public:
 
             template<typename M>
-            ParticleSolver(uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t n) : delta(delta), particle_dist(particle_dist), mesh(mesh), num_timesteps(n)
+            ParticleSolver(uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t n) : delta(delta), num_timesteps(n), particle_dist(particle_dist), mesh(mesh)
             {
                 const size_t source_vector_array_size = mesh->points_size * sizeof(vec<T>);
                 const size_t source_scalar_array_size = mesh->points_size * sizeof(T);
