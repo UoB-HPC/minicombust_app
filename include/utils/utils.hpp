@@ -262,6 +262,7 @@ namespace minicombust::utils
         uint64_t breakups;
         uint64_t burnt_particles;
         double avg_particles;
+        double breakup_age;
     };
 }
 

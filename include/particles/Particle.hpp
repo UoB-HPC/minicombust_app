@@ -75,7 +75,7 @@ namespace minicombust::particles
 
             bool decayed = false;
 
-            T mass        = 0.05;           // DUMMY_VAL Current mass (kg)
+            T mass        = 0.02;           // DUMMY_VAL Current mass (kg)
             T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
             T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
@@ -259,7 +259,7 @@ namespace minicombust::particles
                 const vec<T> relative_drop_acc           = a1 * delta ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 
 
-                const T gas_density  = 1.4;                                               // DUMMY VAL
+                const T gas_density  = 6.9;                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);
 
 
@@ -435,7 +435,13 @@ namespace minicombust::particles
                         {   
                             logger->breakups++;
                             logger->num_particles++;
+                            logger->breakup_age = breakup_age;
                         }
+                    }
+
+                    if (LOGGER)
+                    {   
+                        logger->breakup_age = breakup_age;
                     }
                 } 
                 else if (LOGGER)

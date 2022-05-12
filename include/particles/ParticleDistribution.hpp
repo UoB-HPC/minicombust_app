@@ -105,7 +105,7 @@ namespace minicombust::particles
                     rnd_unit = - 1. + (rnd_unit * 2.);
 
                     T rnd_perpendicular = rnd_unit - dot_product(rnd_unit, unit_mean) * unit_mean; 
-                    r = mean + rnd_perpendicular * 1000.;
+                    r = mean + rnd_perpendicular * 150.;
 
                     r = mag * r / magnitude(r);
 
