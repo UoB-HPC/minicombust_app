@@ -150,20 +150,22 @@ namespace minicombust::particles
         performance_logger.my_papi_start();
         #endif
 
-
-        // #pragma ivdep
-        // for (uint64_t p = 0; p < particles_size; p++)
-        // {
-        //     particles[p].solve_spray(mesh, delta, &logger, particles);
-        // }
-
-        uint64_t particle_index = 0;
+        vector<uint64_t> decayed_particles;
+        #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
         {
-            particles[particle_index].solve_spray(mesh, delta, &logger, particles);
+            particles[p].solve_spray(mesh, delta, &logger, particles);
 
-            if (particles[particle_index].decayed)  particles.erase(particles.begin() + particle_index--);
-            particle_index++;
+            if (particles[p].decayed)  decayed_particles.push_back(p);
+        }
+
+
+        const uint64_t decayed_particles_size = decayed_particles.size();
+        #pragma ivdep
+        for (int128_t i = decayed_particles_size - 1; i >= 0; i--)
+        {
+            particles[decayed_particles[i]] = particles.back();
+            particles.pop_back();
         }
 
         #ifdef PAPI
@@ -182,25 +184,31 @@ namespace minicombust::particles
 
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_particle_positions.\n");
         const uint64_t particles_size  = particles.size(); 
-        uint64_t particle_index = 0;
 
         // Update particle positions
+        vector<uint64_t> decayed_particles;
+        #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
         {   
             // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
-            particles[particle_index].update_cell(mesh, &logger);
+            particles[p].update_cell(mesh, &logger);
 
 
-            if ( particles[particle_index].decayed)
-            {
-                particles.erase(particles.begin() + particle_index--);
-            }
-            else
-            {
-                cell_set.insert(particles[particle_index].cell);
-            }
-            particle_index++;
+            if ( particles[p].decayed)  decayed_particles.push_back(p);
+            else                        cell_set.insert(particles[p].cell);
         }
+
+
+
+        const uint64_t decayed_particles_size = decayed_particles.size();
+        #pragma ivdep
+        for (int128_t i = decayed_particles_size - 1; i >= 0; i--)
+        {
+            particles[decayed_particles[i]] = particles.back();
+            particles.pop_back();
+
+        }
+
 
         #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_ticks);

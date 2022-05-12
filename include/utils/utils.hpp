@@ -190,6 +190,12 @@ namespace minicombust::utils
     }
 
     template<typename T> 
+    inline T magnitude(T v)
+    {
+        return abs(v);
+    }
+
+    template<typename T> 
     inline vec<T> cross_product(vec<T> a, vec<T> b)
     {
         vec<T> cross_product = {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x};

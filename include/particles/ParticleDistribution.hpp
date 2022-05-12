@@ -22,6 +22,7 @@ namespace minicombust::particles
 
         public:
             virtual T get_value() = 0;
+            virtual T get_scaled_value() = 0;
 
         protected:
             Distribution() { }
@@ -49,6 +50,10 @@ namespace minicombust::particles
                 return mean;
             }
 
+            T get_scaled_value() override {
+                return mean;
+            }
+
     }; // class NormalDistribution
 
     template<class T>
@@ -57,10 +62,20 @@ namespace minicombust::particles
         private:
             T lower;
             T upper;
+            T mean;
+            T unit_mean;
+            
+            double mag;
+
+
 
         public:
              UniformDistribution(T lower, T upper) : lower(lower), upper(upper)
-             { }
+             { 
+                mean      = (upper + lower) / 2.;
+                mag       = magnitude(mean);
+                unit_mean = mean / mag;
+             }
 
             inline T get_value() override {
                 T r;
@@ -68,11 +83,40 @@ namespace minicombust::particles
                 {
                     r = static_cast<double>(rand())/RAND_MAX;
                 }
-                else{
+                else
+                {
                     r = T { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
                 }
+
                 return lower + (r * (upper - lower));
             }
+
+            inline T get_scaled_value() override {
+                T r;
+                if constexpr(std::is_same_v<T, double>)
+                {
+                    r = static_cast<double>(rand())/RAND_MAX;
+                    r = lower + (r * (upper - lower));
+                }
+                else
+                {
+                    // Create random unit vector on sphere surface
+                    T rnd_unit = T { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
+                    rnd_unit = - 1. + (rnd_unit * 2.);
+
+                    T rnd_perpendicular = rnd_unit - dot_product(rnd_unit, unit_mean) * unit_mean; 
+                    r = mean + rnd_perpendicular * 1000.;
+
+                    r = mag * r / magnitude(r);
+
+                    // cout << print_vec(mean) << "      " << print_vec(rnd_perpendicular) << "     ";
+                }
+
+
+
+                return r;
+            }
+
 
     }; // class UniformDistribution
 
@@ -89,6 +133,11 @@ namespace minicombust::particles
             T get_value() override {
                 return fixed_val;
             }
+
+            T get_scaled_value() override {
+                return fixed_val;
+            }
+
 
     }; // class FixedDistribution
  
@@ -126,8 +175,8 @@ namespace minicombust::particles
                 if (dist == UNIFORM)
                 {
                     T var = 0.2;
-                    start_pos        = new UniformDistribution<vec<T>>(start - start*(var),       start    + start*var);
-                    velocity         = new UniformDistribution<vec<T>>(vel_mean - vel_mean*(var), vel_mean + vel_mean*var);
+                    start_pos        = new UniformDistribution<vec<T>>(start - start*(0.05),       start    + start*0.05);
+                    velocity         = new UniformDistribution<vec<T>>(vel_mean - vel_mean*0.5, vel_mean + vel_mean*0.5);
                     acceleration     = new UniformDistribution<vec<T>>(acc_mean - acc_mean*(var), acc_mean + acc_mean*var);
                     temperature      = new UniformDistribution<T>(temp - temp*0.05, temp + temp*0.05);
                 }
@@ -149,7 +198,9 @@ namespace minicombust::particles
             {
                 for (uint64_t p = 0; p < particles_per_timestep; p++)
                 {
-                    particles.push_back(Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value(), temperature->get_value(), logger));
+                    particles.push_back(Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), logger));
+
+                    // cout << print_vec(particles.back().v1) << endl;
 
                     cell_set.insert(particles.back().cell);
                 }
