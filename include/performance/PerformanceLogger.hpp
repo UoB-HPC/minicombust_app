@@ -34,10 +34,14 @@ namespace minicombust::performance
             int128_t *position_kernel_event_counts;
             int128_t *spray_kernel_event_counts;
             int128_t *interpolation_kernel_event_counts;
+            int128_t *particle_interpolation_event_counts;
+            int128_t *emit_event_counts;
 
             double position_ticks = 0.f;
             double interpolation_ticks = 0.f;
+            double particle_interpolation_ticks = 0.f;
             double spray_ticks = 0.f;
+            double emit_ticks = 0.f;
             clock_t output; 
             
             vector<string> event_names;
@@ -55,12 +59,21 @@ namespace minicombust::performance
                 for (int e = 0; e < num_events; e++)    myfile << "," << interpolation_kernel_event_counts[e];
                 myfile << endl;
 
+                myfile << "particle_interpolation_data," << particle_interpolation_ticks /  CLOCKS_PER_SEC;
+                for (int e = 0; e < num_events; e++)    myfile << "," << particle_interpolation_event_counts[e];
+                myfile << endl;
+
+
                 myfile << "solve_spray_equations,"  << spray_ticks /  CLOCKS_PER_SEC;
                 for (int e = 0; e < num_events; e++)    myfile << "," << spray_kernel_event_counts[e];
                 myfile << endl;
 
                 myfile << "update_particle_positions," << position_ticks /  CLOCKS_PER_SEC;
                 for (int e = 0; e < num_events; e++)    myfile << "," << position_kernel_event_counts[e];
+                myfile << endl;
+
+                myfile << "emitted_particles," << emit_ticks /  CLOCKS_PER_SEC;
+                for (int e = 0; e < num_events; e++)    myfile << "," << emit_event_counts[e];
                 myfile << endl;
                 myfile.close();
             }
@@ -233,6 +246,19 @@ namespace minicombust::performance
                 {
                     interpolation_kernel_event_counts[i] = 0;
                 }
+
+                particle_interpolation_event_counts = (int128_t*)malloc(sizeof(int128_t)*num_events);
+                for (int i = 0; i < num_events; i++) 
+                {
+                    particle_interpolation_event_counts[i] = 0;
+                }
+
+                emit_event_counts = (int128_t*)malloc(sizeof(int128_t)*num_events);
+                for (int i = 0; i < num_events; i++) 
+                {
+                    emit_event_counts[i] = 0;
+                }
+
 
                 temp_count_store = (int128_t*)malloc(sizeof(int128_t)*num_events);
                 for (int e = 0; e < num_events; e++)

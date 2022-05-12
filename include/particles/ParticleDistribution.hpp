@@ -6,6 +6,7 @@
 #include "particles/Particle.hpp"
 #include "utils/utils.hpp"
 
+using namespace std;
 using namespace minicombust::utils;
 
 namespace minicombust::particles 
@@ -61,7 +62,7 @@ namespace minicombust::particles
              UniformDistribution(T lower, T upper) : lower(lower), upper(upper)
              { }
 
-            T get_value() override {
+            inline T get_value() override {
                 T r;
                 if constexpr(std::is_same_v<T, double>)
                 {
@@ -144,15 +145,19 @@ namespace minicombust::particles
                 decay_threshold  = new FixedDistribution<T>(decay_threshold_mean);  
             }
 
-            void emit_particles(Particle<T> *particles, uint64_t current_particle)
+            inline void emit_particles(vector<Particle<T>>& particles, unordered_set<uint64_t>& cell_set, particle_logger *logger)
             {
-                
-                for (uint64_t p = current_particle; p < current_particle + particles_per_timestep; p++)
+                for (uint64_t p = 0; p < particles_per_timestep; p++)
                 {
-                    particles[p] = Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value(), temperature->get_value());
+                    particles.push_back(Particle<T>(mesh, start_pos->get_value(), velocity->get_value(), acceleration->get_value(), temperature->get_value(), logger));
+
+                    cell_set.insert(particles.back().cell);
                 }
+
+                logger->num_particles      += particles_per_timestep;
+                logger->emitted_particles  += particles_per_timestep;
+
             }
-                                  
 
     }; // class ParticleDistribution
  

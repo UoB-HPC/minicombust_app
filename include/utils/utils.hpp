@@ -6,6 +6,9 @@
 #include <sstream>   
 #include <math.h>
 #include <inttypes.h>
+#include <vector>
+#include <set>
+#include <unordered_set>
 
 #define PARTICLE_DEBUG 0
 #define LOGGER 1
@@ -128,6 +131,13 @@ namespace minicombust::utils
     }
 
     template<typename T>
+    inline vec<T> operator/(vec<T> a, vec<T> b) 
+    {
+        vec<T> sum = {a.x / b.x, a.y / b.y, a.z / b.z};
+        return sum;
+    }
+
+    template<typename T>
     inline vec<T> operator*(vec<T> a, T b) 
     {
         vec<T> sum = {a.x * b, a.y * b, a.z * b};
@@ -245,6 +255,7 @@ namespace minicombust::utils
         uint64_t unsplit_particles;
         uint64_t breakups;
         uint64_t burnt_particles;
+        double avg_particles;
     };
 }
 
