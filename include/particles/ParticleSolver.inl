@@ -61,6 +61,7 @@ namespace minicombust::particles
         cout << "\tDecayed Particles:                           " << round(10000.*(((double)logger.decayed_particles) / ((double)logger.num_particles)))/100. << "% " << endl;
         cout << "\tBurnt Particles:                             " << ((double)logger.burnt_particles) << " " << endl;
         cout << "\tBreakups:                                    " << ((double)logger.breakups) << " " << endl;
+        cout << "\tBreakup Age:                                 " << ((double)logger.breakup_age) << " " << endl;
 
         #ifdef PAPI
         cout << endl;

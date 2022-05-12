@@ -43,9 +43,9 @@ int main (int argc, char ** argv)
             break;
     }
 
-    const double box_dim                  = 1;
+    const double box_dim                  = 0.3;
     const uint64_t elements_per_dim       = 50;
-    ntimesteps                            = 1000;
+    ntimesteps                            = 1500;
     const uint64_t max_cell_particles     = 2 * particles_per_timestep * ntimesteps;
     delta                                 = 2.5e-6;
     mesh          = load_mesh(box_dim, elements_per_dim, max_cell_particles);
