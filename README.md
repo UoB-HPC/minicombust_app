@@ -35,7 +35,7 @@ PAPI=1 make clean all
 
 Output vtk files for the mesh and particles are written to `out/`
 
-## Get roofline CMD
+## Get roofline CMD (PAPI Build Required)
 ```
 python analysis/get_roofline_cmd.py CASCADE_LAKE 1-core out/performance.csv
 ```
