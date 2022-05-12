@@ -16,6 +16,7 @@
 #define CATCH_VERSION_MAJOR 2
 #define CATCH_VERSION_MINOR 13
 #define CATCH_VERSION_PATCH 8
+#define DBL_MAX_10_EXP                +308
 
 #ifdef __clang__
 #    pragma clang system_header

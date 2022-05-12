@@ -45,7 +45,7 @@ if (sys.argv[1] == "CASCADE_LAKE"):
         
         mem_bandwidth  = cacheline*kernel_vals["PAPI_LST_INS"] / kernel_vals["time"]
         mem_bandwidth /= 1000000000
-        print(kernel + " time " + str(kernel_vals["time"]) + " mem_bandwidth: " + str(mem_bandwidth))
+        print(kernel + ": time " + str(kernel_vals["time"]) + " mem_bandwidth: " + str(mem_bandwidth))
         
     print("\n\npython roofline.py procs/cascade-lake-6230-"+sys.argv[2]+".yaml --cacheaware " + point_string)
 
