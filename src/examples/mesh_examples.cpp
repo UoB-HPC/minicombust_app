@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <string>  
-
+#include <memory.h>
 
 using namespace minicombust::geometry;
 using namespace minicombust::utils;
@@ -10,7 +10,7 @@ using namespace minicombust::utils;
 using namespace std;
 
 
-Mesh<double> *load_mesh(double mesh_dim, uint64_t elements_per_dim)
+Mesh<double> *load_mesh(double mesh_dim, uint64_t elements_per_dim, uint64_t max_cell_particles)
 {
     const uint64_t cell_size  = 8; // Cube
     const uint64_t faces_per_cell = 6; // Cube
@@ -24,30 +24,30 @@ Mesh<double> *load_mesh(double mesh_dim, uint64_t elements_per_dim)
     const uint64_t elements_per_y_dim = elements_per_dim;
     const uint64_t elements_per_z_dim = elements_per_dim;
 
-    const int z_points = elements_per_z_dim + 1;
-    const int y_points = elements_per_y_dim + 1;
-    const int x_points = elements_per_x_dim + 1;
+    const uint64_t z_points = elements_per_z_dim + 1;
+    const uint64_t y_points = elements_per_y_dim + 1;
+    const uint64_t x_points = elements_per_x_dim + 1;
 
     const double element_x_dim = mesh_x_dim / elements_per_x_dim;
     const double element_y_dim = mesh_y_dim / elements_per_y_dim;
     const double element_z_dim = mesh_z_dim / elements_per_z_dim;
  
-    const double num_points       = z_points * y_points * x_points;   
-    const double num_cubes        = elements_per_x_dim * elements_per_y_dim * elements_per_z_dim;
+    const uint64_t num_points       = z_points * y_points * x_points;   
+    const uint64_t num_cubes        = elements_per_x_dim * elements_per_y_dim * elements_per_z_dim;
 
 
     // Create array of all the points we'll need.
     vec<double> *points = new vec<double>[num_points];
     vec<double> current_point = {0, 0, 0};
-    for (int z = 0; z < z_points; z++)
+    for (uint64_t z = 0; z < z_points; z++)
     {
         current_point.y = 0;
-        for (int y = 0; y < y_points; y++)
+        for (uint64_t y = 0; y < y_points; y++)
         {
             current_point.x = 0;
-            for (int x = 0; x < x_points; x++)
+            for (uint64_t x = 0; x < x_points; x++)
             {
-                int index = z*x_points*y_points + y*x_points + x;
+                uint64_t index = z*x_points*y_points + y*x_points + x;
                 memcpy(points + index, &current_point, sizeof(vec<double>));
                 current_point = current_point + vec<double>{element_x_dim, 0, 0};
             }
@@ -60,14 +60,14 @@ Mesh<double> *load_mesh(double mesh_dim, uint64_t elements_per_dim)
     // Create array of cube cells
     uint64_t *cubes = (uint64_t *)malloc(num_cubes*cell_size*sizeof(uint64_t));
 
-    for (int z = 0; z < elements_per_z_dim; z++)
+    for (uint64_t z = 0; z < elements_per_z_dim; z++)
     {
-        for (int y = 0; y < elements_per_y_dim; y++)
+        for (uint64_t y = 0; y < elements_per_y_dim; y++)
         {
-            for (int x = 0; x < elements_per_x_dim; x++)
+            for (uint64_t x = 0; x < elements_per_x_dim; x++)
             {
-                int index         = z * x_points * y_points + y * x_points + x;
-                int cube_index    = z*elements_per_x_dim*elements_per_y_dim + y*elements_per_x_dim + x;
+                uint64_t index         = z * x_points * y_points + y * x_points + x;
+                uint64_t cube_index    = z*elements_per_x_dim*elements_per_y_dim + y*elements_per_x_dim + x;
 
                 cubes[cube_index*cell_size + A_VERTEX] = index;
                 cubes[cube_index*cell_size + B_VERTEX] = index + 1;
@@ -164,7 +164,7 @@ Mesh<double> *load_mesh(double mesh_dim, uint64_t elements_per_dim)
         }
     }
 
-    Mesh<double> *mesh = new Mesh<double>(num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, cubes, faces, cell_neighbours);
+    Mesh<double> *mesh = new Mesh<double>(num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, cubes, faces, cell_neighbours, max_cell_particles);
 
     return mesh;
 }
