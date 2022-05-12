@@ -4,7 +4,6 @@
 #include <limits>
 #include <iomanip>
 #include <bitset>
-#include <vector>
 
 #include "utils/utils.hpp"
 #include "geometry/Mesh.hpp"
@@ -80,26 +79,34 @@ namespace minicombust::particles
             T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
             T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
+            vec<T> gas_vel;
+            T      gas_pressure;
+            T      gas_temperature;
+
 
             T age = 0.0;
 
             uint64_t cell = MESH_BOUNDARY;          // cell at timestep beginning
 
 
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp) : x1(start), v1(velocity), a1(acceleration), temp(temp)
+            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, particle_logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp)
             { 
-                for (uint64_t c = 0; c < mesh->mesh_size; c++)
-                {
-                    if (check_cell(c, mesh))  
-                    {
-                        cell = c;
-                        break;
-                    }
-                }
-                if (cell == MESH_BOUNDARY)
-                {
-                    decayed = true;
-                }
+                // for (uint64_t c = 0; c < mesh->mesh_size; c++)
+                // {
+                //     if (check_cell(c, mesh))  
+                //     {
+                //         cell = c;
+                //         break;
+                //     }
+                // }
+                // if (cell == MESH_BOUNDARY)
+                // {
+                //     decayed = true;
+                // }
+
+                cell = 0;
+                update_cell(mesh, logger);
+
 
                 diameter = 2 * pow(0.75 * mass / ( M_PI * 724.), 1./3.);
 
@@ -235,7 +242,7 @@ namespace minicombust::particles
                 return cell;
             }
 
-            inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vec<T> gas_vel, T gas_pressure, T gas_temperature, uint64_t *current_particle, Particle<T> *particles)
+            inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vector<Particle<T>>& particles)
             {
                 // Inputs from flow: relative_acc, kinematic viscoscity?, air_temp, air_pressure
                 // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant
@@ -375,7 +382,7 @@ namespace minicombust::particles
                 
 
 
-                if (*current_particle < (mesh->max_cell_particles * mesh->mesh_size) && !decayed)
+                if (!decayed)
                 {
 
                     // SOLVE SPRAY BREAKUP MODEL
@@ -423,8 +430,7 @@ namespace minicombust::particles
                         velocity1.z = - (relative_drop_vel.x * velocity1.x + relative_drop_vel.y * velocity1.y) / relative_drop_vel.z;
                         velocity2.z = - velocity1.z;
                         
-                        particles[*current_particle] = Particle<T>(mesh, x1, velocity2 * magnitude + v1, a1, mass2, temp, diameter2, cell);
-                        (*current_particle)++;
+                        particles.push_back(Particle<T>(mesh, x1, velocity2 * magnitude + v1, a1, mass2, temp, diameter2, cell));
 
                         // Update parent to droplet1;
                         v1  += velocity1 * magnitude;
@@ -440,15 +446,8 @@ namespace minicombust::particles
                 } 
                 else if (LOGGER)
                 {
-                    if (decayed)
-                    {
-                        logger->decayed_particles++;
-                        logger->burnt_particles++;
-                    }
-                    else if (*current_particle >= (mesh->max_cell_particles * mesh->mesh_size))
-                    {
-                        logger->unsplit_particles++;
-                    }
+                    logger->decayed_particles++;
+                    logger->burnt_particles++;
                 }
             }
 

@@ -21,16 +21,8 @@ namespace minicombust::visit
         public:
             Mesh<T> *mesh;
 
-            const uint64_t num_particles = 0;
-            Particle<T> *particles;
-
             VisitWriter(Mesh<T> *mesh) : mesh(mesh)
             {  }
-
-            VisitWriter(Mesh<T> *mesh, const uint64_t num_particles, Particle<T> *particles) : mesh(mesh), num_particles(num_particles), particles(particles)
-            {  }
-
-            
 
             void write_mesh(string filename)
             {
@@ -77,7 +69,7 @@ namespace minicombust::visit
             }
 
 
-            void write_particles(string filename, int id)
+            void write_particles(string filename, int id, vector<Particle<T>>& particles)
             {
                 // Print VTK Header
                 ofstream vtk_file;
@@ -160,46 +152,44 @@ namespace minicombust::visit
 
 
                 
-                uint64_t non_decayed = 0;
-                for (uint64_t p = 0; p < num_particles; p++)   if (!particles[p].decayed) non_decayed++;
-                vtk_file << endl << "POINTS " << non_decayed << " float"  << endl;
-                for (uint64_t p = 0; p < num_particles; p++)
+                vtk_file << endl << "POINTS " << particles.size() << " float"  << endl;
+                for (uint64_t p = 0; p < particles.size(); p++)
                 {
-                    if (!particles[p].decayed) vtk_file << print_vec(particles[p].x1) << endl;
+                    vtk_file << print_vec(particles[p].x1) << endl;
                 }
                 vtk_file << endl;
 
 
                 // Print particle values for points
-                vtk_file << endl << "VERTICES " << non_decayed << " " << non_decayed * 2  << endl;
+                vtk_file << endl << "VERTICES " << particles.size() << " " << particles.size() * 2  << endl;
                 uint64_t count = 0;
-                for(uint64_t p = 0; p < num_particles; p++)
+                for(uint64_t p = 0; p < particles.size(); p++)
                 {
-                    if (!particles[p].decayed) vtk_file << "1 " << count++ << "\t";
+                    vtk_file << "1 " << count++ << "\t";
                 }
                 vtk_file << endl;
 
-                vtk_file << endl << "POINT_DATA " << non_decayed << endl;
+                vtk_file << endl << "POINT_DATA " << particles.size() << endl;
                 vtk_file << "SCALARS mass float" << endl;
                 vtk_file << "LOOKUP_TABLE default" << endl;
-                for(uint64_t p = 0; p < num_particles; p++)
+                for(uint64_t p = 0; p < particles.size(); p++)
                 {
-                    if (!particles[p].decayed) vtk_file << particles[p].mass << "\t";
+                    vtk_file << particles[p].mass << "\t";
                 } 
                 vtk_file << endl;
 
                 vtk_file << "SCALARS temp float" << endl;
                 vtk_file << "LOOKUP_TABLE default" << endl;
-                for(uint64_t p = 0; p < num_particles; p++)
+                for(uint64_t p = 0; p < particles.size(); p++)
                 {
-                    if (!particles[p].decayed) vtk_file << particles[p].temp << "\t";
+                    vtk_file << particles[p].temp << "\t";
                 } 
                 vtk_file << endl;
 
                 vtk_file << "VECTORS velocity float" << endl;
-                for(uint64_t p = 0; p < num_particles; p++)
+                for(uint64_t p = 0; p < particles.size(); p++)
                 {
-                    if (!particles[p].decayed) vtk_file << print_vec(particles[p].v1) << "\t";
+                    vtk_file << print_vec(particles[p].v1) << "\t";
                 } 
                 vtk_file << endl;
 

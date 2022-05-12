@@ -2,6 +2,7 @@
 
 #include <map>
 #include <memory.h>
+#include <vector>
 
 #include "utils/utils.hpp"
 #include "particles/Particle.hpp"
@@ -24,8 +25,11 @@ namespace minicombust::particles
 
             T delta;
 
+            const uint64_t num_timesteps;
+
            
-            Particle<T> *particles;
+            vector<Particle<T>>      particles;
+            unordered_set<uint64_t>  cell_set;
             ParticleDistribution<T> *particle_dist;
 
             Mesh<T> *mesh;
@@ -44,25 +48,26 @@ namespace minicombust::particles
 
             vec_soa<T>   nodal_gas_velocity_soa;
             flow_aos<T> *nodal_flow_aos;
+
+
         public:
 
-            uint64_t current_particle0;
-            uint64_t current_particle1;
-
             template<typename M>
-            ParticleSolver(uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh) : delta(delta), particle_dist(particle_dist), mesh(mesh)
+            ParticleSolver(uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t n) : delta(delta), particle_dist(particle_dist), mesh(mesh), num_timesteps(n)
             {
-                const size_t particles_array_size     = mesh->max_cell_particles * mesh->mesh_size * sizeof(Particle<T>);
                 const size_t source_vector_array_size = mesh->points_size * sizeof(vec<T>);
                 const size_t source_scalar_array_size = mesh->points_size * sizeof(T);
+                const size_t particles_array_size    = mesh->max_cell_particles * sizeof(Particle<T>);
 
-                particles                         = (Particle<T> *)malloc(particles_array_size);
                 nodal_gas_velocity_soa            = allocate_vec_soa<T>(mesh->points_size);
                 nodal_flow_aos                    = (flow_aos<T> *)malloc(mesh->points_size * sizeof(flow_aos<T>));
 
+                particles.reserve(mesh->max_cell_particles);
+
+
                 // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                 printf("Particle solver storage requirements:\n");
-                printf("\tAllocating particles array, particles                       (%.2f MB)  particles_array_size %" PRIu64 "\n",   (float)(particles_array_size)/1000000.0, mesh->max_cell_particles * mesh->mesh_size);
+                printf("\tReserving particles array, particles                        (%.2f MB)  particles_array_size %" PRIu64 "\n",   (float)(particles_array_size)/1000000.0, mesh->max_cell_particles);
                 printf("\tAllocating nodal_gas_velocity array                         (%.2f MB)\n",  ((float)source_vector_array_size)/1000000.);
                 printf("\tAllocating nodal_gas_pressure array                         (%.2f MB)\n",  ((float)source_scalar_array_size)/1000000.);
                 printf("\tAllocating nodal_gas_temperature array                      (%.2f MB)\n",  ((float)source_scalar_array_size)/1000000.);

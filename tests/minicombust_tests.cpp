@@ -11,9 +11,9 @@ using namespace minicombust::particles;
 
 bool check_particle_posistion(Mesh<double> *mesh, uint64_t correct_cell, vec<double> start, vec<double> velocity)
 {
-    Particle<double> *p = new Particle<double>(mesh, start, velocity, vec<double>{0, 0, 0}, 300.);
-
     particle_logger logger;
+    Particle<double> *p = new Particle<double>(mesh, start, velocity, vec<double>{0, 0, 0}, 300., &logger);
+
     memset(&logger, 0, sizeof(particle_logger));
     p->x1 += p->v1 * 1.0;
     p->update_cell(mesh, &logger);
