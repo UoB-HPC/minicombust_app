@@ -400,7 +400,7 @@ namespace minicombust::particles
                         // const T second_moment  = - first_moment * weber_droplet; 
                         
                         // TODO: How do you get a random number from distribution 0.5 * (1 + erf((x - diameter - first_moment) / sqrt(2*second_moment))); 
-                        const T rand_prop = get_uniform_random(0.3, 0.7);
+                        const T rand_prop = get_uniform_random(0.1, 0.9);
                         const T diameter1 = rand_prop * diameter;
                         const T diameter2 = diameter - diameter1;
 
@@ -410,30 +410,24 @@ namespace minicombust::particles
                         const T mass2 = mass - mass1;
 
                         // Product droplet velocity is computed by adding a factor to the parent velocity
-                        const T magnitude = diameter / (2.0 * breakup_age);
-                        
-                        // Direction is a random unit vector normal to the relative velocity
-                        // Randomly seed x component of velocities, with knowledge that direction magnitude = 1 
-                        vec<T> velocity1, velocity2;
-                        velocity1.x = get_uniform_random(-1.0, 1.0);
-                        // velocity2.x = get_uniform_random(-1.0, 1.0);
-                        velocity2.x = -velocity1.x;
+                        const T length = diameter / (2.0 * breakup_age);
 
-                        // Random seed y component of velocities, with knowledge that direction magnitude = 1
-                        const T remaining_mag1 = sqrt(1. - (velocity1.x * velocity1.x));
-                        // const T remaining_mag2 = sqrt(1 - (velocity2.x * velocity2.x));
-                        velocity1.y = get_uniform_random(-remaining_mag1, remaining_mag1);
-                        // velocity2.y = get_uniform_random(-remaining_mag2, remaining_mag2);
-                        velocity2.y = -velocity1.y;
+                        vec<T> velocity1 =  { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
+                        vec<T> velocity2 =  { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
 
-                        // Dot product = 0 for perpendicular vectors, solve for direction z components
-                        velocity1.z = - (relative_drop_vel.x * velocity1.x + relative_drop_vel.y * velocity1.y) / relative_drop_vel.z;
-                        velocity2.z = - velocity1.z;
+                        velocity1 = -1. + (velocity1 * 2.);
+                        velocity2 = -1. + (velocity2 * 2.);
+
+                        vec<T> unit_rel_velocity = relative_drop_vel / magnitude(relative_drop_vel);
+
+                        velocity1 = velocity1 - dot_product(velocity1, unit_rel_velocity) * unit_rel_velocity; 
+                        velocity2 = velocity2 - dot_product(velocity2, unit_rel_velocity) * unit_rel_velocity; 
+
                         
-                        particles.push_back(Particle<T>(mesh, x1, velocity2 * magnitude + v1, a1, mass2, temp, diameter2, cell));
+                        particles.push_back(Particle<T>(mesh, x1, velocity2 * length + v1, a1, mass2, temp, diameter2, cell));
 
                         // Update parent to droplet1;
-                        v1  += velocity1 * magnitude;
+                        v1  += velocity1 * length;
                         mass = mass1;
                         age  = 0.0;
 
