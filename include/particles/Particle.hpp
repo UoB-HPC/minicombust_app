@@ -440,7 +440,7 @@ namespace minicombust::particles
                         if (LOGGER)
                         {   
                             logger->breakups++;
-                            logger->num_particles++;     
+                            logger->num_particles++;
                         }
                     }
                 } 
