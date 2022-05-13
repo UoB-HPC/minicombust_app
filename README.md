@@ -3,16 +3,27 @@
 ## Dependencies
 - Catch++ Unit Testing (Header-only)
 
-
 ## Build
 
+Tested with GCC, Cray and Intel compilers, Intel is most tested compiler at the moment.
+
+Without PAPI:
 ```
 make clean all
 ```
 
+With PAPI:
+```
+PAPI=1 make clean all
+```
+
 ## Run 
 ```
-./bin/minicombust
+./bin/minicombust # emits 10 particles per timestep by default
+```
+
+```
+./bin/minicombust NUM_PARTICLES_PER_TIMESTEP
 ```
 
 ## Run tests 
@@ -20,18 +31,20 @@ make clean all
 ./bin/minicombust_tests
 ```
 
-## Get roofline CMD
+## Output
+
+Output vtk files for the mesh and particles are written to `out/`
+
+## Get roofline CMD (PAPI Build Required)
 ```
-python analysis/get_roofline_cmd.py CASCADE_LAKE out/performance.csv
+python analysis/get_roofline_cmd.py CASCADE_LAKE 1-core out/performance.csv
 ```
 
-## Unsupported Feature List
-- Visualise particle fields (temperature, mass, evaporated gas)
-- Spray Breakup (spawn new particles, primary and secondary breakup)
+## Future Features
+- Spray Breakup (primary breakup)
 - C API for particle side
 - Tetrahedral mesh
 - Benchmarks
-- Serial Optimised Implementation 
 - MPI Implementation
 
 ## References

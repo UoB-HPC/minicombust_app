@@ -59,7 +59,7 @@ namespace minicombust::particles
                 }
 
                 // if (PARTICLE_DEBUG)  cout << "\t\tpartial_volumes - total  " << partial_volumes-total_volume << endl;
-                if (abs(partial_volumes-total_volume) < 5.0e-10)  return true;
+                if (abs(partial_volumes-total_volume) < 5.0e-15)  return true;
                 return false;
                 
             }
@@ -75,7 +75,7 @@ namespace minicombust::particles
 
             bool decayed = false;
 
-            T mass        = 0.05;           // DUMMY_VAL Current mass (kg)
+            T mass        = 0.02;           // DUMMY_VAL Current mass (kg)
             T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
             T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
@@ -86,27 +86,12 @@ namespace minicombust::particles
 
             T age = 0.0;
 
-            uint64_t cell = MESH_BOUNDARY;          // cell at timestep beginning
+            uint64_t cell;          // cell at timestep beginning
 
 
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, particle_logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp)
+            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, uint64_t cell, particle_logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp), cell(cell)
             { 
-                // for (uint64_t c = 0; c < mesh->mesh_size; c++)
-                // {
-                //     if (check_cell(c, mesh))  
-                //     {
-                //         cell = c;
-                //         break;
-                //     }
-                // }
-                // if (cell == MESH_BOUNDARY)
-                // {
-                //     decayed = true;
-                // }
-
-                cell = 0;
                 update_cell(mesh, logger);
-
 
                 diameter = 2 * pow(0.75 * mass / ( M_PI * 724.), 1./3.);
 
@@ -120,6 +105,7 @@ namespace minicombust::particles
 
             inline uint64_t update_cell(Mesh<T> *mesh, particle_logger *logger)
             {
+
 
                 if ( check_cell(cell, mesh) )
                 {
@@ -136,6 +122,8 @@ namespace minicombust::particles
                     vec<T> *A = &artificial_A;
                     // vec<T> *A = &x0;
                     vec<T> *B = &x1;
+
+                    uint64_t num_tries = 0;
                     
                     uint64_t face_mask = POSSIBLE; // Prevents double interceptions     
 
@@ -159,6 +147,7 @@ namespace minicombust::particles
                         uint64_t intercepted_face_id = 0;
                         uint64_t intercepted_faces   = 0;
 
+ 
                         for (uint64_t face = 0; face < 6; face++)
                         {
                             if ((1 << face) & face_mask)  continue;
@@ -199,18 +188,31 @@ namespace minicombust::particles
                         // Check if multiple faces have been intercepted
                         if (intercepted_faces > 1)
                         {
+                            // Get random point within unit sphere
                             vec<T> r = vec<T> { static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX) } ;
-                            artificial_A = mesh->cell_centres[cell] + 0.1 * r * mesh->cell_size_vector;
+                            r        = - 1. + (r * 2.);
+                            artificial_A = mesh->cell_centres[cell] + 0.4 * r * mesh->cell_size_vector / 2.;
+
                             if (PARTICLE_DEBUG)  cout << "\t\t\tNo faces, artificial position " <<  print_vec(artificial_A) << endl;
                             if (LOGGER)
                             {
                                 logger->position_adjustments++;
+                            }
+
+
+                            if (num_tries++ > 15)
+                            {
+                                decayed = true;
+                                cell    = MESH_BOUNDARY;
+                                if (LOGGER) logger->lost_particles++;
+                                return cell;
                             }
                             continue;
                         }
 
                         // Test neighbour cell
                         cell = mesh->cell_neighbours[cell*mesh->faces_per_cell + intercepted_face_id];
+
                         if (PARTICLE_DEBUG)  cout << "\t\tMoving to cell " << cell << " " << mesh->get_face_string(intercepted_face_id) << " direction" << endl;  
 
                         // If intercepted with boundary of mesh, decay particle. TODO: Rebound them?
@@ -259,7 +261,7 @@ namespace minicombust::particles
                 const vec<T> relative_drop_acc           = a1 * delta ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 
 
-                const T gas_density  = 1.4;                                               // DUMMY VAL
+                const T gas_density  = 6.9;                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);
 
 
@@ -400,7 +402,7 @@ namespace minicombust::particles
                         // const T second_moment  = - first_moment * weber_droplet; 
                         
                         // TODO: How do you get a random number from distribution 0.5 * (1 + erf((x - diameter - first_moment) / sqrt(2*second_moment))); 
-                        const T rand_prop = get_uniform_random(0.3, 0.7);
+                        const T rand_prop = get_uniform_random(0.1, 0.9);
                         const T diameter1 = rand_prop * diameter;
                         const T diameter2 = diameter - diameter1;
 
@@ -410,30 +412,24 @@ namespace minicombust::particles
                         const T mass2 = mass - mass1;
 
                         // Product droplet velocity is computed by adding a factor to the parent velocity
-                        const T magnitude = diameter / (2.0 * breakup_age);
-                        
-                        // Direction is a random unit vector normal to the relative velocity
-                        // Randomly seed x component of velocities, with knowledge that direction magnitude = 1 
-                        vec<T> velocity1, velocity2;
-                        velocity1.x = get_uniform_random(-1.0, 1.0);
-                        // velocity2.x = get_uniform_random(-1.0, 1.0);
-                        velocity2.x = -velocity1.x;
+                        const T length = diameter / (2.0 * breakup_age);
 
-                        // Random seed y component of velocities, with knowledge that direction magnitude = 1
-                        const T remaining_mag1 = sqrt(1. - (velocity1.x * velocity1.x));
-                        // const T remaining_mag2 = sqrt(1 - (velocity2.x * velocity2.x));
-                        velocity1.y = get_uniform_random(-remaining_mag1, remaining_mag1);
-                        // velocity2.y = get_uniform_random(-remaining_mag2, remaining_mag2);
-                        velocity2.y = -velocity1.y;
+                        vec<T> velocity1 =  { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
+                        vec<T> velocity2 =  { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
 
-                        // Dot product = 0 for perpendicular vectors, solve for direction z components
-                        velocity1.z = - (relative_drop_vel.x * velocity1.x + relative_drop_vel.y * velocity1.y) / relative_drop_vel.z;
-                        velocity2.z = - velocity1.z;
+                        velocity1 = -1. + (velocity1 * 2.);
+                        velocity2 = -1. + (velocity2 * 2.);
+
+                        vec<T> unit_rel_velocity = relative_drop_vel / magnitude(relative_drop_vel);
+
+                        velocity1 = velocity1 - dot_product(velocity1, unit_rel_velocity) * unit_rel_velocity; 
+                        velocity2 = velocity2 - dot_product(velocity2, unit_rel_velocity) * unit_rel_velocity; 
+
                         
-                        particles.push_back(Particle<T>(mesh, x1, velocity2 * magnitude + v1, a1, mass2, temp, diameter2, cell));
+                        particles.push_back(Particle<T>(mesh, x1, velocity2 * length + v1, a1, mass2, temp, diameter2, cell));
 
                         // Update parent to droplet1;
-                        v1  += velocity1 * magnitude;
+                        v1  += velocity1 * length;
                         mass = mass1;
                         age  = 0.0;
 
@@ -441,7 +437,13 @@ namespace minicombust::particles
                         {   
                             logger->breakups++;
                             logger->num_particles++;
+                            logger->breakup_age = breakup_age;
                         }
+                    }
+
+                    if (LOGGER)
+                    {   
+                        logger->breakup_age = breakup_age;
                     }
                 } 
                 else if (LOGGER)

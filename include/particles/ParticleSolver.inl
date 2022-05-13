@@ -56,11 +56,13 @@ namespace minicombust::particles
         cout << "\tEdge adjustments:                            " << ((double)logger.position_adjustments)                                                            << endl;
         cout << "\tEdge adjustments (per iter):                 " << ((double)logger.position_adjustments) / timesteps                                                << endl;
         cout << "\tEdge adjustments (per particle, per iter):   " << ((double)logger.position_adjustments) / (((double)logger.num_particles)*timesteps)               << endl;
+        cout << "\tLost Particles:                              " << ((double)logger.lost_particles      )                                                            << endl;
         cout << endl;
         cout << "\tBoundary Intersections:                      " << ((double)logger.boundary_intersections)                                                          << endl;
         cout << "\tDecayed Particles:                           " << round(10000.*(((double)logger.decayed_particles) / ((double)logger.num_particles)))/100. << "% " << endl;
         cout << "\tBurnt Particles:                             " << ((double)logger.burnt_particles) << " " << endl;
         cout << "\tBreakups:                                    " << ((double)logger.breakups) << " " << endl;
+        cout << "\tBreakup Age:                                 " << ((double)logger.breakup_age) << " " << endl;
 
         #ifdef PAPI
         cout << endl;
@@ -150,8 +152,6 @@ namespace minicombust::particles
         performance_logger.my_papi_start();
         #endif
 
-
-
         vector<uint64_t> decayed_particles;
         #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
@@ -161,7 +161,6 @@ namespace minicombust::particles
             if (particles[p].decayed)  decayed_particles.push_back(p);
         }
 
-
         const uint64_t decayed_particles_size = decayed_particles.size();
         #pragma ivdep
         for (int128_t i = decayed_particles_size - 1; i >= 0; i--)
@@ -169,6 +168,7 @@ namespace minicombust::particles
             particles[decayed_particles[i]] = particles.back();
             particles.pop_back();
         }
+
 
         #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_ticks);
@@ -185,23 +185,23 @@ namespace minicombust::particles
         cell_set.clear();
 
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_particle_positions.\n");
-        const uint64_t particles_size  = particles.size(); 
-        uint64_t particle_index = 0;
-        
+        const uint64_t particles_size  = particles.size();
+
+        static int count = 0;
+        count++;
 
         // Update particle positions
         vector<uint64_t> decayed_particles;
         #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
         {   
+            // cout << count << " " << p << " x1: " << print_vec(particles[p].x1) << " cell " << particles[p].cell << endl;
             // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
             particles[p].update_cell(mesh, &logger);
 
-
-            if ( particles[p].decayed)  decayed_particles.push_back(p);
+            if (particles[p].decayed)  decayed_particles.push_back(p);
             else                        cell_set.insert(particles[p].cell);
         }
-
 
 
         const uint64_t decayed_particles_size = decayed_particles.size();
@@ -212,7 +212,6 @@ namespace minicombust::particles
             particles.pop_back();
 
         }
-
 
         #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_ticks);

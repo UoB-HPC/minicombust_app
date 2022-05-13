@@ -190,6 +190,12 @@ namespace minicombust::utils
     }
 
     template<typename T> 
+    inline T magnitude(T v)
+    {
+        return abs(v);
+    }
+
+    template<typename T> 
     inline vec<T> cross_product(vec<T> a, vec<T> b)
     {
         vec<T> cross_product = {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x};
@@ -250,12 +256,14 @@ namespace minicombust::utils
         uint64_t emitted_particles;
         uint64_t cell_checks;
         uint64_t position_adjustments;
+        uint64_t lost_particles;
         uint64_t boundary_intersections;
         uint64_t decayed_particles;
         uint64_t unsplit_particles;
         uint64_t breakups;
         uint64_t burnt_particles;
         double avg_particles;
+        double breakup_age;
     };
 }
 

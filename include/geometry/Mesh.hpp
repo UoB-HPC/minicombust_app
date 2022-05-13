@@ -88,7 +88,7 @@ namespace minicombust::geometry
             vec<T> *particle_momentum_rate;          // particle_momentum_rate
 
             // Flow source terms
-            const vec<T> dummy_gas_vel = {300., 300., 300.};
+            const vec<T> dummy_gas_vel = {20., 20., 20.};
             const T      dummy_gas_pre = 4000.;
             const T      dummy_gas_tem = 2000.;
 
