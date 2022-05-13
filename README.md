@@ -41,11 +41,12 @@ python analysis/get_roofline_cmd.py CASCADE_LAKE 1-core out/performance.csv
 ```
 
 ## Future Features
-- Spray Breakup (primary breakup)
+- Primary breakup
 - C API for particle side
 - Tetrahedral mesh
 - Benchmarks
-- MPI Implementation
+- MPI Implementationi
+- YAML config file
 
 ## References
 - (Parallel load-balancing for combustion with spray for large-scale simulation)[https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub#br0160]
