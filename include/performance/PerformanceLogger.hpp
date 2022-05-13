@@ -86,7 +86,7 @@ namespace minicombust::performance
 
                 myfile << "emitted_particles," << emit_ticks /  CLOCKS_PER_SEC;
                 #ifdef PAPI
-                for (int e = 0; e < num_events; e++)    myfile << "," << emit_kernel_event_counts[e];
+                for (int e = 0; e < num_events; e++)    myfile << "," << emit_event_counts[e];
                 #endif
                 myfile << endl;
                 myfile.close();
