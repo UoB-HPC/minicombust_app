@@ -198,7 +198,7 @@ namespace minicombust::particles
             {
                 for (uint64_t p = 0; p < particles_per_timestep; p++)
                 {
-                    particles.push_back(Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), logger));
+                    particles.push_back(Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), 0, logger));
 
                     // cout << print_vec(particles.back().v1) << endl;
 

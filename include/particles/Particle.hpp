@@ -59,7 +59,7 @@ namespace minicombust::particles
                 }
 
                 // if (PARTICLE_DEBUG)  cout << "\t\tpartial_volumes - total  " << partial_volumes-total_volume << endl;
-                if (abs(partial_volumes-total_volume) < 5.0e-10)  return true;
+                if (abs(partial_volumes-total_volume) < 5.0e-15)  return true;
                 return false;
                 
             }
@@ -86,27 +86,12 @@ namespace minicombust::particles
 
             T age = 0.0;
 
-            uint64_t cell = MESH_BOUNDARY;          // cell at timestep beginning
+            uint64_t cell;          // cell at timestep beginning
 
 
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, particle_logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp)
+            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, uint64_t cell, particle_logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp), cell(cell)
             { 
-                // for (uint64_t c = 0; c < mesh->mesh_size; c++)
-                // {
-                //     if (check_cell(c, mesh))  
-                //     {
-                //         cell = c;
-                //         break;
-                //     }
-                // }
-                // if (cell == MESH_BOUNDARY)
-                // {
-                //     decayed = true;
-                // }
-
-                cell = 0;
                 update_cell(mesh, logger);
-
 
                 diameter = 2 * pow(0.75 * mass / ( M_PI * 724.), 1./3.);
 
@@ -120,6 +105,7 @@ namespace minicombust::particles
 
             inline uint64_t update_cell(Mesh<T> *mesh, particle_logger *logger)
             {
+
 
                 if ( check_cell(cell, mesh) )
                 {
@@ -136,6 +122,8 @@ namespace minicombust::particles
                     vec<T> *A = &artificial_A;
                     // vec<T> *A = &x0;
                     vec<T> *B = &x1;
+
+                    uint64_t num_tries = 0;
                     
                     uint64_t face_mask = POSSIBLE; // Prevents double interceptions     
 
@@ -159,6 +147,7 @@ namespace minicombust::particles
                         uint64_t intercepted_face_id = 0;
                         uint64_t intercepted_faces   = 0;
 
+ 
                         for (uint64_t face = 0; face < 6; face++)
                         {
                             if ((1 << face) & face_mask)  continue;
@@ -199,18 +188,31 @@ namespace minicombust::particles
                         // Check if multiple faces have been intercepted
                         if (intercepted_faces > 1)
                         {
+                            // Get random point within unit sphere
                             vec<T> r = vec<T> { static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX) } ;
-                            artificial_A = mesh->cell_centres[cell] + 0.1 * r * mesh->cell_size_vector;
+                            r        = - 1. + (r * 2.);
+                            artificial_A = mesh->cell_centres[cell] + 0.4 * r * mesh->cell_size_vector / 2.;
+
                             if (PARTICLE_DEBUG)  cout << "\t\t\tNo faces, artificial position " <<  print_vec(artificial_A) << endl;
                             if (LOGGER)
                             {
                                 logger->position_adjustments++;
+                            }
+
+
+                            if (num_tries++ > 15)
+                            {
+                                decayed = true;
+                                cell    = MESH_BOUNDARY;
+                                if (LOGGER) logger->lost_particles++;
+                                return cell;
                             }
                             continue;
                         }
 
                         // Test neighbour cell
                         cell = mesh->cell_neighbours[cell*mesh->faces_per_cell + intercepted_face_id];
+
                         if (PARTICLE_DEBUG)  cout << "\t\tMoving to cell " << cell << " " << mesh->get_face_string(intercepted_face_id) << " direction" << endl;  
 
                         // If intercepted with boundary of mesh, decay particle. TODO: Rebound them?

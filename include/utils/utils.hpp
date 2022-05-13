@@ -256,6 +256,7 @@ namespace minicombust::utils
         uint64_t emitted_particles;
         uint64_t cell_checks;
         uint64_t position_adjustments;
+        uint64_t lost_particles;
         uint64_t boundary_intersections;
         uint64_t decayed_particles;
         uint64_t unsplit_particles;
