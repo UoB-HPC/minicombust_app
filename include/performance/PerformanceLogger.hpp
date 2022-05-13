@@ -1,13 +1,15 @@
 #pragma once
 
-#ifdef PAPI
 
 #include <string>
 #include <vector>
 #include <fstream>
 #include <iostream>
 #include <ctime>
+
+#ifdef PAPI
 #include <papi.h>
+#endif
 
 #include "utils/utils.hpp"
 
@@ -51,29 +53,41 @@ namespace minicombust::performance
                 ofstream myfile;
                 myfile.open("out/performance.csv");
                 myfile << "kernel,time";
+                #ifdef PAPI
                 for (int e = 0; e < num_events; e++)  myfile << "," << event_names[e];
+                #endif
                 myfile << endl;
 
 
                 myfile << "interpolate_nodal_data," << interpolation_ticks /  CLOCKS_PER_SEC;
+                #ifdef PAPI
                 for (int e = 0; e < num_events; e++)    myfile << "," << interpolation_kernel_event_counts[e];
+                #endif
                 myfile << endl;
 
                 myfile << "particle_interpolation_data," << particle_interpolation_ticks /  CLOCKS_PER_SEC;
+                #ifdef PAPI
                 for (int e = 0; e < num_events; e++)    myfile << "," << particle_interpolation_event_counts[e];
+                #endif
                 myfile << endl;
 
 
                 myfile << "solve_spray_equations,"  << spray_ticks /  CLOCKS_PER_SEC;
+                #ifdef PAPI
                 for (int e = 0; e < num_events; e++)    myfile << "," << spray_kernel_event_counts[e];
+                #endif
                 myfile << endl;
 
                 myfile << "update_particle_positions," << position_ticks /  CLOCKS_PER_SEC;
+                #ifdef PAPI
                 for (int e = 0; e < num_events; e++)    myfile << "," << position_kernel_event_counts[e];
+                #endif
                 myfile << endl;
 
                 myfile << "emitted_particles," << emit_ticks /  CLOCKS_PER_SEC;
-                for (int e = 0; e < num_events; e++)    myfile << "," << emit_event_counts[e];
+                #ifdef PAPI
+                for (int e = 0; e < num_events; e++)    myfile << "," << emit_kernel_event_counts[e];
+                #endif
                 myfile << endl;
                 myfile.close();
             }
@@ -81,6 +95,7 @@ namespace minicombust::performance
 
             inline void my_papi_start()
             {
+                #ifdef PAPI
                 if (event_set != PAPI_NULL)
                 {
                     for (int e = 0; e < num_events; e++) 
@@ -93,12 +108,14 @@ namespace minicombust::performance
                         exit(EXIT_FAILURE);
                     }
                 }
+                #endif
                 output = clock(); 
 
             }
 
             inline void my_papi_stop(int128_t *kernel_event_counts, double *ticks)
             {
+                #ifdef PAPI
                 if (event_set != PAPI_NULL) 
                 {
                     if (PAPI_stop(event_set, temp_count_store) != PAPI_OK) 
@@ -111,11 +128,16 @@ namespace minicombust::performance
                         kernel_event_counts[e] += temp_count_store[e];
                     }
                 }
+                #endif
                 *ticks += double(clock() - output);
             }
 
+            
+
             inline void init_papi()
             {
+                #ifdef PAPI
+
                 int ret;
 
                 if ((ret=PAPI_library_init(PAPI_VER_CURRENT)) != PAPI_VER_CURRENT) {
@@ -134,10 +156,14 @@ namespace minicombust::performance
                     printf("ERROR: No hardware counters here, or PAPI not supported (num_ctrs=%d)\n", num_ctrs);
                     exit(-1);
                 }
+                #endif
+
             }
 
             inline void load_papi_events()
             {
+
+                #ifdef PAPI
                 int ret;
 
                 event_set = PAPI_NULL;
@@ -283,6 +309,8 @@ namespace minicombust::performance
                         temp_count_store[e] = 0;
                     }
                 }
+                #endif
+
             }   
 
 
@@ -290,4 +318,3 @@ namespace minicombust::performance
 
 }   // namespace minicombust::performance 
 
-#endif

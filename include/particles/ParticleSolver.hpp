@@ -9,9 +9,7 @@
 #include "particles/ParticleDistribution.hpp"
 #include "performance/PerformanceLogger.hpp"
 
-#ifdef PAPI
 using namespace minicombust::performance; 
-#endif
 
 namespace minicombust::particles 
 {
@@ -36,9 +34,7 @@ namespace minicombust::particles
             
             particle_logger logger;
             
-            #ifdef PAPI
             PerformanceLogger<T> performance_logger;
-            #endif
 
             T flow_field;
 
@@ -79,10 +75,8 @@ namespace minicombust::particles
 
                 
 
-                #ifdef PAPI
                 performance_logger.init_papi();
                 performance_logger.load_papi_events();
-                #endif
 
             }
 

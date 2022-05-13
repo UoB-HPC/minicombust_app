@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for x in {1..200}; 
+for x in {262..300}; 
 do
     FILE=out/${x}_particles.log 
     echo "Number of particles per timestep " $x;

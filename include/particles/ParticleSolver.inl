@@ -63,11 +63,12 @@ namespace minicombust::particles
         cout << "\tBurnt Particles:                             " << ((double)logger.burnt_particles) << " " << endl;
         cout << "\tBreakups:                                    " << ((double)logger.breakups) << " " << endl;
         cout << "\tBreakup Age:                                 " << ((double)logger.breakup_age) << " " << endl;
+        cout << endl;
+        cout << "\tInterpolated Cells:                          " << ((double)logger.interpolated_cells) << " " << endl;
+        cout << "\tInterpolated Cells Percentage:               " << round(10000.*(((double)logger.interpolated_cells) / ((double)mesh->mesh_size)))/100. << "% " << endl;
 
-        #ifdef PAPI
         cout << endl;
         performance_logger.print_counters();
-        #endif  
     }
 
 
@@ -81,17 +82,13 @@ namespace minicombust::particles
     template<class T> 
     void ParticleSolver<T>::particle_release()
     {
-        #ifdef PAPI
         performance_logger.my_papi_start();
-        #endif
 
         // TODO: Reuse decaying particle space
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: particle_release.\n");
         particle_dist->emit_particles(particles, cell_set, &logger);
 
-        #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_ticks);
-        #endif
     }
 
     template<class T> 
@@ -111,9 +108,7 @@ namespace minicombust::particles
         memset(mesh->evaporated_fuel_mass_rate, 0,    mesh_size*sizeof(T));
 
 
-        #ifdef PAPI
         performance_logger.my_papi_start();
-        #endif
 
         // Solve spray equations
         #pragma ivdep
@@ -147,10 +142,8 @@ namespace minicombust::particles
             particles[p].gas_temperature   = interp_gas_tem / total_scalar_weight;
         }
 
-        #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.particle_interpolation_event_counts, &performance_logger.particle_interpolation_ticks);
         performance_logger.my_papi_start();
-        #endif
 
         vector<uint64_t> decayed_particles;
         #pragma ivdep
@@ -170,17 +163,13 @@ namespace minicombust::particles
         }
 
 
-        #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_ticks);
-        #endif
     }
 
     template<class T> 
     void ParticleSolver<T>::update_particle_positions()
     {
-        #ifdef PAPI
         performance_logger.my_papi_start();
-        #endif
 
         cell_set.clear();
 
@@ -213,9 +202,7 @@ namespace minicombust::particles
 
         }
 
-        #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_ticks);
-        #endif
     }
 
     template<class T>
@@ -233,156 +220,160 @@ namespace minicombust::particles
     template<class T> 
     void ParticleSolver<T>::interpolate_nodal_data()
     {
-        #ifdef PAPI
         performance_logger.my_papi_start();
-        #endif
 
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: interpolate_data.\n");
 
         const uint64_t point_size = mesh->points_size; 
+        const uint64_t mesh_size  = mesh->mesh_size; 
         const uint64_t cell_size  = mesh->cell_size; 
 
         const T node_neighbours       = 8; // Cube specific
 
         memset(nodal_flow_aos, 0, point_size * sizeof(flow_aos<T>));
 
+        const bool WHOLE_MESH = false;
 
-        // FASTER IF particle in most cells
-
-        // memset(nodal_gas_velocity_soa.x,    0, point_size * sizeof(vec<T>));
-        // memset(nodal_gas_velocity_soa.y,    0, point_size * sizeof(vec<T>));
-        // memset(nodal_gas_velocity_soa.z,    0, point_size * sizeof(vec<T>));
-        // memset(nodal_gas_pressure,    0, point_size * sizeof(double));
-        // memset(nodal_gas_temperature, 0, point_size * sizeof(double));
-
-        // #pragma ivdep
-        // for (uint64_t c = 0; c < mesh_size; c++)
-        // {
-
-        //     const uint64_t *cell             = mesh->cells + c*cell_size;
-        //     const vec<T> cell_centre         = mesh->cell_centres[c];
-
-        //     const flow_aos<T> flow_term      = mesh->flow_terms[c];      
-        //     const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
-            
-            // const T gas_vel_x          = mesh->gas_velocity_soa.x[c];
-            // const T gas_vel_y          = mesh->gas_velocity_soa.y[c];
-            // const T gas_vel_z          = mesh->gas_velocity_soa.z[c];
-            // const T pressure           = mesh->gas_pressure[c];
-            // const T pressure_grad      = mesh->gas_pressure_gradient[c];
-            // const T temp               = mesh->gas_temperature[c];
-            // const T temp_grad          = mesh->gas_temperature_gradient[c];
-
-            // #pragma ivdep
-            // for (uint64_t n = 0; n < cell_size; n++)
-            // {
-            //     const uint64_t point_id = cell[n];
-
-            //     const vec<T> direction             = mesh->points[point_id] - cell_centre;
-            //     nodal_flow_aos[point_id].vel      += flow_term.vel      + dot_product(flow_grad_term.vel,      direction);
-            //     nodal_flow_aos[point_id].pressure += flow_term.pressure + dot_product(flow_grad_term.pressure, direction);
-            //     nodal_flow_aos[point_id].temp     += flow_term.temp     + dot_product(flow_grad_term.temp,     direction);
-
-                // const T direction_x = mesh->points_soa.x[point_id] - mesh->cell_centres_soa.x[c];
-                // const T direction_y = mesh->points_soa.y[point_id] - mesh->cell_centres_soa.y[c];
-                // const T direction_z = mesh->points_soa.z[point_id] - mesh->cell_centres_soa.z[c];
-
-                // nodal_gas_velocity_soa.x[point_id] += gas_vel_x +     gas_vel_x * (direction_x + direction_y + direction_z);
-                // nodal_gas_velocity_soa.y[point_id] += gas_vel_y +     gas_vel_y * (direction_x + direction_y + direction_z);
-                // nodal_gas_velocity_soa.z[point_id] += gas_vel_z +     gas_vel_z * (direction_x + direction_y + direction_z);
-                // nodal_gas_pressure[point_id]       += pressure  + pressure_grad * (direction_x + direction_y + direction_z);
-                // nodal_gas_temperature[point_id]    += temp      +     temp_grad * (direction_x + direction_y + direction_z);
-        //     }
-        // }
-
-        // #pragma ivdep
-        // for (uint64_t n = 0; n < point_size; n++)
-        // {
-        //     const T boundary_neighbours   = node_neighbours - mesh->cells_per_point[n]; // If nodal counter is not 8, we are on a boundary
-
-        //     nodal_flow_aos[n].vel        = (nodal_flow_aos[n].vel       + boundary_neighbours * mesh->dummy_gas_vel) / node_neighbours;
-        //     nodal_flow_aos[n].pressure   = (nodal_flow_aos[n].pressure  + boundary_neighbours * mesh->dummy_gas_pre) / node_neighbours;
-        //     nodal_flow_aos[n].temp       = (nodal_flow_aos[n].temp      + boundary_neighbours * mesh->dummy_gas_tem) / node_neighbours;
-        // }
-
-
-        // Faster if particles in some of the cells
-
-        unordered_set<uint64_t> neighbours;
-        unordered_set<uint64_t> points;
-
-        #pragma ivdep
-        for (unordered_set<uint64_t>::iterator cell_it = cell_set.begin(); cell_it != cell_set.end(); ++cell_it)
+        if (WHOLE_MESH)
         {
-            const uint64_t cell = *cell_it;
+            // FASTER IF particle in most cells
 
-            for (uint64_t face = 0; face < mesh->faces_per_cell; face++)
-            {
-                const uint64_t neighbour_id = mesh->cell_neighbours[cell*mesh->faces_per_cell + face];
-                if (neighbour_id == MESH_BOUNDARY)  continue;
-
-                neighbours.insert(neighbour_id);
-                for (uint64_t face2 = 0; face2 < mesh->faces_per_cell; face2++)
-                {
-                    const uint64_t neighbour_id2 = mesh->cell_neighbours[neighbour_id*mesh->faces_per_cell + face2];
-                    if (neighbour_id2 == MESH_BOUNDARY)  continue;
-
-                    neighbours.insert(neighbour_id2);
-                }
-            }
-        }
-
-        neighbours.insert(cell_set.begin(), cell_set.end());
-
-        #pragma ivdep
-        for (unordered_set<uint64_t>::iterator cell_it = neighbours.begin(); cell_it != neighbours.end(); ++cell_it)
-        {
-            const uint64_t c = *cell_it;
-
-            const uint64_t *cell             = mesh->cells + c*cell_size;
-            const vec<T> cell_centre         = mesh->cell_centres[c];
-
-            const flow_aos<T> flow_term      = mesh->flow_terms[c];      
-            const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
+            // memset(nodal_gas_velocity_soa.x,    0, point_size * sizeof(vec<T>));
+            // memset(nodal_gas_velocity_soa.y,    0, point_size * sizeof(vec<T>));
+            // memset(nodal_gas_velocity_soa.z,    0, point_size * sizeof(vec<T>));
+            // memset(nodal_gas_pressure,    0, point_size * sizeof(double));
+            // memset(nodal_gas_temperature, 0, point_size * sizeof(double));
 
             #pragma ivdep
-            for (uint64_t n = 0; n < cell_size; n++)
+            for (uint64_t c = 0; c < mesh_size; c++)
             {
-                const uint64_t point_id = cell[n];
 
-                const vec<T> direction             = mesh->points[point_id] - cell_centre;
-                nodal_flow_aos[point_id].vel      += flow_term.vel      + dot_product(flow_grad_term.vel,      direction);
-                nodal_flow_aos[point_id].pressure += flow_term.pressure + dot_product(flow_grad_term.pressure, direction);
-                nodal_flow_aos[point_id].temp     += flow_term.temp     + dot_product(flow_grad_term.temp,     direction);
+                const uint64_t *cell             = mesh->cells + c*cell_size;
+                const vec<T> cell_centre         = mesh->cell_centres[c];
 
-                points.insert(point_id);
+                const flow_aos<T> flow_term      = mesh->flow_terms[c];      
+                const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
+                
+                // const T gas_vel_x          = mesh->gas_velocity_soa.x[c];
+                // const T gas_vel_y          = mesh->gas_velocity_soa.y[c];
+                // const T gas_vel_z          = mesh->gas_velocity_soa.z[c];
+                // const T pressure           = mesh->gas_pressure[c];
+                // const T pressure_grad      = mesh->gas_pressure_gradient[c];
+                // const T temp               = mesh->gas_temperature[c];
+                // const T temp_grad          = mesh->gas_temperature_gradient[c];
+
+                #pragma ivdep
+                for (uint64_t n = 0; n < cell_size; n++)
+                {
+                    const uint64_t point_id = cell[n];
+
+                    const vec<T> direction             = mesh->points[point_id] - cell_centre;
+                    nodal_flow_aos[point_id].vel      += flow_term.vel      + dot_product(flow_grad_term.vel,      direction);
+                    nodal_flow_aos[point_id].pressure += flow_term.pressure + dot_product(flow_grad_term.pressure, direction);
+                    nodal_flow_aos[point_id].temp     += flow_term.temp     + dot_product(flow_grad_term.temp,     direction);
+
+                    // const T direction_x = mesh->points_soa.x[point_id] - mesh->cell_centres_soa.x[c];
+                    // const T direction_y = mesh->points_soa.y[point_id] - mesh->cell_centres_soa.y[c];
+                    // const T direction_z = mesh->points_soa.z[point_id] - mesh->cell_centres_soa.z[c];
+
+                    // nodal_gas_velocity_soa.x[point_id] += gas_vel_x +     gas_vel_x * (direction_x + direction_y + direction_z);
+                    // nodal_gas_velocity_soa.y[point_id] += gas_vel_y +     gas_vel_y * (direction_x + direction_y + direction_z);
+                    // nodal_gas_velocity_soa.z[point_id] += gas_vel_z +     gas_vel_z * (direction_x + direction_y + direction_z);
+                    // nodal_gas_pressure[point_id]       += pressure  + pressure_grad * (direction_x + direction_y + direction_z);
+                    // nodal_gas_temperature[point_id]    += temp      +     temp_grad * (direction_x + direction_y + direction_z);
+                }
             }
+
+            #pragma ivdep
+            for (uint64_t n = 0; n < point_size; n++)
+            {
+                const T boundary_neighbours   = node_neighbours - mesh->cells_per_point[n]; // If nodal counter is not 8, we are on a boundary
+
+                nodal_flow_aos[n].vel        = (nodal_flow_aos[n].vel       + boundary_neighbours * mesh->dummy_gas_vel) / node_neighbours;
+                nodal_flow_aos[n].pressure   = (nodal_flow_aos[n].pressure  + boundary_neighbours * mesh->dummy_gas_pre) / node_neighbours;
+                nodal_flow_aos[n].temp       = (nodal_flow_aos[n].temp      + boundary_neighbours * mesh->dummy_gas_tem) / node_neighbours;
+            }
+
         }
-
-        // cout << cell_set.size() << " cells size " << neighbours.size() << " cells+neighbours size " << points.size() << " points size" << endl;
-
-        for (unordered_set<uint64_t>::iterator point_it = points.begin(); point_it != points.end(); ++point_it)
+        else
         {
-            const uint64_t n = *point_it;
-            const T boundary_neighbours   = node_neighbours - mesh->cells_per_point[n]; // If nodal counter is not 8, we are on a boundary
+            // Faster if particles in some of the cells
 
-            nodal_flow_aos[n].vel        = (nodal_flow_aos[n].vel       + boundary_neighbours * mesh->dummy_gas_vel) / node_neighbours;
-            nodal_flow_aos[n].pressure   = (nodal_flow_aos[n].pressure  + boundary_neighbours * mesh->dummy_gas_pre) / node_neighbours;
-            nodal_flow_aos[n].temp       = (nodal_flow_aos[n].temp      + boundary_neighbours * mesh->dummy_gas_tem) / node_neighbours;
+            unordered_set<uint64_t> neighbours;
+            unordered_set<uint64_t> points;
+
+            #pragma ivdep
+            for (unordered_set<uint64_t>::iterator cell_it = cell_set.begin(); cell_it != cell_set.end(); ++cell_it)
+            {
+                const uint64_t cell = *cell_it;
+
+                for (uint64_t face = 0; face < mesh->faces_per_cell; face++)
+                {
+                    const uint64_t neighbour_id = mesh->cell_neighbours[cell*mesh->faces_per_cell + face];
+                    if (neighbour_id == MESH_BOUNDARY)  continue;
+
+                    neighbours.insert(neighbour_id);
+                    for (uint64_t face2 = 0; face2 < mesh->faces_per_cell; face2++)
+                    {
+                        const uint64_t neighbour_id2 = mesh->cell_neighbours[neighbour_id*mesh->faces_per_cell + face2];
+                        if (neighbour_id2 == MESH_BOUNDARY)  continue;
+
+                        neighbours.insert(neighbour_id2);
+                    }
+                }
+            }
+
+
+            neighbours.insert(cell_set.begin(), cell_set.end());
+
+            if (LOGGER)  logger.interpolated_cells += neighbours.size() / (double)num_timesteps;
+
+
+            #pragma ivdep
+            for (unordered_set<uint64_t>::iterator cell_it = neighbours.begin(); cell_it != neighbours.end(); ++cell_it)
+            {
+                const uint64_t c = *cell_it;
+
+                const uint64_t *cell             = mesh->cells + c*cell_size;
+                const vec<T> cell_centre         = mesh->cell_centres[c];
+
+                const flow_aos<T> flow_term      = mesh->flow_terms[c];      
+                const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
+
+                #pragma ivdep
+                for (uint64_t n = 0; n < cell_size; n++)
+                {
+                    const uint64_t point_id = cell[n];
+
+                    const vec<T> direction             = mesh->points[point_id] - cell_centre;
+                    nodal_flow_aos[point_id].vel      += flow_term.vel      + dot_product(flow_grad_term.vel,      direction);
+                    nodal_flow_aos[point_id].pressure += flow_term.pressure + dot_product(flow_grad_term.pressure, direction);
+                    nodal_flow_aos[point_id].temp     += flow_term.temp     + dot_product(flow_grad_term.temp,     direction);
+
+                    points.insert(point_id);
+                }
+            }
+
+            // cout << cell_set.size() << " cells size " << neighbours.size() << " cells+neighbours size " << points.size() << " points size" << endl;
+
+            for (unordered_set<uint64_t>::iterator point_it = points.begin(); point_it != points.end(); ++point_it)
+            {
+                const uint64_t n = *point_it;
+                const T boundary_neighbours   = node_neighbours - mesh->cells_per_point[n]; // If nodal counter is not 8, we are on a boundary
+
+                nodal_flow_aos[n].vel        = (nodal_flow_aos[n].vel       + boundary_neighbours * mesh->dummy_gas_vel) / node_neighbours;
+                nodal_flow_aos[n].pressure   = (nodal_flow_aos[n].pressure  + boundary_neighbours * mesh->dummy_gas_pre) / node_neighbours;
+                nodal_flow_aos[n].temp       = (nodal_flow_aos[n].temp      + boundary_neighbours * mesh->dummy_gas_tem) / node_neighbours;
+            }
+
         }
+
+
+
         
 
 
-        #ifdef PAPI
         performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_ticks);
-        #endif
-
-        // for (uint64_t n = 0; n < point_size; n++)
-        // {
-        //     nodal_gas_velocity[n]     = nodal_flow_aos[n].vel;
-        //     nodal_gas_pressure[n]     = nodal_flow_aos[n].pressure;
-        //     nodal_gas_temperature[n]  = nodal_flow_aos[n].temp;
-        // }
         
     }
 
