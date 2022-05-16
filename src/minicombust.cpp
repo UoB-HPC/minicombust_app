@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <ctime>
 #include <inttypes.h>
-// #include <mpi.h>
 
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
@@ -24,85 +23,93 @@ void timestep(FlowSolver<F> *flow_solver, ParticleSolver<P> *particle_solver)
     particle_solver->timestep();
 } 
 
-
 int main (int argc, char ** argv)
 {
-    printf("Starting miniCOMBUST..\n");
 
-    // MPI_Init(NULL, NULL);
-    // MPI_Comm world = MPI_COMM_WORLD;
-    // int rank, world_size;
-    // MPI_Comm_rank(world, &rank);
-    // MPI_Comm_size(world, &world_size);
+    MPI_Init(NULL, NULL);
+    MPI_Config mpi_config;
+    mpi_config.world = MPI_COMM_WORLD;
+    MPI_Comm_rank(mpi_config.world, &mpi_config.rank);
+    MPI_Comm_size(mpi_config.world, &mpi_config.world_size);
 
-    int rank = 0;
+    if (mpi_config.rank == 0)  printf("Starting miniCOMBUST..\n");
 
-    if (rank  == 0)
+    // Run Configuration
+    const uint64_t ntimesteps                   = 1500;
+    const double   delta                        = 2.5e-6;
+    const uint64_t output_iteration             = -1;
+    const uint64_t particles_per_timestep       = (argc > 1) ? atoi(argv[1]) : 10;
+    uint64_t local_particles_per_timestep       = particles_per_timestep / mpi_config.world_size;
+    uint64_t remainder_particles                = particles_per_timestep % mpi_config.world_size;
+    if (mpi_config.rank < remainder_particles)  local_particles_per_timestep++;
+
+    // Mesh Configuration
+    const double box_dim                        = 0.3;
+    const uint64_t elements_per_dim             = 50;
+    const uint64_t reserve_particles_size       = 2 * local_particles_per_timestep * ntimesteps;
+
+    // Performance
+    float setup_time = 0.f, program_time = 0.f, output_time = 0.f;
+
+    // Perform setup and benchmark cases
+    MPI_Barrier(mpi_config.world); setup_time -= MPI_Wtime(); 
+    Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim);
+    ParticleDistribution<double> *particle_dist = load_particle_distribution(local_particles_per_timestep, mesh);
+
+    FlowSolver<double>     *flow_solver     = new FlowSolver<double>();
+    ParticleSolver<double> *particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, ntimesteps, reserve_particles_size); 
+    if (mpi_config.rank == 0)   cout << endl;
+    MPI_Barrier(mpi_config.world); setup_time += MPI_Wtime(); 
+
+    // Output mesh 
+    MPI_Barrier(mpi_config.world); output_time -= MPI_Wtime(); 
+    if (mpi_config.rank == 0)
     {
-        Mesh<double> *mesh = nullptr;
-        ParticleDistribution<double> *particle_dist = nullptr;
-        uint64_t ntimesteps = 0;
-        double delta = 0.01;
-        uint64_t particles_per_timestep;
-
-        switch (argc)
-        {
-            case 2:
-                particles_per_timestep = atoi(argv[1]);
-                break;
-            default:
-                particles_per_timestep = 10;
-                break;
-        }
-
-        const double box_dim                  = 0.3;
-        const uint64_t elements_per_dim       = 50;
-        ntimesteps                            = 1500;
-        const uint64_t max_cell_particles     = 2 * particles_per_timestep * ntimesteps;
-        delta                                 = 2.5e-6;
-        mesh          = load_mesh(box_dim, elements_per_dim, max_cell_particles);
-        particle_dist = load_particle_distribution(particles_per_timestep, mesh);
-
-        
-        FlowSolver<double>     *flow_solver     = new FlowSolver<double>();
-        ParticleSolver<double> *particle_solver = new ParticleSolver<double>(ntimesteps, delta, particle_dist, mesh, ntimesteps);
-        cout << endl;
-
-        float program_ticks = 0.f, output_ticks = 0.f;
-        const clock_t output = clock(); 
         VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
         vtk_writer->write_mesh("minicombust");
-        output_ticks += float(clock() - output);
+         
+    }
+    MPI_Barrier(mpi_config.world); output_time += MPI_Wtime();
 
-        uint64_t print_iteration = 2000;
+    // Main loop
+    if (mpi_config.rank == 0)  printf("Starting simulation..\n");
+    MPI_Barrier(mpi_config.world);
+    program_time -= MPI_Wtime();
+    for(uint64_t t = 0; t < ntimesteps; t++)
+    {
+        timestep(flow_solver, particle_solver);
+        // MPI_Barrier(mpi_config.world);
+        
+        // if ((t % output_iteration == output_iteration - 1))  
+        // {
+        //     output_time -= MPI_Wtime();
+        //     particle_solver->output_data(t+1);
+        //     output_time += MPI_Wtime();
+        // }
+    }
+    MPI_Barrier(mpi_config.world);
+    program_time += MPI_Wtime();
 
-        printf("Starting simulation..\n");
-        for(uint64_t t = 0; t < ntimesteps; t++)
+
+    if (mpi_config.rank == 0) printf("Done!\n\n");
+
+    for (int i = 0; i < mpi_config.world_size; i++)
+    {
+        if (mpi_config.rank == i)
         {
-            const clock_t timestep_time  = clock();
-            timestep(flow_solver, particle_solver);
-            program_ticks += float(clock() - timestep_time);
-            if ((t % print_iteration == print_iteration - 1))  
-            {
-                const clock_t output = clock(); 
-                particle_solver->output_data(t+1);
-                output_ticks += float(clock() - output);
-            }       
+            cout << "\nRANK " << mpi_config.rank << ":" << endl;
+            if (LOGGER)  particle_solver->print_logger_stats(ntimesteps, program_time);
+            cout << "  Setup Time:              " << setup_time << "s" << endl;
+            cout << "  Program Time:            " << program_time << "s" << endl;
+            cout << "  Program Time (per iter): " << program_time / ntimesteps << "s" << endl;
+            cout << "  Output Time:             " << output_time  << "s" << endl;
         }
-        printf("Done!\n\n");
+        MPI_Barrier(mpi_config.world);
 
-        if (LOGGER)
-        {
-            particle_solver->print_logger_stats(ntimesteps, program_ticks /  CLOCKS_PER_SEC);
-        }
-        cout << "\nProgram Runtime: " << program_ticks /  CLOCKS_PER_SEC << "s" << endl;
-        cout <<   "Output Time:     " << output_ticks /  CLOCKS_PER_SEC  << "s" << endl;
     }
 
 
-    
-
-    // MPI_Finalize();
+    MPI_Finalize();
 
     
 

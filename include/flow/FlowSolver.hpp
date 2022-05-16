@@ -6,6 +6,7 @@ namespace minicombust::flow
     class FlowSolver 
     {
         private:
+            T rank;
             T turbulence_field;
             T combustion_field;
             T flow_field;

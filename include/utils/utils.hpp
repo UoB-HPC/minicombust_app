@@ -10,6 +10,9 @@
 #include <set>
 #include <unordered_set>
 
+
+#include <mpi.h>
+
 #define PARTICLE_DEBUG 0
 #define LOGGER 1
 #define PARTICLE_SOLVER_DEBUG 0
@@ -265,6 +268,12 @@ namespace minicombust::utils
         double avg_particles;
         double breakup_age;
         double interpolated_cells;
+    };
+
+    struct MPI_Config {
+        int rank;
+        int world_size;
+        MPI_Comm world;
     };
 }
 

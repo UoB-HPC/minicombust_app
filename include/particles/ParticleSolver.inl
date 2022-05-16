@@ -68,7 +68,7 @@ namespace minicombust::particles
         cout << "\tInterpolated Cells Percentage:               " << round(10000.*(((double)logger.interpolated_cells) / ((double)mesh->mesh_size)))/100. << "% " << endl;
 
         cout << endl;
-        performance_logger.print_counters();
+        performance_logger.print_counters(mpi_config->rank);
     }
 
 
@@ -88,7 +88,7 @@ namespace minicombust::particles
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: particle_release.\n");
         particle_dist->emit_particles(particles, cell_set, &logger);
 
-        performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_ticks);
+        performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_time);
     }
 
     template<class T> 
@@ -142,7 +142,7 @@ namespace minicombust::particles
             particles[p].gas_temperature   = interp_gas_tem / total_scalar_weight;
         }
 
-        performance_logger.my_papi_stop(performance_logger.particle_interpolation_event_counts, &performance_logger.particle_interpolation_ticks);
+        performance_logger.my_papi_stop(performance_logger.particle_interpolation_event_counts, &performance_logger.particle_interpolation_time);
         performance_logger.my_papi_start();
 
         vector<uint64_t> decayed_particles;
@@ -163,7 +163,7 @@ namespace minicombust::particles
         }
 
 
-        performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_ticks);
+        performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_time);
     }
 
     template<class T> 
@@ -175,9 +175,6 @@ namespace minicombust::particles
 
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_particle_positions.\n");
         const uint64_t particles_size  = particles.size();
-
-        static int count = 0;
-        count++;
 
         // Update particle positions
         vector<uint64_t> decayed_particles;
@@ -202,7 +199,7 @@ namespace minicombust::particles
 
         }
 
-        performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_ticks);
+        performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_time);
     }
 
     template<class T>
@@ -373,7 +370,7 @@ namespace minicombust::particles
         
 
 
-        performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_ticks);
+        performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_time);
         
     }
 
@@ -387,7 +384,7 @@ namespace minicombust::particles
         if (PARTICLE_SOLVER_DEBUG)  printf("Start particle timestep\n");
 
         static int  count = 0;
-        if ((count++ % 20) == 0)  cout << "\tTimestep " << count-1 << ". Particles in simulation: " << particles.size() << " reserved_size " << mesh->max_cell_particles << endl;
+        if ((count++ % 100) == 0 && mpi_config->rank == 0)  cout << "\tTimestep " << count-1 << ". Particles in simulation estimate (rank0 * num_ranks): " << particles.size() * mpi_config->world_size << " reserved_size " << reserve_particles_size << endl;
 
         logger.avg_particles += (double)particles.size() / (double)num_timesteps;
 

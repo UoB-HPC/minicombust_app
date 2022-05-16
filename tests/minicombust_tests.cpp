@@ -35,7 +35,8 @@ bool check_particle_position(Mesh<double> *mesh, uint64_t correct_cell, vec<doub
 const double box_dim                  = 100;
 const uint64_t elements_per_dim       = 10;
 
-Mesh<double> *mesh    = load_mesh(box_dim, elements_per_dim, 0);
+MPI_Config mpi_config = {0, 1, NULL};
+Mesh<double> *mesh    = load_mesh(&mpi_config, box_dim, elements_per_dim);
 
 TEST_CASE( "Particles can move from cell to cell correctly. (Cube Mesh)", "[particle]" ) {
 
@@ -109,8 +110,9 @@ TEST_CASE( "Particles can move from cell to cell correctly. (Cube Mesh)", "[part
 
     SECTION( "Particle can start and land on cell boundaries." ) {
         const vec<double> start     = {.012004, .012004, .0122856};
-
-        Mesh<double> *mesh2         = load_mesh(0.3, 50, 0);
+    
+        
+        Mesh<double> *mesh2         = load_mesh(&mpi_config, 0.3, 50);
 
         REQUIRE( check_particle_position(mesh2, 5102,   start, 5051));
     }
