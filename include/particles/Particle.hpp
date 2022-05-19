@@ -83,13 +83,15 @@ namespace minicombust::particles
             T      gas_pressure;
             T      gas_temperature;
 
+            particle_aos<T> particle_cell_fields;
+
 
             T age = 0.0;
 
             uint64_t cell;          // cell at timestep beginning
 
 
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, uint64_t cell, particle_logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp), cell(cell)
+            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, uint64_t cell, Particle_Logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp), cell(cell)
             { 
                 update_cell(mesh, logger);
 
@@ -103,7 +105,7 @@ namespace minicombust::particles
                      mass(mass), temp(temp), diameter(diameter), cell(cell)
             { }
 
-            inline uint64_t update_cell(Mesh<T> *mesh, particle_logger *logger)
+            inline uint64_t update_cell(Mesh<T> *mesh, Particle_Logger *logger)
             {
 
 
@@ -170,7 +172,7 @@ namespace minicombust::particles
                                              + tetrahedral_volume(B, C, D, F)
                                              + tetrahedral_volume(B, E, C, F);
 
-                            if (abs(LHS - RHS) < 5e-12 && LHS != 0)  
+                            if (abs(LHS - RHS) < 5e-15 && LHS != 0)  
                             {
                                 intercepted_face_id = face;
                                 intercepted_faces++;
@@ -200,7 +202,7 @@ namespace minicombust::particles
                             }
 
 
-                            if (num_tries++ > 15)
+                            if (num_tries++ > 4)
                             {
                                 decayed = true;
                                 cell    = MESH_BOUNDARY;
@@ -209,6 +211,8 @@ namespace minicombust::particles
                             }
                             continue;
                         }
+
+                        num_tries = 0;
 
                         // Test neighbour cell
                         cell = mesh->cell_neighbours[cell*mesh->faces_per_cell + intercepted_face_id];
@@ -244,7 +248,7 @@ namespace minicombust::particles
                 return cell;
             }
 
-            inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vector<Particle<T>>& particles)
+            inline void solve_spray(Mesh<T> *mesh, double delta, Particle_Logger *logger, vector<Particle<T>>& particles)
             {
                 // Inputs from flow: relative_acc, kinematic viscoscity?, air_temp, air_pressure
                 // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant
@@ -283,7 +287,7 @@ namespace minicombust::particles
                 // cout << "vf " << print_vec(virtual_force) << " df " << print_vec(drag_force) << " m " << mass << endl;
                 a1 = ((virtual_force + drag_force) / mass);
                 v1 = v1 + a1 * delta;
-                x1 = x1 + v1 * delta;
+                
 
 
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
@@ -326,12 +330,13 @@ namespace minicombust::particles
                 mass     = mass - mass_delta * delta;
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
 
+                // Store particle fields
+                particle_cell_fields = {mass * v1 * delta, (air_heat_transfer - evaporation_heat) * delta, mass_delta * delta};
 
-                mesh->evaporated_fuel_mass_rate[cell] += mass_delta * delta;                             // Do we need to worry about the if the particle is vaporized
-                mesh->particle_energy_rate[cell]      += (air_heat_transfer - evaporation_heat) * delta;
-                mesh->particle_momentum_rate[cell]    += mass * v1 * delta;
+
 
                 decayed = (mass < 0 || temp > critical_temp);
+
 
                 // cout << endl << "Particle Drag Effects" << endl;
                 // cout << "\ta                     "     << print_vec(a1)     << endl;
@@ -426,7 +431,7 @@ namespace minicombust::particles
                         velocity2 = velocity2 - dot_product(velocity2, unit_rel_velocity) * unit_rel_velocity; 
 
                         
-                        particles.push_back(Particle<T>(mesh, x1, velocity2 * length + v1, a1, mass2, temp, diameter2, cell));
+                        particles.push_back(Particle<T>(mesh, x1 + (velocity2 * length + v1 * delta), velocity2 * length + v1, a1, mass2, temp, diameter2, cell));
 
                         // Update parent to droplet1;
                         v1  += velocity1 * length;
@@ -451,6 +456,9 @@ namespace minicombust::particles
                     logger->decayed_particles++;
                     logger->burnt_particles++;
                 }
+
+
+                x1 = x1 + v1 * delta;
             }
 
     }; // class Particle

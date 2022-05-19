@@ -43,40 +43,92 @@ namespace minicombust::particles
     template<class T>
     void ParticleSolver<T>::print_logger_stats(uint64_t timesteps, double runtime)
     {
-        cout << "Particle Solver Stats:                         " << endl;
-        cout << "\tParticles:                                   " << ((double)logger.num_particles)                                                                   << endl;
-        cout << "\tParticles (per iter):                        " << particle_dist->particles_per_timestep                                                            << endl;
-        cout << "\tEmitted Particles:                           " << logger.emitted_particles                                                                         << endl;
-        cout << "\tAvg Particles (per iter):                    " << logger.avg_particles                                                                             << endl;
-        cout << endl;
-        cout << "\tCell checks:                                 " << ((double)logger.cell_checks)                                                                     << endl;
-        cout << "\tCell checks (per iter):                      " << ((double)logger.cell_checks) / timesteps                                                         << endl;
-        cout << "\tCell checks (per particle, per iter):        " << ((double)logger.cell_checks) / (((double)logger.num_particles)*timesteps)                        << endl;
-        cout << endl;
-        cout << "\tEdge adjustments:                            " << ((double)logger.position_adjustments)                                                            << endl;
-        cout << "\tEdge adjustments (per iter):                 " << ((double)logger.position_adjustments) / timesteps                                                << endl;
-        cout << "\tEdge adjustments (per particle, per iter):   " << ((double)logger.position_adjustments) / (((double)logger.num_particles)*timesteps)               << endl;
-        cout << "\tLost Particles:                              " << ((double)logger.lost_particles      )                                                            << endl;
-        cout << endl;
-        cout << "\tBoundary Intersections:                      " << ((double)logger.boundary_intersections)                                                          << endl;
-        cout << "\tDecayed Particles:                           " << round(10000.*(((double)logger.decayed_particles) / ((double)logger.num_particles)))/100. << "% " << endl;
-        cout << "\tBurnt Particles:                             " << ((double)logger.burnt_particles) << " " << endl;
-        cout << "\tBreakups:                                    " << ((double)logger.breakups) << " " << endl;
-        cout << "\tBreakup Age:                                 " << ((double)logger.breakup_age) << " " << endl;
-        cout << endl;
-        cout << "\tInterpolated Cells:                          " << ((double)logger.interpolated_cells) << " " << endl;
-        cout << "\tInterpolated Cells Percentage:               " << round(10000.*(((double)logger.interpolated_cells) / ((double)mesh->mesh_size)))/100. << "% " << endl;
+        Particle_Logger loggers[mpi_config->particle_flow_world_size];
+        MPI_Gather(&logger, sizeof(Particle_Logger), MPI_BYTE, &loggers, sizeof(Particle_Logger), MPI_BYTE, 0, mpi_config->particle_flow_world);
+        
+        memset(&logger,           0, sizeof(Particle_Logger));
+        for (int rank = 0; rank < mpi_config->particle_flow_world_size; rank++)
+        {
+            logger.num_particles            += loggers[rank].num_particles;
+            logger.avg_particles            += loggers[rank].avg_particles;
+            logger.emitted_particles        += loggers[rank].emitted_particles;
+            logger.cell_checks              += loggers[rank].cell_checks;
+            logger.position_adjustments     += loggers[rank].position_adjustments;
+            logger.lost_particles           += loggers[rank].lost_particles;
+            logger.boundary_intersections   += loggers[rank].boundary_intersections;
+            logger.decayed_particles        += loggers[rank].decayed_particles;
+            logger.burnt_particles          += loggers[rank].burnt_particles;
+            logger.breakups                 += loggers[rank].breakups;
+            logger.interpolated_cells       += loggers[rank].interpolated_cells / (double)mpi_config->particle_flow_world_size;
+        }
 
-        cout << endl;
-        performance_logger.print_counters(mpi_config->rank);
+        if (mpi_config->rank == 0)
+        {
+            cout << "Particle Solver Stats:                         " << endl;
+            cout << "\tParticles:                                   " << ((double)logger.num_particles)                                                                   << endl;
+            cout << "\tParticles (per iter):                        " << particle_dist->particles_per_timestep*mpi_config->particle_flow_world_size                       << endl;
+            cout << "\tEmitted Particles:                           " << logger.emitted_particles                                                                         << endl;
+            cout << "\tAvg Particles (per iter):                    " << logger.avg_particles                                                                             << endl;
+            cout << endl;
+            cout << "\tCell checks:                                 " << ((double)logger.cell_checks)                                                                     << endl;
+            cout << "\tCell checks (per iter):                      " << ((double)logger.cell_checks) / timesteps                                                         << endl;
+            cout << "\tCell checks (per particle, per iter):        " << ((double)logger.cell_checks) / (((double)logger.num_particles)*timesteps)                        << endl;
+            cout << endl;
+            cout << "\tEdge adjustments:                            " << ((double)logger.position_adjustments)                                                            << endl;
+            cout << "\tEdge adjustments (per iter):                 " << ((double)logger.position_adjustments) / timesteps                                                << endl;
+            cout << "\tEdge adjustments (per particle, per iter):   " << ((double)logger.position_adjustments) / (((double)logger.num_particles)*timesteps)               << endl;
+            cout << "\tLost Particles:                              " << ((double)logger.lost_particles      )                                                            << endl;
+            cout << endl;
+            cout << "\tBoundary Intersections:                      " << ((double)logger.boundary_intersections)                                                          << endl;
+            cout << "\tDecayed Particles:                           " << round(10000.*(((double)logger.decayed_particles) / ((double)logger.num_particles)))/100. << "% " << endl;
+            cout << "\tBurnt Particles:                             " << ((double)logger.burnt_particles) << " "                                                          << endl;
+            cout << "\tBreakups:                                    " << ((double)logger.breakups) << " "                                                                 << endl;
+            cout << "\tBreakup Age:                                 " << ((double)logger.breakup_age) << " "                                                              << endl;
+            cout << endl;
+            cout << "\tInterpolated Cells (per rank):               " << ((double)logger.interpolated_cells) << " "                                                       << endl;
+            cout << "\tInterpolated Cells Percentage (per rank):    " << round(10000.*(((double)logger.interpolated_cells) / ((double)mesh->mesh_size)))/100. << "% "     << endl;
+
+            cout << endl;
+        }
+        performance_logger.print_counters(mpi_config->rank, runtime);
     }
 
 
     template<class T> 
-    void ParticleSolver<T>::update_flow_field()
+    void ParticleSolver<T>::update_flow_field(bool send_particle)
     {
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_flow_field.\n");
+        performance_logger.my_papi_start();
 
+        const uint64_t cell_size = cell_particle_field_map.size();
+        uint64_t cells[cell_size];
+        particle_aos<T> cell_particle_fields[cell_size];
+        
+        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_flow_field.\n");
+        int flow_rank = mpi_config->particle_flow_world_size;
+
+        uint64_t count = 0;
+        for (auto& cell_it: cell_particle_field_map)
+        {
+            cells[count]                = cell_it.first;
+            cell_particle_fields[count] = cell_it.second;
+            count++;
+        }
+        MPI_Gather(&cell_size,         1, MPI_UINT64_T, nullptr, 0,    MPI_UINT64_T, flow_rank, mpi_config->world);
+        MPI_Gatherv(cells,     cell_size, MPI_UINT64_T, nullptr, 0, 0, MPI_UINT64_T, flow_rank, mpi_config->world);
+
+        if (send_particle)
+        {
+            MPI_Gatherv(cell_particle_fields,  cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, nullptr, 0, 0, mpi_config->MPI_PARTICLE_STRUCTURE, flow_rank, mpi_config->world);
+        }
+        MPI_Bcast(&neighbours_size,                1, MPI_UINT64_T, flow_rank, mpi_config->world);
+        
+        MPI_Bcast(neighbour_indexes, neighbours_size, MPI_UINT64_T, flow_rank, mpi_config->world);
+        logger.interpolated_cells += ((float) neighbours_size) / ((float)num_timesteps);
+
+        MPI_Bcast(cell_flow_aos,      (int)neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
+        MPI_Bcast(cell_flow_grad_aos, (int)neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
+
+        performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
     }
             
     template<class T> 
@@ -86,7 +138,7 @@ namespace minicombust::particles
 
         // TODO: Reuse decaying particle space
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: particle_release.\n");
-        particle_dist->emit_particles(particles, cell_set, &logger);
+        particle_dist->emit_particles(particles, cell_particle_field_map, &logger);
 
         performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_time);
     }
@@ -102,11 +154,6 @@ namespace minicombust::particles
         const uint64_t cell_size       = mesh->cell_size; 
 
         const uint64_t particles_size  = particles.size(); 
-
-        memset(mesh->particle_momentum_rate,    0,    mesh_size*sizeof(vec<T>));
-        memset(mesh->particle_energy_rate,      0,    mesh_size*sizeof(T));
-        memset(mesh->evaporated_fuel_mass_rate, 0,    mesh_size*sizeof(T));
-
 
         performance_logger.my_papi_start();
 
@@ -171,8 +218,6 @@ namespace minicombust::particles
     {
         performance_logger.my_papi_start();
 
-        cell_set.clear();
-
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_particle_positions.\n");
         const uint64_t particles_size  = particles.size();
 
@@ -181,12 +226,16 @@ namespace minicombust::particles
         #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
         {   
-            // cout << count << " " << p << " x1: " << print_vec(particles[p].x1) << " cell " << particles[p].cell << endl;
             // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
             particles[p].update_cell(mesh, &logger);
 
             if (particles[p].decayed)  decayed_particles.push_back(p);
-            else                        cell_set.insert(particles[p].cell);
+            else
+            {
+                cell_particle_field_map[particles[p].cell].momentum += particles[p].particle_cell_fields.momentum;
+                cell_particle_field_map[particles[p].cell].energy   += particles[p].particle_cell_fields.energy;
+                cell_particle_field_map[particles[p].cell].fuel     += particles[p].particle_cell_fields.fuel;
+            }
         }
 
 
@@ -196,7 +245,6 @@ namespace minicombust::particles
         {
             particles[decayed_particles[i]] = particles.back();
             particles.pop_back();
-
         }
 
         performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_time);
@@ -295,47 +343,21 @@ namespace minicombust::particles
         else
         {
             // Faster if particles in some of the cells
-
-            unordered_set<uint64_t> neighbours;
+            static int time = 0;
+            time++;
             unordered_set<uint64_t> points;
 
             #pragma ivdep
-            for (unordered_set<uint64_t>::iterator cell_it = cell_set.begin(); cell_it != cell_set.end(); ++cell_it)
+            for (uint64_t i = 0; i < neighbours_size; i++)
             {
-                const uint64_t cell = *cell_it;
 
-                for (uint64_t face = 0; face < mesh->faces_per_cell; face++)
-                {
-                    const uint64_t neighbour_id = mesh->cell_neighbours[cell*mesh->faces_per_cell + face];
-                    if (neighbour_id == MESH_BOUNDARY)  continue;
-
-                    neighbours.insert(neighbour_id);
-                    for (uint64_t face2 = 0; face2 < mesh->faces_per_cell; face2++)
-                    {
-                        const uint64_t neighbour_id2 = mesh->cell_neighbours[neighbour_id*mesh->faces_per_cell + face2];
-                        if (neighbour_id2 == MESH_BOUNDARY)  continue;
-
-                        neighbours.insert(neighbour_id2);
-                    }
-                }
-            }
-
-
-            neighbours.insert(cell_set.begin(), cell_set.end());
-
-            if (LOGGER)  logger.interpolated_cells += neighbours.size() / (double)num_timesteps;
-
-
-            #pragma ivdep
-            for (unordered_set<uint64_t>::iterator cell_it = neighbours.begin(); cell_it != neighbours.end(); ++cell_it)
-            {
-                const uint64_t c = *cell_it;
+                const uint64_t c = neighbour_indexes[i];
 
                 const uint64_t *cell             = mesh->cells + c*cell_size;
                 const vec<T> cell_centre         = mesh->cell_centres[c];
 
-                const flow_aos<T> flow_term      = mesh->flow_terms[c];      
-                const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
+                const flow_aos<T> flow_term      = cell_flow_aos[i];      
+                const flow_aos<T> flow_grad_term = cell_flow_grad_aos[i]; 
 
                 #pragma ivdep
                 for (uint64_t n = 0; n < cell_size; n++)
@@ -349,9 +371,9 @@ namespace minicombust::particles
 
                     points.insert(point_id);
                 }
+
             }
 
-            // cout << cell_set.size() << " cells size " << neighbours.size() << " cells+neighbours size " << points.size() << " points size" << endl;
 
             for (unordered_set<uint64_t>::iterator point_it = points.begin(); point_it != points.end(); ++point_it)
             {
@@ -362,12 +384,8 @@ namespace minicombust::particles
                 nodal_flow_aos[n].pressure   = (nodal_flow_aos[n].pressure  + boundary_neighbours * mesh->dummy_gas_pre) / node_neighbours;
                 nodal_flow_aos[n].temp       = (nodal_flow_aos[n].temp      + boundary_neighbours * mesh->dummy_gas_tem) / node_neighbours;
             }
-
+            cell_particle_field_map.clear();
         }
-
-
-
-        
 
 
         performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_time);
@@ -381,20 +399,33 @@ namespace minicombust::particles
     template<class T> 
     void ParticleSolver<T>::timestep()
     {
+        static int count = 0;
+        const int  comms_timestep = 1;
+
         if (PARTICLE_SOLVER_DEBUG)  printf("Start particle timestep\n");
+        if ((count % 100) == 0 && mpi_config->rank == 0)  
+            cout << "\tTimestep " << count << ". Particles in simulation estimate (rank0 * num_ranks): " << particles.size() * mpi_config->world_size << " reserved_size " << reserve_particles_size << endl;
 
-        static int  count = 0;
-        if ((count++ % 100) == 0 && mpi_config->rank == 0)  cout << "\tTimestep " << count-1 << ". Particles in simulation estimate (rank0 * num_ranks): " << particles.size() * mpi_config->world_size << " reserved_size " << reserve_particles_size << endl;
 
-        logger.avg_particles += (double)particles.size() / (double)num_timesteps;
-
-        // update_flow_field();
         particle_release();
-        interpolate_nodal_data(); 
+        if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
+        {
+            update_flow_field(count > 0);
+            interpolate_nodal_data(); 
+        }
+        else if (mpi_config->world_size == 1)
+        {
+            interpolate_nodal_data(); 
+        }
         solve_spray_equations();
         update_particle_positions();
         // update_spray_source_terms();
         // map_source_terms_to_grid();
+
+        logger.avg_particles += (double)particles.size() / (double)num_timesteps;
+
+        count++;
+
         if (PARTICLE_SOLVER_DEBUG)  printf("Stop particle timestep\n");
     }
 

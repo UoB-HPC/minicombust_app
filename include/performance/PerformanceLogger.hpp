@@ -38,17 +38,19 @@ namespace minicombust::performance
             int128_t *interpolation_kernel_event_counts;
             int128_t *particle_interpolation_event_counts;
             int128_t *emit_event_counts;
+            int128_t *update_flow_field_event_counts;
 
             double position_time = 0.;
             double interpolation_time = 0.;
             double particle_interpolation_time = 0.;
             double spray_time = 0.;
             double emit_time = 0.;
+            double update_flow_field_time = 0.;
             double output; 
             
             vector<string> event_names;
 
-            inline void print_counters(int rank)
+            inline void print_counters(int rank, double runtime)
             {
                 ofstream myfile;
                 myfile.open("out/performance_rank" + to_string(rank) + ".csv");
@@ -89,6 +91,22 @@ namespace minicombust::performance
                 for (int e = 0; e < num_events; e++)    myfile << "," << emit_event_counts[e];
                 #endif
                 myfile << endl;
+                
+                myfile << "updated_flow_field," << update_flow_field_time;
+                #ifdef PAPI
+                for (int e = 0; e < num_events; e++)    myfile << "," << update_flow_field_event_counts[e];
+                #endif
+                myfile << endl;
+
+                myfile << "minicombust," << runtime;
+                #ifdef PAPI
+                for (int e = 0; e < num_events; e++)    
+                {
+                    myfile << "," << update_flow_field_event_counts[e] + interpolation_kernel_event_counts[e] + particle_interpolation_event_counts[e] + spray_kernel_event_counts[e] + position_kernel_event_counts[e] + emit_event_counts[e];
+                }
+                #endif
+                myfile << endl;
+
                 myfile.close();
             }
 
@@ -283,6 +301,12 @@ namespace minicombust::performance
                 for (int i = 0; i < num_events; i++) 
                 {
                     emit_event_counts[i] = 0;
+                }
+
+                update_flow_field_event_counts = (int128_t*)malloc(sizeof(int128_t)*num_events);
+                for (int i = 0; i < num_events; i++) 
+                {
+                    update_flow_field_event_counts[i] = 0;
                 }
 
 

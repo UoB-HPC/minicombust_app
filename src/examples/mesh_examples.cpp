@@ -10,19 +10,19 @@ using namespace minicombust::utils;
 using namespace std;
 
 
-Mesh<double> *load_mesh(MPI_Config *mpi_config, double mesh_dim, uint64_t elements_per_dim)
+Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64_t> elements_per_dim)
 {
     const uint64_t cell_size  = 8; // Cube
     const uint64_t faces_per_cell = 6; // Cube
 
     
-    const double mesh_x_dim = mesh_dim; 
-    const double mesh_y_dim = mesh_dim;   
-    const double mesh_z_dim = mesh_dim;
+    const double mesh_x_dim = mesh_dim.x; 
+    const double mesh_y_dim = mesh_dim.y;   
+    const double mesh_z_dim = mesh_dim.z;
 
-    const uint64_t elements_per_x_dim = elements_per_dim; // Number of cubes for each dimension
-    const uint64_t elements_per_y_dim = elements_per_dim;
-    const uint64_t elements_per_z_dim = elements_per_dim;
+    const uint64_t elements_per_x_dim = elements_per_dim.x; // Number of cubes for each dimension
+    const uint64_t elements_per_y_dim = elements_per_dim.y;
+    const uint64_t elements_per_z_dim = elements_per_dim.z;
 
     const uint64_t z_points = elements_per_z_dim + 1;
     const uint64_t y_points = elements_per_y_dim + 1;

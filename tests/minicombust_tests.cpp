@@ -11,10 +11,10 @@ using namespace minicombust::particles;
 
 bool check_particle_position(Mesh<double> *mesh, uint64_t correct_cell, vec<double> start, vec<double> velocity)
 {
-    particle_logger logger;
+    Particle_Logger logger;
     Particle<double> *p = new Particle<double>(mesh, start, velocity, vec<double>{0, 0, 0}, 300., 0, &logger);
 
-    memset(&logger, 0, sizeof(particle_logger));
+    memset(&logger, 0, sizeof(Particle_Logger));
     p->x1 += p->v1 * 1.0;
     p->update_cell(mesh, &logger);
 
@@ -23,19 +23,19 @@ bool check_particle_position(Mesh<double> *mesh, uint64_t correct_cell, vec<doub
 
 bool check_particle_position(Mesh<double> *mesh, uint64_t correct_cell, vec<double> x1, uint64_t starting_cell)
 {
-    particle_logger logger;
+    Particle_Logger logger;
     Particle<double> *p = new Particle<double>(mesh, x1, vec<double>{0, 0, 0}, vec<double>{0, 0, 0}, 300., starting_cell, &logger);
 
-    memset(&logger, 0, sizeof(particle_logger));
+    memset(&logger, 0, sizeof(Particle_Logger));
     p->update_cell(mesh, &logger);
 
     return p->cell == correct_cell;
 }
 
-const double box_dim                  = 100;
-const uint64_t elements_per_dim       = 10;
+const vec<double> box_dim                  = {100, 100, 100};
+const vec<uint64_t> elements_per_dim       = {10, 10, 10};
 
-MPI_Config mpi_config = {0, 1, NULL};
+MPI_Config mpi_config = {0, 0, 1, 0, 0, 0, 0, 0, 0, 0};
 Mesh<double> *mesh    = load_mesh(&mpi_config, box_dim, elements_per_dim);
 
 TEST_CASE( "Particles can move from cell to cell correctly. (Cube Mesh)", "[particle]" ) {
@@ -112,7 +112,7 @@ TEST_CASE( "Particles can move from cell to cell correctly. (Cube Mesh)", "[part
         const vec<double> start     = {.012004, .012004, .0122856};
     
         
-        Mesh<double> *mesh2         = load_mesh(&mpi_config, 0.3, 50);
+        Mesh<double> *mesh2         = load_mesh(&mpi_config, {0.3, 0.3, 0.3}, {50, 50, 50});
 
         REQUIRE( check_particle_position(mesh2, 5102,   start, 5051));
     }

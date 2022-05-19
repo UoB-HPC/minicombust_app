@@ -9,6 +9,9 @@
 #include <vector>
 #include <set>
 #include <unordered_set>
+#include <unordered_map>
+#include <map>
+#include <algorithm>
 
 
 #include <mpi.h>
@@ -16,6 +19,10 @@
 #define PARTICLE_DEBUG 0
 #define LOGGER 1
 #define PARTICLE_SOLVER_DEBUG 0
+
+#define FLOW 0
+#define PARTICLE 1
+
 
 typedef long long int int128_t;
 typedef unsigned long long int uint128_t;
@@ -71,11 +78,21 @@ namespace minicombust::utils
     };
 
     template <typename T> 
-    struct flow_aos {
+    struct flow_aos 
+    {
         vec<T> vel;
         T pressure;
         T temp;
     };
+
+    template <typename T> 
+    struct particle_aos 
+    {
+        vec<T> momentum = {0.0, 0.0, 0.0};
+        T energy        = 0.0;
+        T fuel          = 0.0;
+    };
+
 
 
     template<typename T>
@@ -254,7 +271,7 @@ namespace minicombust::utils
         return v;
     }
 
-    struct particle_logger {
+    struct Particle_Logger {
         uint64_t num_particles;
         uint64_t emitted_particles;
         uint64_t cell_checks;
@@ -272,9 +289,30 @@ namespace minicombust::utils
 
     struct MPI_Config {
         int rank;
+        int particle_flow_rank;
         int world_size;
+        int particle_flow_world_size;
         MPI_Comm world;
+        MPI_Comm particle_flow_world;
+        int solver_type;
+        MPI_Datatype MPI_FLOW_STRUCTURE;
+        MPI_Datatype MPI_PARTICLE_STRUCTURE;
+        MPI_Op MPI_PARTICLE_OPERATION;
     };
+
+    template<typename T>
+    void sum_particle_aos(void* inputBuffer, void* outputBuffer, int* len, MPI_Datatype* datatype)
+    {
+        particle_aos<T>* input  = (particle_aos<T>*)inputBuffer;
+        particle_aos<T>* output = (particle_aos<T>*)outputBuffer;
+    
+        for(int i = 0; i < *len; i++)
+        {
+            output[i].momentum += input[i].momentum;
+            output[i].energy   += input[i].energy;
+            output[i].fuel     += input[i].fuel;
+        }
+    }
 }
 
 
