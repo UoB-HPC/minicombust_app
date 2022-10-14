@@ -194,15 +194,22 @@ namespace minicombust::particles
                 decay_threshold  = new FixedDistribution<T>(decay_threshold_mean);  
             }
 
-            inline void emit_particles(vector<Particle<T>>& particles, unordered_set<uint64_t>& cell_set, particle_logger *logger)
+            inline void emit_particles(vector<Particle<T>>& particles, unordered_map<uint64_t, particle_aos<T>>& cell_particle_field_map, Particle_Logger *logger)
             {
+                const particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 for (uint64_t p = 0; p < particles_per_timestep; p++)
                 {
-                    particles.push_back(Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), 0, logger));
+                    const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), mesh->mesh_size * 0.49 , logger);
 
-                    // cout << print_vec(particles.back().v1) << endl;
+                    // static int count = 0;
+                    if (particle.decayed) 
+                    {
+                        continue;
+                    }
 
-                    cell_set.insert(particles.back().cell);
+                
+                    particles.push_back(particle);
+                    cell_particle_field_map.try_emplace(particle.cell, zero_field);
                 }
 
                 logger->num_particles      += particles_per_timestep;

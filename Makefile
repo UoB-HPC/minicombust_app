@@ -1,9 +1,9 @@
 ## Compilers and Flags
-#CC := g++ 
-CC := icpc 
+CC := mpic++ 
+#CC := icpc 
 #CC := CC 
-#CFLAGS := -g -Wall -std=c++17 -O3 -march=native -Wno-unknown-pragmas
-CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
+CFLAGS := -g -Wall -std=c++17 -O3 -march=native -Wno-unknown-pragmas
+#CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
 LIB := -Lbuild/
 INC := -Iinclude/
 
