@@ -88,171 +88,17 @@ namespace minicombust::particles
             cout << "\tInterpolated Cells (per rank):               " << ((double)logger.interpolated_cells) << " "                                                       << endl;
             cout << "\tInterpolated Cells Percentage (per rank):    " << round(10000.*(((double)logger.interpolated_cells) / ((double)mesh->mesh_size)))/100. << "% "     << endl;
 
-            cout << endl;
-        }
-        performance_logger.print_counters(mpi_config->rank, runtime);
+        cout << endl;
+        performance_logger.print_counters();
     }
 
 
     template<class T> 
-    void ParticleSolver<T>::update_flow_field(bool send_particle)
+    void ParticleSolver<T>::update_flow_field()
     {
-        performance_logger.my_papi_start();
-
-        // const uint64_t cell_size = cell_particle_field_map.size();
-        // uint64_t cells[cell_size];
-        // particle_aos<T> cell_particle_fields[cell_size];
-        
-        // if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_flow_field.\n");
-        // int flow_rank = mpi_config->particle_flow_world_size;
-
-        // uint64_t count = 0;
-        // for (auto& cell_it: cell_particle_field_map)
-        // {
-        //     cells[count]                = cell_it.first;
-        //     cell_particle_fields[count] = cell_it.second;
-        //     count++;
-        // }
-        // MPI_Gather(&cell_size,         1, MPI_UINT64_T, nullptr, 0,    MPI_UINT64_T, flow_rank, mpi_config->world);
-        // MPI_Gatherv(cells,     cell_size, MPI_UINT64_T, nullptr, 0, 0, MPI_UINT64_T, flow_rank, mpi_config->world);
-
-        // if (send_particle)
-        // {
-        //     MPI_Gatherv(cell_particle_fields,  cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, nullptr, 0, 0, mpi_config->MPI_PARTICLE_STRUCTURE, flow_rank, mpi_config->world);
-        // }
-
-
-        // Send size to world
-        int flow_rank          = mpi_config->particle_flow_world_size;
-        uint64_t cell_size = cell_particle_field_map.size();
-        uint64_t max_cell_size;
-        MPI_Allreduce(&cell_size, &max_cell_size, 1, MPI_UINT64_T, MPI_MAX, mpi_config->world);
-        max_cell_size = (2 * max_cell_size);
-
-        // Create array with world cell arrays
-        uint64_t cells[max_cell_size];
-        uint64_t cells_friend[max_cell_size];
-        particle_aos<T> cell_particle_fields[max_cell_size];
-        particle_aos<T> cell_particle_fields_friend[max_cell_size];
-        uint64_t count = 0;
-        for (auto& cell_it: cell_particle_field_map)
-        {
-            cells[count]                = cell_it.first;
-            cell_particle_fields[count] = cell_it.second;
-            count++;
-        }
-        cells[count] = MESH_BOUNDARY;
-
-        // Get ranks above power of 2
-        int msb_value = 1 << (int)log2(mpi_config->particle_flow_world_size);
-
-
-        // If ranks above power of 2, or below
-        if (mpi_config->rank >= msb_value)
-        {
-            // Send cells and cell_particle_fields
-            MPI_Ssend(cells,                       max_cell_size, MPI_UINT64_T,                       mpi_config->rank - msb_value, 0, mpi_config->particle_flow_world);
-            MPI_Ssend(cell_particle_fields,        max_cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, mpi_config->rank - msb_value, 0, mpi_config->particle_flow_world);
-        }
-        else if(mpi_config->rank < (mpi_config->particle_flow_world_size - msb_value))
-        {
-            // Receive values from remainder ranks
-            MPI_Recv(cells_friend,                max_cell_size, MPI_UINT64_T,                       mpi_config->rank + msb_value, 0, mpi_config->particle_flow_world,  MPI_STATUS_IGNORE);
-            MPI_Recv(cell_particle_fields_friend, max_cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, mpi_config->rank + msb_value, 0, mpi_config->particle_flow_world,  MPI_STATUS_IGNORE);
-
-            // Reduce own map and friends map together and reslot into an array.
-            for (int i = 0; i < max_cell_size; i++)
-            {
-                if (cells_friend[i] == MESH_BOUNDARY) break;
-                cell_particle_field_map[cells_friend[i]].momentum += cell_particle_fields_friend[i].momentum;
-                cell_particle_field_map[cells_friend[i]].energy   += cell_particle_fields_friend[i].energy;
-                cell_particle_field_map[cells_friend[i]].fuel     += cell_particle_fields_friend[i].fuel;
-            }
-
-            count = 0;
-            for (auto& cell_it: cell_particle_field_map)
-            {
-                cells[count]                = cell_it.first;
-                cell_particle_fields[count] = cell_it.second;
-                count++;
-            }
-            if (count > max_cell_size) 
-            {
-                printf("Buffer not big enough\n");
-                // exit();
-            }
-            cells[count] = MESH_BOUNDARY;
-        }
-
-
-
-        // Tree reduction across ranks        
-        for (int ranks_left = msb_value; ranks_left > 1 && mpi_config->rank < ranks_left; ranks_left  >>= 1)
-        {
-
-            int stride = ranks_left / 2;
-            // If ranks above power of 2, or below
-            if (mpi_config->rank >= stride)
-            {
-                // Send cells and cell_particle_fields
-                MPI_Ssend(cells,                       max_cell_size, MPI_UINT64_T,                       mpi_config->rank - stride, 0, mpi_config->particle_flow_world);
-                MPI_Ssend(cell_particle_fields,        max_cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, mpi_config->rank - stride, 0, mpi_config->particle_flow_world);
-            }
-            else if(mpi_config->rank < stride)
-            {
-                // Receive values from remainder ranks
-                MPI_Recv(cells_friend,                max_cell_size, MPI_UINT64_T,                       mpi_config->rank + stride, 0, mpi_config->particle_flow_world,  MPI_STATUS_IGNORE);
-                MPI_Recv(cell_particle_fields_friend, max_cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, mpi_config->rank + stride, 0, mpi_config->particle_flow_world,  MPI_STATUS_IGNORE);
-
-                // Reduce own map and friends map together and reslot into an array.
-                for (int i = 0; i < max_cell_size; i++)
-                {
-                    if (cells_friend[i] == MESH_BOUNDARY) break;
-                    cell_particle_field_map[cells_friend[i]].momentum += cell_particle_fields_friend[i].momentum;
-                    cell_particle_field_map[cells_friend[i]].energy   += cell_particle_fields_friend[i].energy;
-                    cell_particle_field_map[cells_friend[i]].fuel     += cell_particle_fields_friend[i].fuel;
-                }
-
-                count = 0;
-                for (auto& cell_it: cell_particle_field_map)
-                {
-                    cells[count]                = cell_it.first;
-                    cell_particle_fields[count] = cell_it.second;
-                    count++;
-                }
-                if (count > max_cell_size) 
-                {
-                    printf("Buffer not big enough\n");
-                    // exit();
-                }
-                cells[count] = MESH_BOUNDARY;
-            }
-        }
-
-        if (mpi_config->rank == 0)
-        {
-            MPI_Ssend(cells,                       max_cell_size, MPI_UINT64_T,                       mpi_config->particle_flow_world_size, 0, mpi_config->world);
-            MPI_Ssend(cell_particle_fields,        max_cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, mpi_config->particle_flow_world_size, 0, mpi_config->world);
-        }
-
-
-
-
-
-
-
-
-
-        MPI_Bcast(&neighbours_size,                1, MPI_UINT64_T, flow_rank, mpi_config->world);
-        
-        MPI_Bcast(neighbour_indexes, neighbours_size, MPI_UINT64_T, flow_rank, mpi_config->world);
-        logger.interpolated_cells += ((float) neighbours_size) / ((float)num_timesteps);
-
-        MPI_Bcast(cell_flow_aos,      (int)neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
-        MPI_Bcast(cell_flow_grad_aos, (int)neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
+        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_flow_field.\n");
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
-
     }
             
     template<class T> 
@@ -263,10 +109,9 @@ namespace minicombust::particles
 
         // TODO: Reuse decaying particle space
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: particle_release.\n");
-        particle_dist->emit_particles(particles, cell_particle_field_map, &logger);
+        particle_dist->emit_particles(particles, cell_set, &logger);
 
-        performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_time);
-
+        performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_ticks);
     }
 
     template<class T> 
@@ -280,6 +125,11 @@ namespace minicombust::particles
         const uint64_t cell_size       = mesh->cell_size; 
 
         const uint64_t particles_size  = particles.size(); 
+
+        memset(mesh->particle_momentum_rate,    0,    mesh_size*sizeof(vec<T>));
+        memset(mesh->particle_energy_rate,      0,    mesh_size*sizeof(T));
+        memset(mesh->evaporated_fuel_mass_rate, 0,    mesh_size*sizeof(T));
+
 
         performance_logger.my_papi_start();
 
@@ -315,7 +165,7 @@ namespace minicombust::particles
             particles[p].gas_temperature   = interp_gas_tem / total_scalar_weight;
         }
 
-        performance_logger.my_papi_stop(performance_logger.particle_interpolation_event_counts, &performance_logger.particle_interpolation_time);
+        performance_logger.my_papi_stop(performance_logger.particle_interpolation_event_counts, &performance_logger.particle_interpolation_ticks);
         performance_logger.my_papi_start();
 
         vector<uint64_t> decayed_particles;
@@ -336,7 +186,7 @@ namespace minicombust::particles
         }
 
 
-        performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_time);
+        performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_ticks);
     }
 
     template<class T> 
@@ -344,24 +194,25 @@ namespace minicombust::particles
     {
         performance_logger.my_papi_start();
 
+        cell_set.clear();
+
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_particle_positions.\n");
         const uint64_t particles_size  = particles.size();
+
+        static int count = 0;
+        count++;
 
         // Update particle positions
         vector<uint64_t> decayed_particles;
         #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
         {   
+            // cout << count << " " << p << " x1: " << print_vec(particles[p].x1) << " cell " << particles[p].cell << endl;
             // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
             particles[p].update_cell(mesh, &logger);
 
             if (particles[p].decayed)  decayed_particles.push_back(p);
-            else
-            {
-                cell_particle_field_map[particles[p].cell].momentum += particles[p].particle_cell_fields.momentum;
-                cell_particle_field_map[particles[p].cell].energy   += particles[p].particle_cell_fields.energy;
-                cell_particle_field_map[particles[p].cell].fuel     += particles[p].particle_cell_fields.fuel;
-            }
+            else                        cell_set.insert(particles[p].cell);
         }
 
 
@@ -371,9 +222,10 @@ namespace minicombust::particles
         {
             particles[decayed_particles[i]] = particles.back();
             particles.pop_back();
+
         }
 
-        performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_time);
+        performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_ticks);
     }
 
     template<class T>
@@ -470,22 +322,47 @@ namespace minicombust::particles
         else
         {
             // Faster if particles in some of the cells
-            static int time = 0;
-            time++;
+
+            unordered_set<uint64_t> neighbours;
             unordered_set<uint64_t> points;
 
             #pragma ivdep
-            for (uint64_t i = 0; i < neighbours_size; i++)
+            for (unordered_set<uint64_t>::iterator cell_it = cell_set.begin(); cell_it != cell_set.end(); ++cell_it)
             {
+                const uint64_t cell = *cell_it;
 
-                const uint64_t c = neighbour_indexes[i];
-                if (neighbour_indexes[i] > mesh->mesh_size) cout << "HELLO OLD BUG\n";
+                for (uint64_t face = 0; face < mesh->faces_per_cell; face++)
+                {
+                    const uint64_t neighbour_id = mesh->cell_neighbours[cell*mesh->faces_per_cell + face];
+                    if (neighbour_id == MESH_BOUNDARY)  continue;
+
+                    neighbours.insert(neighbour_id);
+                    for (uint64_t face2 = 0; face2 < mesh->faces_per_cell; face2++)
+                    {
+                        const uint64_t neighbour_id2 = mesh->cell_neighbours[neighbour_id*mesh->faces_per_cell + face2];
+                        if (neighbour_id2 == MESH_BOUNDARY)  continue;
+
+                        neighbours.insert(neighbour_id2);
+                    }
+                }
+            }
+
+
+            neighbours.insert(cell_set.begin(), cell_set.end());
+
+            if (LOGGER)  logger.interpolated_cells += neighbours.size() / (double)num_timesteps;
+
+
+            #pragma ivdep
+            for (unordered_set<uint64_t>::iterator cell_it = neighbours.begin(); cell_it != neighbours.end(); ++cell_it)
+            {
+                const uint64_t c = *cell_it;
 
                 const uint64_t *cell             = mesh->cells + c*cell_size;
                 const vec<T> cell_centre         = mesh->cell_centres[c];
 
-                const flow_aos<T> flow_term      = cell_flow_aos[i];      
-                const flow_aos<T> flow_grad_term = cell_flow_grad_aos[i]; 
+                const flow_aos<T> flow_term      = mesh->flow_terms[c];      
+                const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
 
                 #pragma ivdep
                 for (uint64_t n = 0; n < cell_size; n++)
@@ -499,9 +376,9 @@ namespace minicombust::particles
 
                     points.insert(point_id);
                 }
-
             }
 
+            // cout << cell_set.size() << " cells size " << neighbours.size() << " cells+neighbours size " << points.size() << " points size" << endl;
 
             for (unordered_set<uint64_t>::iterator point_it = points.begin(); point_it != points.end(); ++point_it)
             {
@@ -512,11 +389,15 @@ namespace minicombust::particles
                 nodal_flow_aos[n].pressure   = (nodal_flow_aos[n].pressure  + boundary_neighbours * mesh->dummy_gas_pre) / node_neighbours;
                 nodal_flow_aos[n].temp       = (nodal_flow_aos[n].temp      + boundary_neighbours * mesh->dummy_gas_tem) / node_neighbours;
             }
-            cell_particle_field_map.clear();
+
         }
 
 
-        performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_time);
+
+        
+
+
+        performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_ticks);
         
     }
 
@@ -527,33 +408,20 @@ namespace minicombust::particles
     template<class T> 
     void ParticleSolver<T>::timestep()
     {
-        static int count = 0;
-        const int  comms_timestep = 1;
-
         if (PARTICLE_SOLVER_DEBUG)  printf("Start particle timestep\n");
-        if ((count % 100) == 0 && mpi_config->rank == 0)  
-            cout << "\tTimestep " << count << ". Particles in simulation estimate (rank0 * num_ranks): " << particles.size() * mpi_config->world_size << " reserved_size " << reserve_particles_size << endl;
 
+        static int  count = 0;
+        if ((count++ % 20) == 0)  cout << "\tTimestep " << count-1 << ". Particles in simulation: " << particles.size() << " reserved_size " << mesh->max_cell_particles << endl;
 
+        logger.avg_particles += (double)particles.size() / (double)num_timesteps;
+
+        // update_flow_field();
         particle_release();
-        if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
-        {
-            update_flow_field(count > 0);
-            interpolate_nodal_data(); 
-        }
-        else if (mpi_config->world_size == 1)
-        {
-            interpolate_nodal_data(); 
-        }
+        interpolate_nodal_data(); 
         solve_spray_equations();
         update_particle_positions();
         // update_spray_source_terms();
         // map_source_terms_to_grid();
-
-        logger.avg_particles += (double)particles.size() / (double)num_timesteps;
-
-        count++;
-
         if (PARTICLE_SOLVER_DEBUG)  printf("Stop particle timestep\n");
     }
 

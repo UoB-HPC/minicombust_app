@@ -54,7 +54,7 @@ int main (int argc, char ** argv)
     // Run Configuration
     const uint64_t ntimesteps                   = 1500;
     const double   delta                        = 2.5e-6;
-    const uint64_t output_iteration             = -1;
+    const uint64_t output_iteration             = 10;
     const uint64_t particles_per_timestep       = (argc > 1) ? atoi(argv[1]) : 10;
     uint64_t local_particles_per_timestep       = particles_per_timestep / mpi_config.particle_flow_world_size; // TODO: Fix to particle world size
     uint64_t remainder_particles                = particles_per_timestep % mpi_config.particle_flow_world_size;
@@ -115,10 +115,7 @@ int main (int argc, char ** argv)
         if (mpi_config.solver_type == PARTICLE)
             particle_solver->print_logger_stats(ntimesteps, program_time);
         else
-        {
             flow_solver->performance_logger.print_counters(mpi_config.rank, program_time);
-            cout << "FLOW TIMINGS " << flow_solver->receive_time << " " << flow_solver->process_time << " " << flow_solver->bcast_time << endl;
-        }
     }
 
     double setup_time_avg = 0., program_time_avg = 0., output_time_avg = 0.;
