@@ -20,7 +20,6 @@ namespace minicombust::particles
     class ParticleSolver 
     {
         private:
-            
 
             T delta;
 
@@ -57,7 +56,8 @@ namespace minicombust::particles
             MPI_Config *mpi_config;
 
             template<typename M>
-            ParticleSolver(MPI_Config *mpi_config, uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t n, uint64_t reserve_particles_size) : mpi_config(mpi_config), delta(delta), num_timesteps(n), particle_dist(particle_dist), mesh(mesh), reserve_particles_size(reserve_particles_size)
+            ParticleSolver(MPI_Config *mpi_config, uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t reserve_particles_size) : 
+                           delta(delta), num_timesteps(ntimesteps), reserve_particles_size(reserve_particles_size), particle_dist(particle_dist), mesh(mesh), mpi_config(mpi_config)
             {
                 neighbours_size = mesh->mesh_size;
                 
@@ -66,25 +66,19 @@ namespace minicombust::particles
                 const size_t nodal_array_size        = mesh->points_size * sizeof(flow_aos<T>);
                 const size_t particles_array_size    = reserve_particles_size * sizeof(Particle<T>);
 
-                if (mpi_config->solver_type == PARTICLE)
-                {
-                    // nodal_gas_velocity_soa            = allocate_vec_soa<T>(mesh->points_size);
-                    nodal_flow_aos                    = (flow_aos<T> *)malloc(nodal_array_size);
-                    cell_flow_aos                     = (flow_aos<T> *)malloc(cell_array_size);
-                    cell_flow_grad_aos                = (flow_aos<T> *)malloc(cell_array_size);
+                // nodal_gas_velocity_soa            = allocate_vec_soa<T>(mesh->points_size);
+                nodal_flow_aos                    = (flow_aos<T> *)malloc(nodal_array_size);
+                cell_flow_aos                     = (flow_aos<T> *)malloc(cell_array_size);
+                cell_flow_grad_aos                = (flow_aos<T> *)malloc(cell_array_size);
 
-                    neighbour_indexes                 = (uint64_t*)malloc(cell_index_array_size);
-                    particles.reserve(reserve_particles_size);
-
-                }
-                
-
+                neighbour_indexes                 = (uint64_t*)malloc(cell_index_array_size);
+                particles.reserve(reserve_particles_size);
                 
                 // TODO: Play with these for performance
                 // neighbours_set.reserve(mesh->mesh_size / x);
                 // cell_particle_field_map.reserve(mesh->mesh_size / 10);
 
-                if (mpi_config->rank == 0)
+                if (mpi_config->particle_flow_rank == 0)
                 {
                     // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                     printf("Particle solver storage requirements (per process):\n");

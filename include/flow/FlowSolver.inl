@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <limits.h>
 
 #include "flow/FlowSolver.hpp"
 
@@ -51,7 +52,7 @@ namespace minicombust::flow
             particle_aos<T> neighbour_particle_aos[cell_size];
             MPI_Gatherv(MPI_IN_PLACE,    1, mpi_config->MPI_PARTICLE_STRUCTURE, neighbour_particle_aos,  int_cell_sizes, int_cell_displacements, mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->rank, mpi_config->world);
 
-            for (int i = 0; i < cell_size; i++)
+            for (uint64_t i = 0; i < cell_size; i++)
             {
                 cell_particle_field_map[cells[i]].momentum  += neighbour_particle_aos[i].momentum;
                 cell_particle_field_map[cells[i]].energy    += neighbour_particle_aos[i].energy;
@@ -60,7 +61,7 @@ namespace minicombust::flow
         }
         else
         {
-            for (int i = 0; i < cell_size; i++)
+            for (uint64_t i = 0; i < cell_size; i++)
             {
                 cell_particle_field_map[cells[i]].momentum = {0.0, 0.0, 0.0};
                 cell_particle_field_map[cells[i]].energy    = 0.0;

@@ -12,7 +12,7 @@ namespace minicombust::geometry
 {   
     static const uint64_t MESH_BOUNDARY = UINT64_MAX;
 
-    enum FACE_DIRECTIONS { FRONT_FACE = 0, BACK_FACE = 1, LEFT_FACE = 2, RIGHT_FACE = 3, DOWN_FACE = 4, UP_FACE = 5};
+    enum FACE_DIRECTIONS { NOFACE_ERROR = -1, FRONT_FACE = 0, BACK_FACE = 1, LEFT_FACE = 2, RIGHT_FACE = 3, DOWN_FACE = 4, UP_FACE = 5};
     enum CUBE_VERTEXES { A_VERTEX = 0, B_VERTEX = 1, C_VERTEX = 2, D_VERTEX = 3, E_VERTEX = 4, F_VERTEX = 5, G_VERTEX = 6, H_VERTEX = 7};
 
     static const uint64_t CUBE_FACE_VERTEX_MAP[6][4] = 
@@ -53,25 +53,20 @@ namespace minicombust::geometry
             void calculate_cell_centres(void) {
                 for (uint64_t c = 0; c < mesh_size; ++c) {
                     cell_centres[c] = vec<T>{0.0, 0.0, 0.0};
-                    for (uint32_t i = 0; i < cells_vertex_count; ++i) {
+                    for (uint32_t i = 0; i < cell_size; ++i) {
                         cell_centres[c] += points[cells[c*cell_size + i]];
                     }
-                    cell_centres[c] /= static_cast<T>(cells_vertex_count);
+                    cell_centres[c] /= static_cast<T>(cell_size);
                 }
             }
  
         public:
-            const uint32_t cells_vertex_count = 3; // Generic, 3 = triangle etc
-
             const uint64_t points_size;         // Number of points in the mesh
             const uint64_t mesh_size;           // Number of polygons in the mesh
             const uint64_t cell_size;           // Number of points in the cell
             const uint64_t faces_size;          // Number of unique faces in the mesh
             const uint64_t faces_per_cell;      // Number of faces in a cell
 
-
-            
-            
             vec<T> cell_size_vector;      // Cell size
             vec<T> *points;               // Mesh points    = {{0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, ...}:
             uint64_t *cells;              // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
@@ -164,6 +159,7 @@ namespace minicombust::geometry
 
                 if (mpi_config->rank == 0)
                 {
+
                     printf("\nMesh storage requirements (per process):\n");
                     printf("\tAllocating mesh cell centres                                (%.2f MB)\n",                 (float)(mesh_cell_centre_size)/1000000.0);
                     printf("\tAllocating array of particles per cell                      (%.2f MB)\n",                 (float)(particles_per_point_size)/1000000.0);
@@ -248,7 +244,7 @@ namespace minicombust::geometry
                         return "DOWN";
                     case UP_FACE:
                         return "UP";
-                default:
+                    default:
                         return "INVALID FACE"; 
                 }
             }

@@ -303,6 +303,8 @@ namespace minicombust::utils
     template<typename T>
     void sum_particle_aos(void* inputBuffer, void* outputBuffer, int* len, MPI_Datatype* datatype)
     {
+        (void)(datatype); //Squashes unused warning. Parameter required for MPI op.
+
         particle_aos<T>* input  = (particle_aos<T>*)inputBuffer;
         particle_aos<T>* output = (particle_aos<T>*)outputBuffer;
     

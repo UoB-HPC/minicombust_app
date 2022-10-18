@@ -16,18 +16,9 @@ using namespace minicombust::flow;
 using namespace minicombust::particles;
 using namespace minicombust::visit;
 
-template<typename F, typename P>
-void timestep(MPI_Config *mpi_config, FlowSolver<F> *flow_solver, ParticleSolver<P> *particle_solver)
-{
-    if (mpi_config->solver_type == PARTICLE) 
-        particle_solver->timestep();
-    else
-        flow_solver->timestep();
-} 
-
 int main (int argc, char ** argv)
 {
-
+    // MPI Initialisation 
     MPI_Init(NULL, NULL);
     MPI_Config mpi_config;
     mpi_config.world = MPI_COMM_WORLD;
@@ -56,15 +47,11 @@ int main (int argc, char ** argv)
     const double   delta                        = 2.5e-6;
     const uint64_t output_iteration             = 10;
     const uint64_t particles_per_timestep       = (argc > 1) ? atoi(argv[1]) : 10;
-    uint64_t local_particles_per_timestep       = particles_per_timestep / mpi_config.particle_flow_world_size; // TODO: Fix to particle world size
-    uint64_t remainder_particles                = particles_per_timestep % mpi_config.particle_flow_world_size;
-    if (mpi_config.rank < remainder_particles)  local_particles_per_timestep++;
-
+    
     // Mesh Configuration
-    const vec<double>   box_dim                      = {0.10, 0.05, 0.05};
-    const uint64_t modifier                          = atoi(argv[2]);
-    const vec<uint64_t> elements_per_dim             = {modifier*2,   modifier*1,  modifier*1};
-    const uint64_t      reserve_particles_size       = 2 * local_particles_per_timestep * ntimesteps;
+    const vec<double>   box_dim                 = {0.10, 0.05, 0.05};
+    const uint64_t modifier                     = (argc > 2) ? atoi(argv[2]) : 10;
+    const vec<uint64_t> elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
 
     // Performance
     double setup_time = 0., program_time = 0., output_time = 0.;
@@ -72,10 +59,25 @@ int main (int argc, char ** argv)
     // Perform setup and benchmark cases
     MPI_Barrier(mpi_config.world); setup_time  -= MPI_Wtime(); 
     Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim);
-    ParticleDistribution<double> *particle_dist = load_particle_distribution(local_particles_per_timestep, mesh);
 
-    FlowSolver<double>     *flow_solver     = new FlowSolver<double>(&mpi_config, mesh);
-    ParticleSolver<double> *particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, ntimesteps, reserve_particles_size); 
+    //Setup solvers
+    ParticleSolver<double> *particle_solver;
+    FlowSolver<double>     *flow_solver;
+    if (mpi_config.solver_type == PARTICLE)
+    {
+        uint64_t       local_particles_per_timestep   = particles_per_timestep / mpi_config.particle_flow_world_size;
+        int            remainder_particles            = particles_per_timestep % mpi_config.particle_flow_world_size;
+        const uint64_t reserve_particles_size         = 2 * local_particles_per_timestep * ntimesteps;
+
+        if ( mpi_config.particle_flow_rank < remainder_particles )  local_particles_per_timestep++;
+
+        ParticleDistribution<double> *particle_dist = load_particle_distribution(local_particles_per_timestep, mesh);
+        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
+    }
+    else
+    {
+        flow_solver     = new FlowSolver<double>(&mpi_config, mesh);
+    }
     if (mpi_config.rank == 0)   cout << endl;
     setup_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
 
@@ -95,7 +97,10 @@ int main (int argc, char ** argv)
     program_time -= MPI_Wtime();
     for(uint64_t t = 0; t < ntimesteps; t++)
     {
-        timestep(&mpi_config, flow_solver, particle_solver);
+        if (mpi_config.solver_type == PARTICLE) 
+            particle_solver->timestep();
+        else
+            flow_solver->timestep();
         
         if ((t % output_iteration == output_iteration - 1) && mpi_config.rank == 0)  
         {
@@ -106,10 +111,9 @@ int main (int argc, char ** argv)
     }
     program_time += MPI_Wtime();
     MPI_Barrier(mpi_config.world);
-
-
     if (mpi_config.rank == 0) printf("Done!\n\n");
 
+    //Print logger stats and write performance counters
     if (LOGGER) 
     {
         if (mpi_config.solver_type == PARTICLE)
@@ -118,6 +122,7 @@ int main (int argc, char ** argv)
             flow_solver->performance_logger.print_counters(mpi_config.rank, program_time);
     }
 
+    // Get program times
     double setup_time_avg = 0., program_time_avg = 0., output_time_avg = 0.;
     double setup_time_max = 0., program_time_max = 0., output_time_max = 0.;
     double setup_time_min = 0., program_time_min = 0., output_time_min = 0.;

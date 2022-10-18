@@ -133,6 +133,8 @@ namespace minicombust::performance
 
             inline void my_papi_stop(int128_t *kernel_event_counts, double *time)
             {
+                (void)(kernel_event_counts); // Avoids unused kernel_event_counts warning when PAPI is undefined.
+
                 #ifdef PAPI
                 if (event_set != PAPI_NULL) 
                 {
@@ -180,7 +182,7 @@ namespace minicombust::performance
 
             inline void load_papi_events(int rank)
             {
-
+                (void)(rank);
                 #ifdef PAPI
                 int ret;
 
@@ -217,7 +219,7 @@ namespace minicombust::performance
                             int code = -1;
                             ret = PAPI_event_name_to_code(event_name, &code);
                             event_names.push_back(string(event_name));
-                            if (rank == 0)  cout << event_names.back() << " " << std::hex << code << std::dec << endl;
+                            // if (rank == 0)  cout << event_names.back() << " " << std::hex << code << std::dec << endl;
                             if (ret != PAPI_OK)
                             {
                                 printf("Could not convert string '%s' to PAPI event, error = %s\n", event_name, PAPI_strerror(ret));
@@ -254,7 +256,7 @@ namespace minicombust::performance
                 }
 
                 num_events = PAPI_num_events(event_set);
-                if (rank == 0)  cout << "Monitoring " << num_events << " PAPI events.." << endl;
+                // if (rank == 0)  cout << "Monitoring " << num_events << " PAPI events.." << endl;
                 if (num_events == 0) 
                 {
                     event_set = PAPI_NULL;

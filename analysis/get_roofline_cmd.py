@@ -3,7 +3,7 @@
 import sys
 
 
-options = ["CASCADE_LAKE"]
+options = ["CASCADE_LAKE", "TX2"]
 
 if (len(sys.argv) < 3):
     print("No argument supplied. Run './get_roofline_cmd.py ARCH CONFIG RANKS' or './get_roofline_cmd TIMES_ONLY RANKS'")
@@ -81,7 +81,7 @@ if (len(counters) != 1):
                     mem_bandwidth /= 1000000000
                     print(kernel + ": time " + str(kernel_vals["time"]) + " mem_bandwidth: " + str(mem_bandwidth))
 
-        print("\n\npython roofline.py procs/thunderx2-isambard.yaml --cacheaware " + point_string)
+        print("\n\npython roofline.py procs/thunderx2-isambard-"+sys.argv[2]+".yaml --cacheaware " + point_string)
 else:
     for kernel in kernel_names:
             kernel_vals = kernel_counters[kernel]

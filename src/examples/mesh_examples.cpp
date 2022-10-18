@@ -15,7 +15,6 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     const uint64_t cell_size  = 8; // Cube
     const uint64_t faces_per_cell = 6; // Cube
 
-    
     const double mesh_x_dim = mesh_dim.x; 
     const double mesh_y_dim = mesh_dim.y;   
     const double mesh_z_dim = mesh_dim.z;
@@ -162,6 +161,12 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
             faces[faces_count++]                           = Face<double>(c, c + elements_per_x_dim);
             cell_neighbours[c*faces_per_cell + UP_FACE]    = c + elements_per_x_dim;
         }
+    }
+    if (mpi_config->rank == 0)
+    {
+        printf("\nMesh dimensions\n");
+        cout << "\tReal dimensions (m)    " << print_vec(mesh_dim)         << endl;
+        cout << "\tElement dimensions (m) " << print_vec(elements_per_dim) << endl;
     }
 
     Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, cubes, faces, cell_neighbours);

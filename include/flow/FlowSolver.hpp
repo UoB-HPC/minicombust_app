@@ -28,7 +28,7 @@ namespace minicombust::flow
             double process_time = 0.0;
             double bcast_time = 0.0;
 
-            FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mpi_config(mpi_config), mesh(mesh)
+            FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mesh(mesh), mpi_config(mpi_config)
             {
                 const size_t cell_index_array_size   = mesh->mesh_size * sizeof(uint64_t);
 

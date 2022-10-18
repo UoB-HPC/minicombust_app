@@ -28,7 +28,7 @@ namespace minicombust::visit
             {
                                 // Print VTK Header
                 ofstream vtk_file;
-                vtk_file.open ("out/mesh.vtk");
+                vtk_file.open ("out/" + filename + "_mesh.vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
                 vtk_file << "ASCII " << endl;
@@ -74,7 +74,7 @@ namespace minicombust::visit
                 // Print VTK Header
                 ofstream vtk_file;
 
-                vtk_file.open ("out/"+filename+"_particle_timestep"+to_string(id)+".vtk");
+                vtk_file.open ("out/" + filename + "_particle_timestep" + to_string(id) + ".vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
                 vtk_file << "ASCII " << endl;
