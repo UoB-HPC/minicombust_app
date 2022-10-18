@@ -14,12 +14,11 @@ command = ""
 point_string = ""
 counters         = []
 kernel_names     = []
+times            = []
 kernel_counters  = {}
 
 for proc in range(int(sys.argv[-1])):
     perf_file = open("out/performance_rank" + str(proc) +".csv", 'r')
-
-
 
     read_header = False
     for line in perf_file:
@@ -40,6 +39,10 @@ for proc in range(int(sys.argv[-1])):
             for i in range(len(values)):
                 kernel_counters[kernel_name][counters[i]].append(float(values[i]))
 
+print("%40s %15s %15s %15s" % ("kernel", "real time", "total time (%)", "mem_bandwidth"))
+
+total_time = max(kernel_counters["minicombust"]["time"])
+
 if (len(counters) != 1):
     if (sys.argv[1] == "CASCADE_LAKE"):
         for kernel in kernel_names:
@@ -58,7 +61,11 @@ if (len(counters) != 1):
 
                 mem_bandwidth  = cacheline*kernel_vals["PAPI_LST_INS"] / kernel_vals["time"]
                 mem_bandwidth /= 1000000000
-                print(kernel + ": time " + str(kernel_vals["time"]) + " mem_bandwidth: " + str(mem_bandwidth))
+
+                times.append(kernel_vals["time"])
+
+                print("%40s %15.2f %15.2f %15.2f " % (kernel, kernel_vals["time"], (kernel_vals["time"] / total_time) * 100., mem_bandwidth))
+
 
         print("\n\npython roofline.py procs/cascade-lake-6230-"+sys.argv[2]+".yaml --cacheaware " + point_string)
     elif (sys.argv[1] == "TX2"):
@@ -66,8 +73,8 @@ if (len(counters) != 1):
                     
                     kernel_vals = kernel_counters[kernel]
 
-                    kernel_vals["time"]         = max(kernel_vals["time"])
-                    kernel_vals["PAPI_FP_INS"]  = sum(kernel_vals["PAPI_FP_INS"])
+                    kernel_vals["time"]        = max(kernel_vals["time"])
+                    kernel_vals["PAPI_FP_INS"] = sum(kernel_vals["PAPI_FP_INS"])
                     kernel_vals["PAPI_LD_INS"] = sum(kernel_vals["PAPI_LD_INS"])
                     kernel_vals["PAPI_SR_INS"] = sum(kernel_vals["PAPI_SR_INS"])
 
@@ -79,15 +86,15 @@ if (len(counters) != 1):
 
                     mem_bandwidth  = cacheline*(kernel_vals["PAPI_LD_INS"] + kernel_vals["PAPI_SR_INS"]) / kernel_vals["time"]
                     mem_bandwidth /= 1000000000
-                    print(kernel + ": time " + str(kernel_vals["time"]) + " mem_bandwidth: " + str(mem_bandwidth))
+
+                    times.append(kernel_vals["time"])
+
+                    print("%40s %15.2f %15.2f %15.2f " % (kernel, kernel_vals["time"], (kernel_vals["time"] / total_time) * 100., mem_bandwidth))
 
         print("\n\npython roofline.py procs/thunderx2-isambard-"+sys.argv[2]+".yaml --cacheaware " + point_string)
 else:
     for kernel in kernel_names:
             kernel_vals = kernel_counters[kernel]
+            
+            times.append(kernel_vals["time"])
             print(kernel + ": time " + str(kernel_counters[kernel]["time"]))
-
-
-
-
-
