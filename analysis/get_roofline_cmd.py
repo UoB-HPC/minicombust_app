@@ -2,7 +2,6 @@
 
 import sys
 
-
 options = ["CASCADE_LAKE", "TX2"]
 
 if (len(sys.argv) < 3):
@@ -39,7 +38,7 @@ for proc in range(int(sys.argv[-1])):
             for i in range(len(values)):
                 kernel_counters[kernel_name][counters[i]].append(float(values[i]))
 
-print("%40s %15s %15s %15s" % ("kernel", "real time", "total time (%)", "mem_bandwidth"))
+print("%40s %15s %15s %15s %15s" % ("kernel", "real_time", "total_time_%", "performance", "mem_bandwidth"))
 
 total_time = max(kernel_counters["minicombust"]["time"])
 
@@ -64,7 +63,7 @@ if (len(counters) != 1):
 
                 times.append(kernel_vals["time"])
 
-                print("%40s %15.2f %15.2f %15.2f " % (kernel, kernel_vals["time"], (kernel_vals["time"] / total_time) * 100., mem_bandwidth))
+                print("%40s %15.2f %15.2f %15.2f %15.2f " % (kernel, kernel_vals["time"], (kernel_vals["time"] / total_time) * 100., performance, mem_bandwidth))
 
 
         print("\n\npython roofline.py procs/cascade-lake-6230-"+sys.argv[2]+".yaml --cacheaware " + point_string)
@@ -89,7 +88,7 @@ if (len(counters) != 1):
 
                     times.append(kernel_vals["time"])
 
-                    print("%40s %15.2f %15.2f %15.2f " % (kernel, kernel_vals["time"], (kernel_vals["time"] / total_time) * 100., mem_bandwidth))
+                    print("%40s %15.2f %15.2f %15.2f %15.2f " % (kernel, kernel_vals["time"], (kernel_vals["time"] / total_time) * 100., performance, mem_bandwidth))
 
         print("\n\npython roofline.py procs/thunderx2-isambard-"+sys.argv[2]+".yaml --cacheaware " + point_string)
 else:

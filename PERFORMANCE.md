@@ -29,7 +29,6 @@
 ## Scaling Performance
 
 
-
 ### Strong scaling performance
 
 Box dimensions = 

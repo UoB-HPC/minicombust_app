@@ -8,4 +8,7 @@ module swap gcc/9.3.0 gcc/12.1.0
 export GCC_VERSION=12.1.0
 export GNU_VERSION=12.1.0
 
+module load cray-python/3.8.5.1
+pip install --user matplotlib
+
 #source /cm/shared/apps/intel/compilers_and_libraries/2020.4.304/mpi/intel64/bin/mpivars.sh

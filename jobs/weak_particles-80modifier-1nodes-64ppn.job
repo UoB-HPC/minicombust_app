@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -q arm
+#PBS -l select=1:ncpus=64
+#PBS -l walltime=01:00:00
+#PBS -o out/tx2-weak_particles-1nodes-64ppn-80cells_modifier.log
+
+cd /home/br-hwaugh/repos/minicombust_app_tx2_gcc12/
+
+source env.sh
+
+HEADER="particles       real_time  total_time     performance   mem_bandwidth"
+
+echo $HEADER > results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-interpolate_nodal_data.log
+echo $HEADER > results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-particle_interpolation_data.log
+echo $HEADER > results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-solve_spray_equations.log
+echo $HEADER > results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-update_particle_positions.log
+echo $HEADER > results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-emitted_particles.log
+echo $HEADER > results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-updated_flow_field.log
+echo $HEADER > results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-minicombust.log
+
+for (( PARTICLES=64; PARTICLES <= 1024; PARTICLES *= 2 ))
+do
+    echo "Running $PARTICLES particles experiment"
+    aprun -n 64 -N 64 ./bin/minicombust $PARTICLES 80
+    python analysis/get_roofline_cmd.py TX2 MC_ROOFLINE 64 | tee /tmp/roofline.log
+
+    cat /tmp/roofline.log | grep "    interpolate_nodal_data"      >> out/tx2-weak_particles-1nodes-64ppn-80cells_modifier-interpolate_nodal_data.log
+    cat /tmp/roofline.log | grep "    particle_interpolation_data" >> out/tx2-weak_particles-1nodes-64ppn-80cells_modifier-particle_interpolation_data.log
+    cat /tmp/roofline.log | grep "    solve_spray_equations"       >> out/tx2-weak_particles-1nodes-64ppn-80cells_modifier-solve_spray_equations.log
+    cat /tmp/roofline.log | grep "    update_particle_positions"   >> out/tx2-weak_particles-1nodes-64ppn-80cells_modifier-update_particle_positions.log
+    cat /tmp/roofline.log | grep "    emitted_particles"           >> out/tx2-weak_particles-1nodes-64ppn-80cells_modifier-emitted_particles.log
+    cat /tmp/roofline.log | grep "    updated_flow_field"          >> out/tx2-weak_particles-1nodes-64ppn-80cells_modifier-updated_flow_field.log
+    cat /tmp/roofline.log | grep "    minicombust"                 >> out/tx2-weak_particles-1nodes-64ppn-80cells_modifier-minicombust.log
+
+    sed -i "s/ *interpolate_nodal_data/$PARTICLES/g"       results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-interpolate_nodal_data.log
+    sed -i "s/ *particle_interpolation_data/$PARTICLES/g"  results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-particle_interpolation_data.log
+    sed -i "s/ *solve_spray_equations/$PARTICLES/g"        results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-solve_spray_equations.log
+    sed -i "s/ *update_particle_positions/$PARTICLES/g"    results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-update_particle_positions.log
+    sed -i "s/ *emitted_particles/$PARTICLES/g"            results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-emitted_particles.log
+    sed -i "s/ *updated_flow_field/$PARTICLES/g"           results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-updated_flow_field.log
+    sed -i "s/ *minicombust/$PARTICLES/g"                  results/tx2-weak_particles-1nodes-64ppn-80cells_modifier-minicombust.log
+done

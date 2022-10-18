@@ -1,0 +1,13 @@
+#!/bin/bash
+#PBS -q arm
+#PBS -l select=MC_NODES:ncpus=MC_PPN
+#PBS -l walltime=01:00:00
+#PBS -o out/isambard-MC_NODESnodes-MC_PPNppn-MC_PARTICLESparticles-MC_CELLS_MODIFIERcells_modifier.log
+
+cd /home/br-hwaugh/repos/minicombust_app_tx2_gcc12/
+
+source env.sh
+
+aprun -n MC_PROCS -N MC_PPN ./bin/minicombust MC_PARTICLES MC_CELLS_MODIFIER
+
+python analysis/get_roofline_cmd.py TX2 MC_ROOFLINE MC_PPN
