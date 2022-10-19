@@ -8,26 +8,26 @@
 Tested with GCC, Cray and Intel compilers, Intel is most tested compiler at the moment.
 
 Without PAPI:
-```
+```bash
 make clean all
 ```
 
 With PAPI:
-```
+```bash
 PAPI=1 make clean all
 ```
 
 ## Run 
-```
+```bash
 ./bin/minicombust # emits 10 particles per timestep by default
 ```
 
-```
+```bash
 ./bin/minicombust NUM_PARTICLES_PER_TIMESTEP
 ```
 
 ## Run tests 
-```
+```bash
 ./bin/minicombust_tests
 ```
 
@@ -36,8 +36,35 @@ PAPI=1 make clean all
 Output vtk files for the mesh and particles are written to `out/`
 
 ## Get roofline CMD (PAPI Build Required)
-```
+
+Generates command for roofline repo https://github.com/UoB-HPC/roofline. Plots each MiniCOMBUST kernel. 
+
+```python
 python analysis/get_roofline_cmd.py CASCADE_LAKE 1-core out/performance.csv
+## OR
+python analysis/get_roofline_cmd.py TX2 2-socket 64
+```
+
+## Scaling experiments
+
+### Weak particle scaling experiment. 
+
+Runs MiniCOMBUST with a fixed size mesh on a fixed number of processes, while varying the number of particles (doubling to upper bound). 
+
+For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
+
+```bash
+./analysis/analysis particle_weak_scaling.sh LOW_PARTICLE_BOUND HIGH_PARTICLE_BOUND CELLS_MODIFIER NODES PPN
+```
+
+### Weak mesh scaling experiment. 
+
+Runs MiniCOMBUST with a fixed number of particles on a fixed number of processes, while varying the size of the mesh (doubling to upper bound). 
+
+For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
+
+```bash
+./analysis/analysis mesh_weak_scaling.sh LOW_CELL_MODIFIER_BOUND HIGH_CELL_MODIFIER_BOUND PARTICLES NODES PPN
 ```
 
 ## Future Features

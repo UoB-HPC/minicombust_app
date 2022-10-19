@@ -116,8 +116,6 @@ namespace minicombust::geometry
                 const size_t gas_temperature_size            = mesh_size*sizeof(T);
                 const size_t gas_temperature_gradient_size   = mesh_size*sizeof(T);
                  
-                cell_centres                                 = (vec<T> *)     malloc(mesh_cell_centre_size);
-                particles_per_point                          = (uint64_t *)   malloc(particles_per_point_size);
                 if (mpi_config->solver_type == FLOW || mpi_config->world_size == 1)
                 {
                     evaporated_fuel_mass_rate                    = (T *)          malloc(evaporated_fuel_mass_rate_size);
@@ -132,6 +130,8 @@ namespace minicombust::geometry
                         flow_grad_terms[c] = {{0.0, 0.0, 0.0}, 0.0, 0.0};
                     }
                 }
+                particles_per_point                          = (uint64_t *)   malloc(particles_per_point_size);
+                cell_centres                                 = (vec<T> *)     malloc(mesh_cell_centre_size);
                 cells_per_point                              = (uint8_t *)    malloc(cells_per_point_size);
 
 
@@ -159,7 +159,6 @@ namespace minicombust::geometry
 
                 if (mpi_config->rank == 0)
                 {
-
                     printf("\nMesh storage requirements (per process):\n");
                     printf("\tAllocating mesh cell centres                                (%.2f MB)\n",                 (float)(mesh_cell_centre_size)/1000000.0);
                     printf("\tAllocating array of particles per cell                      (%.2f MB)\n",                 (float)(particles_per_point_size)/1000000.0);
@@ -179,7 +178,7 @@ namespace minicombust::geometry
                     printf("\tAllocating gas temperature gradient source term             (%.2f MB)\n",                 (float)(gas_temperature_size)/1000000.0);
                     printf("\tAllocated mesh. Flow size                                   (%.2f MB)\n",                 (float)flow_size/1000000.0);
                     printf("\tAllocated mesh. Particle size                               (%.2f MB)\n",                 (float)particle_size/1000000.0);
-                    printf("\tAllocated mesh. Total size (per world)                      (%.2f MB)\n\n",               (float)(flow_size + particle_size * mpi_config->world_size)/1000000.0);
+                    printf("\tAllocated mesh. Total size (per world)                      (%.2f MB)\n\n",               (float)(flow_size * ( mpi_config->world_size - mpi_config->particle_flow_world_size) + particle_size * mpi_config->world_size)/1000000.0);
                 }
 
                 calculate_cell_centres();
