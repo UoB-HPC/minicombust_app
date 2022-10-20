@@ -45,7 +45,7 @@ int main (int argc, char ** argv)
     // Run Configuration
     const uint64_t ntimesteps                   = 1500;
     const double   delta                        = 2.5e-6;
-    const uint64_t output_iteration             = 10;
+    const uint64_t output_iteration             = (argc > 3) ? atoi(argv[3]) : 10;
     const uint64_t particles_per_timestep       = (argc > 1) ? atoi(argv[1]) : 10;
     
     // Mesh Configuration
@@ -119,7 +119,7 @@ int main (int argc, char ** argv)
         if (mpi_config.solver_type == PARTICLE)
             particle_solver->print_logger_stats(ntimesteps, program_time);
         else
-            flow_solver->performance_logger.print_counters(mpi_config.rank, program_time);
+            flow_solver->performance_logger.print_counters(mpi_config.rank, mpi_config.world_size, program_time);
     }
 
     // Get program times

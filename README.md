@@ -54,7 +54,7 @@ Runs MiniCOMBUST with a fixed size mesh on a fixed number of processes, while va
 For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
 
 ```bash
-./analysis/analysis particle_weak_scaling.sh LOW_PARTICLE_BOUND HIGH_PARTICLE_BOUND CELLS_MODIFIER NODES PPN
+./analysis/particle_weak_scaling.sh LOW_PARTICLE_BOUND HIGH_PARTICLE_BOUND CELLS_MODIFIER NODES PPN
 ```
 
 ### Weak mesh scaling experiment. 
@@ -64,7 +64,17 @@ Runs MiniCOMBUST with a fixed number of particles on a fixed number of processes
 For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
 
 ```bash
-./analysis/analysis mesh_weak_scaling.sh LOW_CELL_MODIFIER_BOUND HIGH_CELL_MODIFIER_BOUND PARTICLES NODES PPN
+./analysis/mesh_weak_scaling.sh LOW_CELL_MODIFIER_BOUND HIGH_CELL_MODIFIER_BOUND PARTICLES NODES PPN
+```
+
+### Strong scaling experiment. 
+
+Runs MiniCOMBUST with a fixed number of particles and cells, while varying the number of cores (doubling to upper bound). 
+
+For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
+
+```bash
+./analysis/strong_scaling.sh LOW_CORES HIGH_CORES MAX_PPN PPN CELL_MODIFIER
 ```
 
 ## Future Features

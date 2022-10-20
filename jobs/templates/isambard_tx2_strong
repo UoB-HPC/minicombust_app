@@ -1,0 +1,36 @@
+#!/bin/bash
+#PBS -q arm
+#PBS -l select=MC_NODES:ncpus=MC_PPN
+#PBS -l walltime=00:20:00
+#PBS -o results/isambard-MC_PROCSprocs-MC_PARTICLESparticles-MC_CELLScells_modifier.log
+#PBS -j oe
+
+cd /home/br-hwaugh/repos/minicombust_app_tx2_gcc12/
+
+source env.sh
+
+
+module unload cray-python/3.8.5.1
+echo "Running: aprun -n MC_PROCS -N MC_PPN ./bin/minicombust MC_PARTICLES MC_CELLS"
+aprun -n MC_PROCS -N MC_PPN ./bin/minicombust MC_PARTICLES MC_CELLS
+module load cray-python/3.8.5.1
+
+echo "Running: python analysis/get_roofline_cmd.py TX2 MC_NODESnodes MC_PPN | tee /tmp/roofline.log"
+python analysis/get_roofline_cmd.py TX2 MC_NODESnodes MC_PPN | tee /tmp/roofline_MC_PROCS.log
+
+cat /tmp/roofline_MC_PROCS.log | grep "    interpolate_nodal_data"      >> results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-interpolate_nodal_data.log
+cat /tmp/roofline_MC_PROCS.log | grep "    particle_interpolation_data" >> results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-particle_interpolation_data.log
+cat /tmp/roofline_MC_PROCS.log | grep "    solve_spray_equations"       >> results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-solve_spray_equations.log
+cat /tmp/roofline_MC_PROCS.log | grep "    update_particle_positions"   >> results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-update_particle_positions.log
+cat /tmp/roofline_MC_PROCS.log | grep "    emitted_particles"           >> results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-emitted_particles.log
+cat /tmp/roofline_MC_PROCS.log | grep "    updated_flow_field"          >> results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-updated_flow_field.log
+cat /tmp/roofline_MC_PROCS.log | grep "    minicombust"                 >> results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-minicombust.log
+
+
+sed -i "s/ *interpolate_nodal_data/MC_PROCS/g"       results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-interpolate_nodal_data.log
+sed -i "s/ *particle_interpolation_data/MC_PROCS/g"  results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-particle_interpolation_data.log
+sed -i "s/ *solve_spray_equations/MC_PROCS/g"        results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-solve_spray_equations.log
+sed -i "s/ *update_particle_positions/MC_PROCS/g"    results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-update_particle_positions.log
+sed -i "s/ *emitted_particles/MC_PROCS/g"            results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-emitted_particles.log
+sed -i "s/ *updated_flow_field/MC_PROCS/g"           results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-updated_flow_field.log
+sed -i "s/ *minicombust/MC_PROCS/g"                  results/tx2-strong-MC_CELLScells_modifier-MC_PARTICLESparticles-minicombust.log

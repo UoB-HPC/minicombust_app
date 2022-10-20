@@ -50,10 +50,10 @@ namespace minicombust::performance
             
             vector<string> event_names;
 
-            inline void print_counters(int rank, double runtime)
+            inline void print_counters(int rank, int world_size, double runtime)
             {
                 ofstream myfile;
-                myfile.open("out/performance_rank" + to_string(rank) + ".csv");
+                myfile.open("out/performance_rank" + to_string(rank) + "_" + to_string(world_size) + ".csv");
                 myfile << "kernel,time";
                 #ifdef PAPI
                 for (int e = 0; e < num_events; e++)  myfile << "," << event_names[e];

@@ -90,7 +90,7 @@ namespace minicombust::particles
 
             cout << endl;
         }
-        performance_logger.print_counters(mpi_config->rank, runtime);
+        performance_logger.print_counters(mpi_config->rank, mpi_config->world_size, runtime);
     }
 
 
