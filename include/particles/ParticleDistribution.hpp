@@ -197,9 +197,11 @@ namespace minicombust::particles
             inline void emit_particles(vector<Particle<T>>& particles, unordered_map<uint64_t, particle_aos<T>>& cell_particle_field_map, Particle_Logger *logger)
             {
                 const particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
+                uint64_t start_cell = mesh->mesh_size * 0.49;
                 for (uint64_t p = 0; p < particles_per_timestep; p++)
                 {
-                    const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), mesh->mesh_size * 0.49 , logger);
+                    const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), start_cell, logger);
+
 
                     // static int count = 0;
                     if (particle.decayed) 
@@ -207,7 +209,7 @@ namespace minicombust::particles
                         continue;
                     }
 
-                
+                    start_cell = particle.cell; 
                     particles.push_back(particle);
                     cell_particle_field_map.try_emplace(particle.cell, zero_field);
                 }

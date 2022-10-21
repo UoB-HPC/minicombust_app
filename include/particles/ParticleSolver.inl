@@ -146,8 +146,6 @@ namespace minicombust::particles
     template<class T> 
     void ParticleSolver<T>::solve_spray_equations()
     {
-       
-
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: solve_spray_equations.\n");
 
         const uint64_t cell_size       = mesh->cell_size; 

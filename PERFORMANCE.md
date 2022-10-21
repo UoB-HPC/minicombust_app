@@ -8,66 +8,58 @@
 - Emitted particles
 - Update flow field 
 
-### Interpolate nodal data (OI = ~0.03)
+### Emitted particles 
+Code location: `ParticleDistribution.hpp : emit_particles (..)`
+Operational intensity: 0.15 (FLOPS per byte)
+Fraction of runtime: <1% (Oct 2022)
 
-
-### Particle interpolation data (OI = ~0.16)
-
-
-### Solve spray equations (OI = ~0.16)
-
-
-### Update particle positions (OI = ~0.09)
-
-
-### Emitted particles (OI = ~0.22)
-
+Kernel responsible for creating N new particles per iteration. Stores new particles at the end of a reserved vector.Each particle finds cell in mesh, from random start position - estimate from last particle.
 
 ### Update flow field (OI = ~0.00)
 
 
-## Scaling Performance
+### Interpolate nodal data
+Code location: `ParticleSolver.inl : interpolate_nodal_data ()`
+Operational intensity : 0.03 (FLOPS per byte)
+Fraction of runtime: 10% - 40% (Oct 2022)
+
+Kernel interpolates field values from the cell centres to the cell nodes. 
+
+Algorithm:
+1. Iterate over each cell in the neighbours set:
+    - Iterate over each node in the cell:
+        - Add flow gradient to each node flow value.
+        - Increment node centre count.
+        - Mark node.
+2. Iterate over the marked nodes:
+    - If at boundary, add boundary flow values.
+    - Divide node flow values by cell centre count.
+
+### Particle interpolation data
+Code location: `ParticleSolver.inl : solve_spray_equations ()` (first half)
+Operational intensity: 0.2 (FLOPS per byte)
+Fraction of runtime: <5% (Oct 2022)
+
+Kernel interpolates nodal field values to particle position field values.
+
+Algorithm:
+1. Iterate over particles vector:
+    - Iterate over each node in the particle's cell:
+        - Weight node field value by distance and get weighted average.
+
+### Solve spray equations
+Code location: `Particle.hpp : solve_spray ()`
+Operational intensity: 0.16 (FLOPS per byte)
+Fraction of runtime:  <5% (Oct 2022)
+
+Kernel solves drag, evaporation and breakup equations for each particle.
+
+### Update particle positions
+Code location: `ParticleSolver.inl : update_particle_positions ()` 
+Operational intensity: 0.15 (FLOPS per byte)
+Fraction of runtime:  <5% (Oct 2022)
+
+Kernel iterates over particles, and updates the cell based on the position from `solve_spray()`. If the particle hasn't decayed, increment the bounding cell's flow field.
 
 
-### Strong scaling performance
 
-Box dimensions = 
-Particles      = 
-
-| TX2 Nodes (cores) | Time          |
-| ----------------- | ------------- |
-| 1                 | Content Cell  |
-| 64                | Content Cell  |
-| 128               | Content Cell  |
-| 256               | Content Cell  |
-| 512               | Content Cell  |
-| 1024              | Content Cell  |
-| 2048              | Content Cell  |
-
-### Weak scaling mesh performance
-
-Box dimensions = 
-
-| TX2 Nodes (cores) | Time          |
-| ----------------- | ------------- |
-| 1                 | Content Cell  |
-| 64                | Content Cell  |
-| 128               | Content Cell  |
-| 256               | Content Cell  |
-| 512               | Content Cell  |
-| 1024              | Content Cell  |
-| 2048              | Content Cell  |
-
-### Weak scaling particles performance
-
-Box dimensions = 
-
-| TX2 Nodes (cores) | Time          |
-| ----------------- | ------------- |
-| 1                 | Content Cell  |
-| 64                | Content Cell  |
-| 128               | Content Cell  |
-| 256               | Content Cell  |
-| 512               | Content Cell  |
-| 1024              | Content Cell  |
-| 2048              | Content Cell  |
