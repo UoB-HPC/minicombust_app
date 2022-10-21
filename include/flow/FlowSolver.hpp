@@ -24,9 +24,7 @@ namespace minicombust::flow
             MPI_Config *mpi_config;
             PerformanceLogger<T> performance_logger;
 
-            double receive_time = 0.0;
-            double process_time = 0.0;
-            double bcast_time = 0.0;
+            double time_stats[11] = {0.0};
 
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mesh(mesh), mpi_config(mpi_config)
             {

@@ -45,7 +45,7 @@ int main (int argc, char ** argv)
     // Run Configuration
     const uint64_t ntimesteps                   = 1500;
     const double   delta                        = 2.5e-6;
-    const uint64_t output_iteration             = (argc > 3) ? atoi(argv[3]) : 10;
+    const int64_t output_iteration              = (argc > 3) ? atoi(argv[3]) : 10;
     const uint64_t particles_per_timestep       = (argc > 1) ? atoi(argv[1]) : 10;
     
     // Mesh Configuration

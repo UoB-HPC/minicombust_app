@@ -17,7 +17,8 @@ namespace minicombust::flow
         int      int_cell_sizes[mpi_config->world_size];
         int      int_cell_displacements[mpi_config->world_size];
 
-        receive_time  -= MPI_Wtime();
+        int time_count = 0;
+        time_stats[time_count]  -= MPI_Wtime();
 
         // Gather the size of each rank's cell array
         MPI_Gather(MPI_IN_PLACE,     1, MPI_UINT64_T, cell_sizes, 1,    MPI_UINT64_T,  mpi_config->rank, mpi_config->world);
@@ -35,6 +36,13 @@ namespace minicombust::flow
             cell_size                 += cell_sizes[i];
         }
 
+        static uint64_t unreduced_counts = 0;
+        static uint64_t reduced_counts   = 0;
+        unreduced_counts += cell_size;
+
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
+
         if(cell_size > INT_MAX) 
         {
             printf("ERROR: DISPLACEMENT OVER INT_MAX\n");
@@ -45,41 +53,29 @@ namespace minicombust::flow
         // Receive the cells array of each rank
         MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    cells,  int_cell_sizes, int_cell_displacements, MPI_UINT64_T,  mpi_config->rank, mpi_config->world);
 
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
 
-        map<uint64_t, particle_aos<T>>  cell_particle_field_map;
-        if (receive_particle)
+        unordered_set<uint64_t>  unordered_cells_set;
+
+        for (uint64_t i = 0; i < cell_size; i++)
         {
-            particle_aos<T> neighbour_particle_aos[cell_size];
-            MPI_Gatherv(MPI_IN_PLACE,    1, mpi_config->MPI_PARTICLE_STRUCTURE, neighbour_particle_aos,  int_cell_sizes, int_cell_displacements, mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->rank, mpi_config->world);
-
-            for (uint64_t i = 0; i < cell_size; i++)
-            {
-                cell_particle_field_map[cells[i]].momentum  += neighbour_particle_aos[i].momentum;
-                cell_particle_field_map[cells[i]].energy    += neighbour_particle_aos[i].energy;
-                cell_particle_field_map[cells[i]].fuel      += neighbour_particle_aos[i].fuel;
-            }
+            unordered_cells_set.insert(cells[i]);
         }
-        else
-        {
-            for (uint64_t i = 0; i < cell_size; i++)
-            {
-                cell_particle_field_map[cells[i]].momentum = {0.0, 0.0, 0.0};
-                cell_particle_field_map[cells[i]].energy    = 0.0;
-                cell_particle_field_map[cells[i]].fuel      = 0.0;
-            }
-        }
+        unordered_cells_set.erase(MESH_BOUNDARY);
+        reduced_counts += unordered_cells_set.size();
 
-        receive_time += MPI_Wtime();
-        process_time -= MPI_Wtime();;
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
 
-        set<uint64_t>  neighbours_set;
         
         // TODO: Fix find cell neighbours, to get all 26 neighbours without extras!
+
+        unordered_set<uint64_t>  unordered_neighbours_set;
         #pragma ivdep
-        for (auto& cell_it: cell_particle_field_map)
+        for (uint64_t cell: unordered_cells_set)
         {
-            uint64_t cell = cell_it.first;
-            if (cell == MESH_BOUNDARY)  continue;
+            // uint64_t cell = cell_it.first;
 
             // Get 9 cells neighbours below
             const uint64_t below_neighbour                = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + DOWN_FACE];
@@ -114,61 +110,56 @@ namespace minicombust::flow
             const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + BACK_FACE];
 
             
-            neighbours_set.insert(cell);
+            unordered_neighbours_set.insert(cell);
 
             // Get 9 cells neighbours below
-            if (below_neighbour              != MESH_BOUNDARY)               neighbours_set.insert(below_neighbour);                
-            if (below_left_neighbour         != MESH_BOUNDARY)          neighbours_set.insert(below_left_neighbour);           
-            if (below_right_neighbour        != MESH_BOUNDARY)         neighbours_set.insert(below_right_neighbour);          
-            if (below_front_neighbour        != MESH_BOUNDARY)         neighbours_set.insert(below_front_neighbour);          
-            if (below_back_neighbour         != MESH_BOUNDARY)          neighbours_set.insert(below_back_neighbour);           
-            if (below_left_front_neighbour   != MESH_BOUNDARY)    neighbours_set.insert(below_left_front_neighbour);     
-            if (below_left_back_neighbour    != MESH_BOUNDARY)     neighbours_set.insert(below_left_back_neighbour);      
-            if (below_right_front_neighbour  != MESH_BOUNDARY)   neighbours_set.insert(below_right_front_neighbour);    
-            if (below_right_back_neighbour   != MESH_BOUNDARY)    neighbours_set.insert(below_right_back_neighbour);     
+            unordered_neighbours_set.insert(below_neighbour);                
+            unordered_neighbours_set.insert(below_left_neighbour);           
+            unordered_neighbours_set.insert(below_right_neighbour);          
+            unordered_neighbours_set.insert(below_front_neighbour);          
+            unordered_neighbours_set.insert(below_back_neighbour);           
+            unordered_neighbours_set.insert(below_left_front_neighbour);     
+            unordered_neighbours_set.insert(below_left_back_neighbour);      
+            unordered_neighbours_set.insert(below_right_front_neighbour);    
+            unordered_neighbours_set.insert(below_right_back_neighbour);     
 
             // Get 9 cells neighbours above
-            if (above_neighbour              != MESH_BOUNDARY)               neighbours_set.insert(above_neighbour);                
-            if (above_left_neighbour         != MESH_BOUNDARY)          neighbours_set.insert(above_left_neighbour);           
-            if (above_right_neighbour        != MESH_BOUNDARY)         neighbours_set.insert(above_right_neighbour);          
-            if (above_front_neighbour        != MESH_BOUNDARY)         neighbours_set.insert(above_front_neighbour);          
-            if (above_back_neighbour         != MESH_BOUNDARY)          neighbours_set.insert(above_back_neighbour);           
-            if (above_left_front_neighbour   != MESH_BOUNDARY)    neighbours_set.insert(above_left_front_neighbour);     
-            if (above_left_back_neighbour    != MESH_BOUNDARY)     neighbours_set.insert(above_left_back_neighbour);      
-            if (above_right_front_neighbour  != MESH_BOUNDARY)   neighbours_set.insert(above_right_front_neighbour);    
-            if (above_right_back_neighbour   != MESH_BOUNDARY)    neighbours_set.insert(above_right_back_neighbour);     
+            unordered_neighbours_set.insert(above_neighbour);                
+            unordered_neighbours_set.insert(above_left_neighbour);           
+            unordered_neighbours_set.insert(above_right_neighbour);          
+            unordered_neighbours_set.insert(above_front_neighbour);          
+            unordered_neighbours_set.insert(above_back_neighbour);           
+            unordered_neighbours_set.insert(above_left_front_neighbour);     
+            unordered_neighbours_set.insert(above_left_back_neighbour);      
+            unordered_neighbours_set.insert(above_right_front_neighbour);    
+            unordered_neighbours_set.insert(above_right_back_neighbour);     
 
             // Get 8 cells neighbours around
-            if (around_left_neighbour        != MESH_BOUNDARY)         neighbours_set.insert(around_left_neighbour);          
-            if (around_right_neighbour       != MESH_BOUNDARY)        neighbours_set.insert(around_right_neighbour);         
-            if (around_front_neighbour       != MESH_BOUNDARY)        neighbours_set.insert(around_front_neighbour);         
-            if (around_back_neighbour        != MESH_BOUNDARY)         neighbours_set.insert(around_back_neighbour);          
-            if (around_left_front_neighbour  != MESH_BOUNDARY)   neighbours_set.insert(around_left_front_neighbour);    
-            if (around_left_back_neighbour   != MESH_BOUNDARY)    neighbours_set.insert(around_left_back_neighbour);     
-            if (around_right_front_neighbour != MESH_BOUNDARY)  neighbours_set.insert(around_right_front_neighbour);   
-            if (around_right_back_neighbour  != MESH_BOUNDARY)   neighbours_set.insert(around_right_back_neighbour); 
-
-
-
-            // for (uint64_t face = 0; face < mesh->faces_per_cell; face++)
-            // {
-            //     const uint64_t neighbour_id = mesh->cell_neighbours[cell*mesh->faces_per_cell + face];
-            //     if (neighbour_id == MESH_BOUNDARY)  continue;
-
-            //     neighbours_set.insert(neighbour_id);
-            //     for (uint64_t face2 = 0; face2 < mesh->faces_per_cell; face2++)
-            //     {
-            //         const uint64_t neighbour_id2 = mesh->cell_neighbours[neighbour_id*mesh->faces_per_cell + face2];
-            //         if (neighbour_id2 == MESH_BOUNDARY)  continue;
-
-            //         neighbours_set.insert(neighbour_id2);
-            //     }
-            // }
+            unordered_neighbours_set.insert(around_left_neighbour);          
+            unordered_neighbours_set.insert(around_right_neighbour);         
+            unordered_neighbours_set.insert(around_front_neighbour);         
+            unordered_neighbours_set.insert(around_back_neighbour);          
+            unordered_neighbours_set.insert(around_left_front_neighbour);    
+            unordered_neighbours_set.insert(around_left_back_neighbour);     
+            unordered_neighbours_set.insert(around_right_front_neighbour);   
+            unordered_neighbours_set.insert(around_right_back_neighbour); 
         }
+
+
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
+
+
+        unordered_neighbours_set.erase(MESH_BOUNDARY);
+        set<uint64_t>  neighbours_set(unordered_neighbours_set.begin(), unordered_neighbours_set.end());
 
         uint64_t count = 0;
         neighbours_size = neighbours_set.size();
         int      int_neighbour_indexes[neighbours_size];
+
+
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
 
         for (set<uint64_t>::iterator cell_it = neighbours_set.begin(); cell_it != neighbours_set.end(); ++cell_it)
         {
@@ -177,14 +168,20 @@ namespace minicombust::flow
             count++;
         }
 
-        process_time += MPI_Wtime();
-        bcast_time   -= MPI_Wtime();
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
         
         // Send size of neighbours of cells back to ranks.
         MPI_Bcast(&neighbours_size,                1,                    MPI_UINT64_T, mpi_config->rank, mpi_config->world);
 
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
+
         // Send neighbours of cells back to ranks.
         MPI_Bcast(neighbour_indexes, neighbours_size,                    MPI_UINT64_T, mpi_config->rank, mpi_config->world);
+
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
 
 
         // // Create indexed type and send flow terms
@@ -197,18 +194,47 @@ namespace minicombust::flow
 
         MPI_Type_free(&MPI_CELL_INDEXES);
 
-        for (auto& cell_it: cell_particle_field_map)
-        {
-            mesh->particle_energy_rate[cell_it.first]      = cell_it.second.energy;
-            mesh->particle_momentum_rate[cell_it.first]    = cell_it.second.momentum;
-            mesh->evaporated_fuel_mass_rate[cell_it.first] = cell_it.second.fuel;
-        }
 
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
+
+        particle_aos<T> neighbour_particle_aos[cell_size];
+        map<uint64_t, particle_aos<T>>  cell_particle_field_map;
+        if (receive_particle)
+        {
+            MPI_Gatherv(MPI_IN_PLACE,    1, mpi_config->MPI_PARTICLE_STRUCTURE, neighbour_particle_aos,  int_cell_sizes, int_cell_displacements, mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->rank, mpi_config->world);
+        }
+        
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();
+        
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
 
-        bcast_time   += MPI_Wtime();
+        for (uint64_t i = 0; i < cell_size; i++)
+        {
+            cell_particle_field_map[cells[i]].momentum  += neighbour_particle_aos[i].momentum;
+            cell_particle_field_map[cells[i]].energy    += neighbour_particle_aos[i].energy;
+            cell_particle_field_map[cells[i]].fuel      += neighbour_particle_aos[i].fuel;
+        }
+        time_stats[time_count++] += MPI_Wtime();
 
-        // cout << receive_time << " " << process_time << " " << bcast_time << endl;
+        static int timestep_count = 0;
+        if (timestep_count++ == 1499)
+        {
+            double total_time = 0.0;
+            for (int i = 0; i < 11; i++)
+            {
+                total_time += time_stats[i];
+            }
+            for (int i = 0; i < 11; i++)
+            {
+                printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
+            }
+            printf("Total time %f\n", total_time);
+
+            printf("Reduced average count = %f\n",   (double)reduced_counts   / 1500.);
+            printf("Unreduced average count = %f\n", (double)unreduced_counts / 1500.);
+        }
 
     } 
     

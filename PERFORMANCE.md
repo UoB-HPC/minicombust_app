@@ -15,7 +15,22 @@ Fraction of runtime: <1% (Oct 2022)
 
 Kernel responsible for creating N new particles per iteration. Stores new particles at the end of a reserved vector.Each particle finds cell in mesh, from random start position - estimate from last particle.
 
-### Update flow field (OI = ~0.00)
+### Update flow field 
+Code location: `ParticleSolver.inl && FlowSolver.inl : update_flow_field ()`
+Operational intensity : 0.00 (FLOPS per byte) 
+Fraction of runtime: 50% - 80% (Oct 2022)
+
+Kernel responsible for getting updated flow fields from flow solver.
+
+Algorithm:
+1. (FLOW && PARTICLE) MPI_Gather:  Gather the size of each rank's cell array to flow rank.
+2. (FLOW && PARTICLE) MPI_Gatherv: Gather the cells array from each particle rank.
+3. (FLOW && PARTICLE) MPI_Gatherv: Gather the cells particle fields data from each particle rank.
+4. (FLOW) Get the neighbours of each cell sent from the particle ranks.
+5. (FLOW && PARTICLE) MPI_Bcast:   Send the size of neighbours to all ranks.
+6. (FLOW && PARTICLE) MPI_Bcast:   Send the neighbour cells to all ranks.
+7. (FLOW && PARTICLE) MPI_Bcast:   Send the neighbour cells to all ranks.
+8. (FLOW && PARTICLE) MPI_Bcast:   Broadcast neighbour flow terms to all ranks.
 
 
 ### Interpolate nodal data
