@@ -150,6 +150,10 @@ namespace minicombust::particles
         public:
             // TODO: Change this to particles per unit of time?
             uint64_t particles_per_timestep;
+            uint64_t remainder_particles;
+
+            MPI_Config *mpi_config;
+
             Mesh<T> *mesh;
             
 
@@ -164,14 +168,16 @@ namespace minicombust::particles
             Distribution<T> *decay_threshold; 
             Distribution<T> *temperature; 
 
+
+
             // TODO: Read particle distribution from file
 
             // Generate fixed distribution
-            ParticleDistribution (uint64_t particles_per_timestep, Mesh<T> *mesh, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
+            ParticleDistribution (uint64_t particles_per_timestep, uint64_t remainder_particles, MPI_Config *mpi_config, Mesh<T> *mesh, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
                                   vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean, T temp, ProbabilityDistribution dist) :
-                                  particles_per_timestep(particles_per_timestep), mesh(mesh)
+                                  particles_per_timestep(particles_per_timestep), remainder_particles(remainder_particles), mpi_config(mpi_config), mesh(mesh)
             {   
-                srand (time(NULL));
+                srand (time(NULL) + mpi_config->rank);
                 if (dist == UNIFORM)
                 {
                     T var = 0.2;
@@ -194,16 +200,19 @@ namespace minicombust::particles
                 decay_threshold  = new FixedDistribution<T>(decay_threshold_mean);  
             }
 
-            inline void emit_particles(vector<Particle<T>>& particles, unordered_map<uint64_t, particle_aos<T>>& cell_particle_field_map, Particle_Logger *logger)
+            inline void emit_particles(vector<Particle<T>>& particles, unordered_map<uint64_t, particle_aos<T>>& cell_particle_field_map, unordered_set<uint64_t>& particle_nodes_set, Particle_Logger *logger)
             {
                 const particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 uint64_t start_cell = mesh->mesh_size * 0.49;
-                for (uint64_t p = 0; p < particles_per_timestep; p++)
+                
+                static int timestep_count = 0;
+                timestep_count++;
+                uint64_t remainder = ((mpi_config->particle_flow_rank + timestep_count*remainder_particles) % mpi_config->particle_flow_world_size) < remainder_particles;
+
+                for (uint64_t p = 0; p < particles_per_timestep + remainder; p++)
                 {
                     const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), start_cell, logger);
 
-
-                    // static int count = 0;
                     if (particle.decayed) 
                     {
                         continue;
@@ -212,10 +221,15 @@ namespace minicombust::particles
                     start_cell = particle.cell; 
                     particles.push_back(particle);
                     cell_particle_field_map.try_emplace(particle.cell, zero_field);
+
+                    for (uint64_t i = 0; i < mesh->cell_size; i++)
+                        particle_nodes_set.insert(mesh->cells[particle.cell*mesh->cell_size + i]);
+
+
                 }
 
-                logger->num_particles      += particles_per_timestep;
-                logger->emitted_particles  += particles_per_timestep;
+                logger->num_particles      += particles_per_timestep + remainder;
+                logger->emitted_particles  += particles_per_timestep + remainder;
 
             }
 

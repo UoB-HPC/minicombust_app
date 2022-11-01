@@ -28,7 +28,10 @@ namespace minicombust::particles
            
             vector<Particle<T>>                       particles;
             unordered_map<uint64_t, particle_aos<T>>  cell_particle_field_map;
+            unordered_map<uint64_t, flow_aos<T>>      nodal_flow_field_map;
+            unordered_map<uint64_t, uint64_t>         node_to_position_map;
             unordered_set<uint64_t>                   neighbours_set;
+            unordered_set<uint64_t>                   particle_nodes_set;
             ParticleDistribution<T>                  *particle_dist;
 
             Mesh<T> *mesh;
@@ -43,13 +46,28 @@ namespace minicombust::particles
             T S_i_d;       // For momentum equation
             T Q_d;         // For energy equation
 
-            // vec_soa<T>   nodal_gas_velocity_soa;
-            flow_aos<T>     *nodal_flow_aos;
+            particle_aos<T> *cell_particle_aos;
             flow_aos<T>     *cell_flow_aos;
             flow_aos<T>     *cell_flow_grad_aos;
 
             uint64_t  neighbours_size;
-            uint64_t *neighbour_indexes;
+            uint64_t  rank_neighbours_size;
+            uint64_t *cell_indexes;
+
+            size_t   cell_index_array_size;
+            size_t   point_index_array_size;
+            size_t   cell_flow_array_size;
+            size_t   cell_particle_array_size;
+            size_t   point_flow_array_size;
+            
+            uint64_t max_cell_storage;
+            uint64_t max_point_storage;
+
+            int         *all_interp_node_indexes;
+            flow_aos<T> *all_interp_node_flow_fields;
+
+            int *rank_nodal_sizes;
+            int *rank_nodal_disps;
 
 
         public:
@@ -59,23 +77,34 @@ namespace minicombust::particles
             ParticleSolver(MPI_Config *mpi_config, uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t reserve_particles_size) : 
                            delta(delta), num_timesteps(ntimesteps), reserve_particles_size(reserve_particles_size), particle_dist(particle_dist), mesh(mesh), mpi_config(mpi_config)
             {
-                neighbours_size = mesh->mesh_size;
+                const size_t particles_array_size = reserve_particles_size * sizeof(Particle<T>);
                 
-                const size_t cell_index_array_size   = mesh->mesh_size * sizeof(uint64_t);
-                const size_t cell_array_size         = mesh->mesh_size * sizeof(flow_aos<T>);
-                const size_t nodal_array_size        = mesh->points_size * sizeof(flow_aos<T>);
-                const size_t particles_array_size    = reserve_particles_size * sizeof(Particle<T>);
+                float fraction   = 0.125;
+                max_cell_storage  = fraction * mesh->mesh_size;
+                max_point_storage = fraction * mesh->points_size;
 
-                // nodal_gas_velocity_soa            = allocate_vec_soa<T>(mesh->points_size);
-                nodal_flow_aos                    = (flow_aos<T> *)malloc(nodal_array_size);
-                cell_flow_aos                     = (flow_aos<T> *)malloc(cell_array_size);
-                cell_flow_grad_aos                = (flow_aos<T> *)malloc(cell_array_size);
+                cell_index_array_size       = max_cell_storage * sizeof(uint64_t);
+                cell_flow_array_size        = max_cell_storage * sizeof(flow_aos<T>);
+                cell_particle_array_size    = max_cell_storage * sizeof(particle_aos<T>);
 
-                neighbour_indexes                 = (uint64_t*)malloc(cell_index_array_size);
+                point_index_array_size     = max_point_storage * sizeof(int); 
+                point_flow_array_size      = max_point_storage * sizeof(flow_aos<T>); 
+
+
+                cell_indexes                      =        (uint64_t *)malloc(cell_index_array_size);
+                cell_particle_aos                 = (particle_aos<T> *)malloc(cell_particle_array_size);
+                cell_flow_aos                     =     (flow_aos<T> *)malloc(cell_flow_array_size);
+                cell_flow_grad_aos                =     (flow_aos<T> *)malloc(cell_flow_array_size);
+
+                all_interp_node_indexes           = (int *)        malloc(point_index_array_size);
+                all_interp_node_flow_fields       = (flow_aos<T> *)malloc(point_flow_array_size);
+
+                rank_nodal_sizes = (int *)malloc(mpi_config->particle_flow_world_size * sizeof(int));
+                rank_nodal_disps = (int *)malloc(mpi_config->particle_flow_world_size * sizeof(int));
+
                 particles.reserve(reserve_particles_size);
                 
                 // TODO: Play with these for performance
-                // neighbours_set.reserve(mesh->mesh_size / x);
                 // cell_particle_field_map.reserve(mesh->mesh_size / 10);
 
                 if (mpi_config->particle_flow_rank == 0)
@@ -83,12 +112,16 @@ namespace minicombust::particles
                     // TODO: Take into account decay rate of particles, shrink size of array. Dynamic memory resize?
                     printf("Particle solver storage requirements (per process):\n");
                     printf("\tReserving particles array, particles                         (%.2f MB)  particles_array_size %" PRIu64 "\n",   (float)(particles_array_size)/1000000.0, reserve_particles_size);
-                    printf("\tAllocating nodal flow source terms array                     (%.2f MB)\n",   ((float)nodal_array_size)/1000000.);
-                    printf("\tAllocating cell flow source terms array                      (%.2f MB)\n",   ((float)cell_array_size)/1000000.);
-                    printf("\tAllocating cell grad flow source terms array                 (%.2f MB)\n",   ((float)cell_array_size)/1000000.);
+                    // printf("\tAllocating nodal flow source terms array                     (%.2f MB)\n",   ((float)nodal_array_size)/1000000.);
+                    printf("\tAllocating cell flow source terms array                      (%.2f MB)\n",   ((float)cell_flow_array_size)/1000000.);
+                    printf("\tAllocating cell flow source terms array                      (%.2f MB)\n",   ((float)cell_particle_array_size)/1000000.);
+                    printf("\tAllocating cell grad flow source terms array                 (%.2f MB)\n",   ((float)cell_flow_array_size)/1000000.);
                     printf("\tAllocating neighbour cell array                              (%.2f MB)\n",   ((float)cell_index_array_size)/1000000.);
+                    printf("\tAllocating interpolation node indexes                        (%.2f MB)\n",   ((float)point_index_array_size)/1000000.);
+                    printf("\tAllocating interpolation node flow terms                     (%.2f MB)\n",   ((float)point_flow_array_size)/1000000.);
 
-                    const size_t total_size = particles_array_size + nodal_array_size + 2*cell_array_size + cell_index_array_size;
+                    // const size_t total_size = particles_array_size + nodal_array_size + 2*cell_flow_array_size + cell_index_array_size;
+                    const size_t total_size = particles_array_size + 2*cell_flow_array_size + cell_index_array_size + point_index_array_size + point_flow_array_size + cell_particle_array_size;
                     printf("\tAllocated particle solver. Total size                        (%.2f MB)\n",   ((float)total_size)/1000000.0);
                     printf("\tAllocated particle solver. Total size (per world)            (%.2f MB)\n\n", ((float)total_size * mpi_config->particle_flow_world_size)/1000000.0);
                 }
@@ -99,6 +132,21 @@ namespace minicombust::particles
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
 
+            }
+
+            void resize_cells_arrays(int elements)
+            {
+                if ( max_cell_storage < (uint64_t) elements )
+                {
+                    max_cell_storage      *= 2;
+                    cell_index_array_size *= 2;
+                    cell_flow_array_size  *= 2;
+
+                    cell_indexes       = (uint64_t*)        realloc(cell_indexes,       cell_index_array_size);
+                    cell_particle_aos  = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
+                    cell_flow_aos      = (flow_aos<T> *)    realloc(cell_flow_aos,      cell_flow_array_size);
+                    cell_flow_grad_aos = (flow_aos<T> *)    realloc(cell_flow_grad_aos, cell_flow_array_size);
+                }
             }
 
             void output_data(uint64_t timestep);

@@ -11,14 +11,30 @@ namespace minicombust::flow
 
             Mesh<T> *mesh;
 
-            uint64_t neighbours_size;            
+            uint64_t *cell_indexes;
             uint64_t *neighbour_indexes;
+            int      *int_neighbour_indexes;
            
             T turbulence_field;
             T combustion_field;
             T flow_field;
 
-            
+            unordered_set<uint64_t>  unordered_cells_set;
+            unordered_set<uint64_t>  unordered_neighbours_set;
+
+            map<uint64_t, particle_aos<T>> cell_particle_field_map;
+
+            int *cell_sizes;
+            int *cell_disps;
+
+            int *neighbour_sizes;
+            int *neighbour_disps;
+
+            particle_aos<T> *cell_particle_aos;
+
+            uint64_t max_cell_storage;
+            size_t cell_index_array_size;
+            size_t cell_particle_array_size;
 
         public:
             MPI_Config *mpi_config;
@@ -28,14 +44,41 @@ namespace minicombust::flow
 
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mesh(mesh), mpi_config(mpi_config)
             {
-                const size_t cell_index_array_size   = mesh->mesh_size * sizeof(uint64_t);
+                const float fraction = 0.125;
+                max_cell_storage     = fraction * mesh->mesh_size;
 
-                neighbour_indexes                 = (uint64_t*)malloc(cell_index_array_size);
+                cell_index_array_size    = max_cell_storage * sizeof(uint64_t);
+                cell_particle_array_size = max_cell_storage * sizeof(particle_aos<T>);
 
+                cell_indexes          = (uint64_t*)malloc(cell_index_array_size);
+                neighbour_indexes     = (uint64_t*)malloc(cell_index_array_size);
+                int_neighbour_indexes = (int*)     malloc(cell_index_array_size);
+                
+                cell_particle_aos     = (particle_aos<T> * )malloc(cell_particle_array_size);
 
-                neighbours_size = mesh->mesh_size;
+                cell_sizes         = (int *)     malloc(sizeof(int) * mpi_config->world_size);
+                cell_disps         = (int *)     malloc(sizeof(int) * mpi_config->world_size);
+                neighbour_sizes    = (int *)     malloc(sizeof(int) * mpi_config->world_size);
+                neighbour_disps    = (int *)     malloc(sizeof(int) * mpi_config->world_size);
+
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
+            }
+
+            void resize_cells_arrays(int elements)
+            {
+                if ( max_cell_storage < (uint64_t) elements )
+                {
+                    max_cell_storage          *= 2;
+                    cell_index_array_size     *= 2;
+                    cell_particle_array_size  *= 2;
+
+                    cell_indexes          = (uint64_t*) realloc(cell_indexes,          cell_index_array_size);
+                    neighbour_indexes     = (uint64_t*) realloc(neighbour_indexes,     cell_index_array_size);
+                    int_neighbour_indexes = (int*)      realloc(int_neighbour_indexes, cell_index_array_size);
+
+                    cell_particle_aos  = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
+                }
             }
 
             void update_flow_field(bool receive_particle);  // Synchronize point with flow solver

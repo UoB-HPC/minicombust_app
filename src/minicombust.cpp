@@ -61,17 +61,16 @@ int main (int argc, char ** argv)
     Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim);
 
     //Setup solvers
-    ParticleSolver<double> *particle_solver;
-    FlowSolver<double>     *flow_solver;
+    ParticleSolver<double> *particle_solver = nullptr;
+    FlowSolver<double>     *flow_solver     = nullptr;
     if (mpi_config.solver_type == PARTICLE)
     {
         uint64_t       local_particles_per_timestep   = particles_per_timestep / mpi_config.particle_flow_world_size;
         int            remainder_particles            = particles_per_timestep % mpi_config.particle_flow_world_size;
-        const uint64_t reserve_particles_size         = 2 * local_particles_per_timestep * ntimesteps;
 
-        if ( mpi_config.particle_flow_rank < remainder_particles )  local_particles_per_timestep++;
+        const uint64_t reserve_particles_size         = 2 * (local_particles_per_timestep + 1) * ntimesteps;
 
-        ParticleDistribution<double> *particle_dist = load_particle_distribution(local_particles_per_timestep, mesh);
+        ParticleDistribution<double> *particle_dist = load_particle_distribution(local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
         particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
     }
     else
@@ -102,7 +101,7 @@ int main (int argc, char ** argv)
         else
             flow_solver->timestep();
         
-        if ((t % output_iteration == output_iteration - 1) && mpi_config.rank == 0)  
+        if (((int64_t)(t % output_iteration) == output_iteration - 1) && mpi_config.rank == 0)  
         {
             output_time -= MPI_Wtime();
             particle_solver->output_data(t+1);
