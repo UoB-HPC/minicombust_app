@@ -202,7 +202,7 @@ namespace minicombust::particles
 
             inline void emit_particles(vector<Particle<T>>& particles, unordered_map<uint64_t, particle_aos<T>>& cell_particle_field_map, unordered_set<uint64_t>& particle_nodes_set, Particle_Logger *logger)
             {
-                const particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
+                particle_aos<T> zero_field = (particle_aos<T>){0, (vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 uint64_t start_cell = mesh->mesh_size * 0.49;
                 
                 static int timestep_count = 0;
@@ -220,6 +220,8 @@ namespace minicombust::particles
 
                     start_cell = particle.cell; 
                     particles.push_back(particle);
+                    
+                    zero_field.cell = particle.cell;
                     cell_particle_field_map.try_emplace(particle.cell, zero_field);
 
                     for (uint64_t i = 0; i < mesh->cell_size; i++)

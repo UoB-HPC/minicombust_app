@@ -10,12 +10,12 @@ using namespace std;
 namespace minicombust::flow 
 {
     
-    template<typename T> void FlowSolver<T>::update_flow_field(bool receive_particle)
+    template<typename T> void FlowSolver<T>::update_flow_field(bool receive_particle_fields)
     {
         if (FLOW_DEBUG) printf("\tRunning function update_flow_field.\n");
         
         int time_count = 0;
-        time_stats[time_count]  -= MPI_Wtime();
+        time_stats[time_count]  -= MPI_Wtime(); //0
 
         // Gather the size of each rank's cell array
         MPI_Gather(MPI_IN_PLACE,     1, MPI_INT, cell_sizes,      1,    MPI_INT,  mpi_config->rank, mpi_config->world);
@@ -44,7 +44,7 @@ namespace minicombust::flow
         unreduced_counts += neighbour_size;
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //1
 
         if(cell_size > INT_MAX) 
         {
@@ -54,12 +54,12 @@ namespace minicombust::flow
         }
 
         // Receive the cells array of each rank
-        MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    cell_indexes,       cell_sizes,      cell_disps,      MPI_UINT64_T, mpi_config->rank, mpi_config->world);
+        // MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    cell_indexes,       cell_sizes,      cell_disps,      MPI_UINT64_T, mpi_config->rank, mpi_config->world);
         // MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    neighbour_indexes,  neighbour_sizes, neighbour_disps, MPI_UINT64_T, mpi_config->rank, mpi_config->world);
 
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //2
 
         MPI_GatherSet ( mpi_config, unordered_neighbours_set, neighbour_indexes );
         // printf("Neighbour size %d cell_size %d reduced size %d rank 0 %d rank 2 %d \n", neighbour_size, cell_size, unordered_neighbours_set.size(), neighbour_sizes[0], neighbour_sizes[2]);
@@ -69,18 +69,12 @@ namespace minicombust::flow
         reduced_counts += unordered_neighbours_set.size();
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
-        
-        // #pragma ivdep
-        // for (uint64_t cell: unordered_cells_set)
-        // {
-
-        // }
+        time_stats[time_count]   -= MPI_Wtime(); //3
 
         // printf("FLOW R0 sent %d R512 sent %d reduced %d\n", int_cell_sizes[0], int_cell_sizes[mpi_config->world_size-2], unordered_cells_set.size());
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //4
 
         // set<uint64_t>  neighbours_set(unordered_neighbours_set.begin(), unordered_neighbours_set.end());
 
@@ -90,7 +84,7 @@ namespace minicombust::flow
 
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();//5
 
         for (unordered_set<uint64_t>::iterator cell_it = unordered_neighbours_set.begin(); cell_it != unordered_neighbours_set.end(); ++cell_it)
         {
@@ -100,7 +94,7 @@ namespace minicombust::flow
         }
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();//6
         
         // Send size of neighbours of cells back to ranks.
         MPI_Bcast(&neighbour_size, 1, MPI_INT, mpi_config->rank, mpi_config->world);
@@ -110,7 +104,7 @@ namespace minicombust::flow
         neighbour_avg += neighbour_size;
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();//7
 
         int neighbour_disp = 0;
         for (int rank = 0; rank < mpi_config->world_size; rank++)
@@ -131,33 +125,46 @@ namespace minicombust::flow
 
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();//8
+
+
 
         // // Create indexed type and send flow terms
-        MPI_Datatype MPI_CELL_INDEXES;
-        MPI_Type_create_indexed_block(neighbour_size, 1, int_neighbour_indexes, mpi_config->MPI_FLOW_STRUCTURE, &MPI_CELL_INDEXES);
-        MPI_Type_commit(&MPI_CELL_INDEXES);
+        // MPI_Datatype MPI_CELL_INDEXES;
+        // MPI_Type_create_indexed_block(neighbour_size, 1, int_neighbour_indexes, mpi_config->MPI_FLOW_STRUCTURE, &MPI_CELL_INDEXES);
+        // MPI_Type_commit(&MPI_CELL_INDEXES);
+
+        for (int i = 0; i < neighbour_size; i++)
+        {
+            neighbour_flow_aos_buffer[i]      = mesh->flow_terms[int_neighbour_indexes[i]];
+            neighbour_flow_grad_aos_buffer[i] = mesh->flow_grad_terms[int_neighbour_indexes[i]];
+        }
 
         // Change these from broadcast
-        MPI_Bcast(mesh->flow_terms,       1,  MPI_CELL_INDEXES, mpi_config->rank, mpi_config->world);
-        MPI_Bcast(mesh->flow_grad_terms,  1,  MPI_CELL_INDEXES, mpi_config->rank, mpi_config->world);
+        MPI_Scatterv(neighbour_flow_aos_buffer,      neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world);
+        MPI_Scatterv(neighbour_flow_grad_aos_buffer, neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world);
 
 
-        MPI_Type_free(&MPI_CELL_INDEXES);
+        // MPI_Bcast(mesh->flow_terms,       1,  MPI_CELL_INDEXES, mpi_config->rank, mpi_config->world);
+        // MPI_Bcast(mesh->flow_grad_terms,  1,  MPI_CELL_INDEXES, mpi_config->rank, mpi_config->world);
+
+
+        // MPI_Type_free(&MPI_CELL_INDEXES);
 
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();//9
 
-        if (receive_particle)
+        if (receive_particle_fields)
         {
-            MPI_Gatherv(MPI_IN_PLACE,    1, mpi_config->MPI_PARTICLE_STRUCTURE, cell_particle_aos,  cell_sizes, cell_disps, mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->rank, mpi_config->world);
+            MPI_GatherSet (mpi_config, cell_particle_field_map, cell_particle_aos);
+            // MPI_Gatherv(MPI_IN_PLACE,    1, mpi_config->MPI_PARTICLE_STRUCTURE, cell_particle_aos,  cell_sizes, cell_disps, mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->rank, mpi_config->world);
         }
 
 
         
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime();//10
 
         unordered_cells_set.clear();
         cell_particle_field_map.clear();

@@ -333,7 +333,7 @@ namespace minicombust::particles
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
 
                 // Store particle fields
-                particle_cell_fields = {mass * v1 * delta, (air_heat_transfer - evaporation_heat) * delta, mass_delta * delta};
+                particle_cell_fields = {cell, mass * v1 * delta, (air_heat_transfer - evaporation_heat) * delta, mass_delta * delta};
 
 
 

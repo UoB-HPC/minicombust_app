@@ -110,7 +110,7 @@ namespace minicombust::particles
         for (auto& cell_it: cell_particle_field_map)
         {
             uint64_t cell = cell_it.first;
-            cell_indexes[count++] = cell;
+            // cell_indexes[count++] = cell;
 
             // Get 9 cells neighbours below
             const uint64_t below_neighbour                = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + DOWN_FACE];
@@ -144,7 +144,7 @@ namespace minicombust::particles
             const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + FRONT_FACE];
             const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + BACK_FACE];
 
-            neighbours_set.insert(cell);
+            neighbours_set.insert(cell); 
 
             // Get 9 cells neighbours below
             neighbours_set.insert(below_neighbour);                
@@ -178,20 +178,21 @@ namespace minicombust::particles
             neighbours_set.insert(around_right_front_neighbour);   
             neighbours_set.insert(around_right_back_neighbour); 
         }
-        neighbours_size                = neighbours_set.size();
-        const int neighbours_size_int  = neighbours_set.size();
-        resize_cells_arrays(neighbours_size);
-
-        MPI_Gather(&cell_size,           1,  MPI_INT, nullptr, 0, MPI_INT, flow_rank, mpi_config->world);
-        MPI_Gather(&neighbours_size_int, 1,  MPI_INT, nullptr, 0, MPI_INT, flow_rank, mpi_config->world);
-        MPI_Gatherv(cell_indexes, cell_size, MPI_UINT64_T, nullptr, 0, 0, MPI_UINT64_T, flow_rank, mpi_config->world);
-
         count = 0;
         neighbours_set.erase(MESH_BOUNDARY);
         for (auto& cell: neighbours_set)
         {
             cell_indexes[count++] = cell;
         }
+        neighbours_size                = neighbours_set.size();
+        const int neighbours_size_int  = neighbours_set.size();
+        resize_cells_arrays(neighbours_size);
+
+        MPI_Gather(&cell_size,           1,  MPI_INT, nullptr, 0, MPI_INT, flow_rank, mpi_config->world);
+        MPI_Gather(&neighbours_size_int, 1,  MPI_INT, nullptr, 0, MPI_INT, flow_rank, mpi_config->world);
+        // MPI_Gatherv(cell_indexes, cell_size, MPI_UINT64_T, nullptr, 0, 0, MPI_UINT64_T, flow_rank, mpi_config->world);
+
+        
 
         MPI_GatherSet ( mpi_config, neighbours_set, cell_indexes );
 
@@ -200,7 +201,7 @@ namespace minicombust::particles
         count = 0;
         cell_particle_field_map.erase(MESH_BOUNDARY);
         for (auto& cell_it: cell_particle_field_map)
-            cell_particle_aos[count++] = cell_it.second;
+            cell_particle_aos[count++]        = cell_it.second;
 
         node_to_position_map.clear(); 
         nodal_flow_field_map.clear(); 
@@ -218,12 +219,15 @@ namespace minicombust::particles
 
         logger.interpolated_cells += ((float) neighbours_size) / ((float)num_timesteps);
 
-        MPI_Bcast(cell_flow_aos,      (int)neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
-        MPI_Bcast(cell_flow_grad_aos, (int)neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
+        MPI_Scatterv(NULL, NULL, NULL, mpi_config->MPI_FLOW_STRUCTURE, cell_flow_aos,      rank_neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
+        MPI_Scatterv(NULL, NULL, NULL, mpi_config->MPI_FLOW_STRUCTURE, cell_flow_grad_aos, rank_neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
+        // MPI_Bcast(cell_flow_aos,      (int)neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
+        // MPI_Bcast(cell_flow_grad_aos, (int)neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world);
         
         if (send_particle)
         {
-            MPI_Gatherv(cell_particle_aos,  cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, nullptr, 0, 0, mpi_config->MPI_PARTICLE_STRUCTURE, flow_rank, mpi_config->world);
+            MPI_GatherSet (mpi_config, cell_particle_field_map, cell_particle_aos);
+            // MPI_Gatherv(cell_particle_aos,  cell_size, mpi_config->MPI_PARTICLE_STRUCTURE, nullptr, 0, 0, mpi_config->MPI_PARTICLE_STRUCTURE, flow_rank, mpi_config->world);
         }
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
@@ -342,6 +346,7 @@ namespace minicombust::particles
             if (particles[p].decayed)  decayed_particles.push_back(p);
             else
             {
+                cell_particle_field_map[particles[p].cell].cell      = particles[p].cell;
                 cell_particle_field_map[particles[p].cell].momentum += particles[p].particle_cell_fields.momentum;
                 cell_particle_field_map[particles[p].cell].energy   += particles[p].particle_cell_fields.energy;
                 cell_particle_field_map[particles[p].cell].fuel     += particles[p].particle_cell_fields.fuel;
