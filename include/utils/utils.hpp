@@ -300,6 +300,55 @@ namespace minicombust::utils
         MPI_Op MPI_PARTICLE_OPERATION;
     };
 
+    inline void MPI_GatherSet (MPI_Config *mpi_config, unordered_set<uint64_t>& indexes_set, uint64_t *indexes)
+    {
+        const uint64_t rank = mpi_config->rank;
+
+        bool have_data = true;
+        for ( int level = 2; level <= mpi_config->world_size ; level *= 2)
+        {
+            if (have_data)
+            {
+                bool reciever = ((rank+1) % level) ? false : true;
+
+                if ( reciever )
+                {
+                    uint64_t send_rank = rank - (level / 2);
+                    int send_count;
+                    // printf("LEVEL %d: Rank %d recv from %d\n", level, rank, send_rank);
+
+                    MPI_Recv (&send_count,          1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    MPI_Recv (indexes,     send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+
+                    int count = 0;
+                    for (int i = 0; i < send_count; i++)
+                    {
+                        if ( !indexes_set.contains(indexes[i]) )
+                        {
+                            indexes_set.insert(indexes[i]);
+                            indexes[send_count + count++] = indexes[i];
+                        }
+                    }
+                }
+                else
+                {
+                    uint64_t recv_rank  = rank + (level / 2);
+                    int send_count = indexes_set.size();
+                    // printf("LEVEL %d: Rank %d send to %d\n", level, rank, recv_rank);
+
+                    MPI_Send (&send_count,          1, MPI_UINT64_T, recv_rank, level, mpi_config->world);
+                    MPI_Send (indexes,     send_count, MPI_UINT64_T, recv_rank, level, mpi_config->world);
+                    
+                    have_data = false;
+                }
+
+                // if (!have_data) printf("LEVEL %d: Rank %d NO DATA \n", level, rank);
+            }
+            
+            // MPI_Barrier(mpi_config->world);
+        }
+    }
+
     template<typename T>
     void sum_particle_aos(void* inputBuffer, void* outputBuffer, int* len, MPI_Datatype* datatype)
     {
@@ -316,6 +365,3 @@ namespace minicombust::utils
         }
     }
 }
-
-
-    

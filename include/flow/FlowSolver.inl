@@ -53,21 +53,16 @@ namespace minicombust::flow
             printf("ERROR: DISPLACEMENT OVER INT_MAX\n");
         }
 
-
-
         // Receive the cells array of each rank
         MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    cell_indexes,       cell_sizes,      cell_disps,      MPI_UINT64_T, mpi_config->rank, mpi_config->world);
-        MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    neighbour_indexes,  neighbour_sizes, neighbour_disps, MPI_UINT64_T, mpi_config->rank, mpi_config->world);
+        // MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    neighbour_indexes,  neighbour_sizes, neighbour_disps, MPI_UINT64_T, mpi_config->rank, mpi_config->world);
 
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime();
 
-        #pragma ivdep
-        for (int i = 0; i < neighbour_size; i++)
-        {
-            unordered_neighbours_set.insert(neighbour_indexes[i]);
-        }
+        MPI_GatherSet ( mpi_config, unordered_neighbours_set, neighbour_indexes );
+        // printf("Neighbour size %d cell_size %d reduced size %d rank 0 %d rank 2 %d \n", neighbour_size, cell_size, unordered_neighbours_set.size(), neighbour_sizes[0], neighbour_sizes[2]);
 
         unordered_cells_set.erase(MESH_BOUNDARY);
         unordered_neighbours_set.erase(MESH_BOUNDARY);
@@ -79,72 +74,7 @@ namespace minicombust::flow
         // #pragma ivdep
         // for (uint64_t cell: unordered_cells_set)
         // {
-        //     // Get 9 cells neighbours below
-        //     const uint64_t below_neighbour                = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + DOWN_FACE];
-        //     const uint64_t below_left_neighbour           = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + LEFT_FACE];
-        //     const uint64_t below_right_neighbour          = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + RIGHT_FACE];
-        //     const uint64_t below_front_neighbour          = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + FRONT_FACE];
-        //     const uint64_t below_back_neighbour           = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + BACK_FACE];
-        //     const uint64_t below_left_front_neighbour     = mesh->cell_neighbours[below_left_neighbour*mesh->faces_per_cell   + FRONT_FACE];
-        //     const uint64_t below_left_back_neighbour      = mesh->cell_neighbours[below_left_neighbour*mesh->faces_per_cell   + BACK_FACE];
-        //     const uint64_t below_right_front_neighbour    = mesh->cell_neighbours[below_right_neighbour*mesh->faces_per_cell  + FRONT_FACE];
-        //     const uint64_t below_right_back_neighbour     = mesh->cell_neighbours[below_right_neighbour*mesh->faces_per_cell  + BACK_FACE];
 
-        //     // Get 9 cells neighbours above
-        //     const uint64_t above_neighbour                = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + UP_FACE];
-        //     const uint64_t above_left_neighbour           = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + LEFT_FACE];
-        //     const uint64_t above_right_neighbour          = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + RIGHT_FACE];
-        //     const uint64_t above_front_neighbour          = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + FRONT_FACE];
-        //     const uint64_t above_back_neighbour           = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + BACK_FACE];
-        //     const uint64_t above_left_front_neighbour     = mesh->cell_neighbours[above_left_neighbour*mesh->faces_per_cell   + FRONT_FACE];
-        //     const uint64_t above_left_back_neighbour      = mesh->cell_neighbours[above_left_neighbour*mesh->faces_per_cell   + BACK_FACE];
-        //     const uint64_t above_right_front_neighbour    = mesh->cell_neighbours[above_right_neighbour*mesh->faces_per_cell  + FRONT_FACE];
-        //     const uint64_t above_right_back_neighbour     = mesh->cell_neighbours[above_right_neighbour*mesh->faces_per_cell  + BACK_FACE];
-
-        //     // Get 8 cells neighbours around
-        //     const uint64_t around_left_neighbour          = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + LEFT_FACE];
-        //     const uint64_t around_right_neighbour         = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + RIGHT_FACE];
-        //     const uint64_t around_front_neighbour         = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + FRONT_FACE];
-        //     const uint64_t around_back_neighbour          = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + BACK_FACE];
-        //     const uint64_t around_left_front_neighbour    = mesh->cell_neighbours[around_left_neighbour*mesh->faces_per_cell  + FRONT_FACE];
-        //     const uint64_t around_left_back_neighbour     = mesh->cell_neighbours[around_left_neighbour*mesh->faces_per_cell  + BACK_FACE];
-        //     const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + FRONT_FACE];
-        //     const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + BACK_FACE];
-
-            
-        //     unordered_neighbours_set.insert(cell);
-
-        //     // Get 9 cells neighbours below
-        //     unordered_neighbours_set.insert(below_neighbour);                
-        //     unordered_neighbours_set.insert(below_left_neighbour);           
-        //     unordered_neighbours_set.insert(below_right_neighbour);          
-        //     unordered_neighbours_set.insert(below_front_neighbour);          
-        //     unordered_neighbours_set.insert(below_back_neighbour);           
-        //     unordered_neighbours_set.insert(below_left_front_neighbour);     
-        //     unordered_neighbours_set.insert(below_left_back_neighbour);      
-        //     unordered_neighbours_set.insert(below_right_front_neighbour);    
-        //     unordered_neighbours_set.insert(below_right_back_neighbour);     
-
-        //     // Get 9 cells neighbours above
-        //     unordered_neighbours_set.insert(above_neighbour);                
-        //     unordered_neighbours_set.insert(above_left_neighbour);           
-        //     unordered_neighbours_set.insert(above_right_neighbour);          
-        //     unordered_neighbours_set.insert(above_front_neighbour);          
-        //     unordered_neighbours_set.insert(above_back_neighbour);           
-        //     unordered_neighbours_set.insert(above_left_front_neighbour);     
-        //     unordered_neighbours_set.insert(above_left_back_neighbour);      
-        //     unordered_neighbours_set.insert(above_right_front_neighbour);    
-        //     unordered_neighbours_set.insert(above_right_back_neighbour);     
-
-        //     // Get 8 cells neighbours around
-        //     unordered_neighbours_set.insert(around_left_neighbour);          
-        //     unordered_neighbours_set.insert(around_right_neighbour);         
-        //     unordered_neighbours_set.insert(around_front_neighbour);         
-        //     unordered_neighbours_set.insert(around_back_neighbour);          
-        //     unordered_neighbours_set.insert(around_left_front_neighbour);    
-        //     unordered_neighbours_set.insert(around_left_back_neighbour);     
-        //     unordered_neighbours_set.insert(around_right_front_neighbour);   
-        //     unordered_neighbours_set.insert(around_right_back_neighbour); 
         // }
 
         // printf("FLOW R0 sent %d R512 sent %d reduced %d\n", int_cell_sizes[0], int_cell_sizes[mpi_config->world_size-2], unordered_cells_set.size());

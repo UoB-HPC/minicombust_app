@@ -23,6 +23,8 @@ OBJECTS := $(patsubst $(SRC)/%,build/%,$(SOURCES:.cpp=.o))
 
 all: $(EXE) $(TEST_EXE)
 
+notest: $(EXE)
+
 test: $(TEST_EXE)
 
 $(EXE): $(OBJECTS)

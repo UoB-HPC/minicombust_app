@@ -180,18 +180,22 @@ namespace minicombust::particles
         }
         neighbours_size                = neighbours_set.size();
         const int neighbours_size_int  = neighbours_set.size();
+        resize_cells_arrays(neighbours_size);
 
         MPI_Gather(&cell_size,           1,  MPI_INT, nullptr, 0, MPI_INT, flow_rank, mpi_config->world);
         MPI_Gather(&neighbours_size_int, 1,  MPI_INT, nullptr, 0, MPI_INT, flow_rank, mpi_config->world);
         MPI_Gatherv(cell_indexes, cell_size, MPI_UINT64_T, nullptr, 0, 0, MPI_UINT64_T, flow_rank, mpi_config->world);
 
         count = 0;
+        neighbours_set.erase(MESH_BOUNDARY);
         for (auto& cell: neighbours_set)
         {
             cell_indexes[count++] = cell;
         }
 
-        MPI_Gatherv(cell_indexes, neighbours_size, MPI_UINT64_T, nullptr, 0, 0, MPI_UINT64_T, flow_rank, mpi_config->world);
+        MPI_GatherSet ( mpi_config, neighbours_set, cell_indexes );
+
+        // MPI_Gatherv(cell_indexes, neighbours_size, MPI_UINT64_T, nullptr, 0, 0, MPI_UINT64_T, flow_rank, mpi_config->world);
 
         count = 0;
         cell_particle_field_map.erase(MESH_BOUNDARY);

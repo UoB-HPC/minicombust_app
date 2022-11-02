@@ -55,6 +55,8 @@ For different systems, provide a template job in `jobs/templates/`. We provide a
 
 ```bash
 ./analysis/particle_weak_scaling.sh LOW_PARTICLE_BOUND HIGH_PARTICLE_BOUND CELLS_MODIFIER NODES PPN
+
+./analysis/particle_weak_scaling.sh 16 512 80 1 64
 ```
 
 ### Weak mesh scaling experiment. 
@@ -65,6 +67,8 @@ For different systems, provide a template job in `jobs/templates/`. We provide a
 
 ```bash
 ./analysis/mesh_weak_scaling.sh LOW_CELL_MODIFIER_BOUND HIGH_CELL_MODIFIER_BOUND PARTICLES NODES PPN
+
+./analysis/mesh_weak_scaling.sh 5 160 128 1 64
 ```
 
 ### Strong scaling experiment. 
@@ -74,7 +78,9 @@ Runs MiniCOMBUST with a fixed number of particles and cells, while varying the n
 For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
 
 ```bash
-./analysis/strong_scaling.sh LOW_CORES HIGH_CORES MAX_PPN PPN CELL_MODIFIER
+./analysis/strong_scaling.sh LOW_CORES HIGH_CORES MAX_PPN PARTICLES CELL_MODIFIER
+
+./analysis/strong_scaling.sh 2 512 64 128 80
 ```
 
 ## Future Features
