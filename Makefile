@@ -25,9 +25,13 @@ all: $(EXE) $(TEST_EXE)
 
 notest: $(EXE)
 
-test: $(TEST_EXE)
-
 $(EXE): $(OBJECTS)
+	$(CC) $(CFLAGS) $(INC) $(SRC)/minicombust.cpp -c -o build/minicombust.o 
+	@echo ""
+	@echo "Linking..."
+	$(CC) $(LIB) $^ build/minicombust.o -o $(EXE) 
+
+$(TEST_EXE): $(OBJECTS)
 	$(CC) $(CFLAGS) $(INC) $(SRC)/minicombust.cpp -c -o build/minicombust.o 
 	$(CC) $(CFLAGS) $(INC) $(TESTS)/minicombust_tests.cpp -c -o build/minicombust_tests.o 
 	@echo ""

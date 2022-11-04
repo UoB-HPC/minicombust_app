@@ -63,7 +63,7 @@ namespace minicombust::particles
             uint64_t max_cell_storage;
             uint64_t max_point_storage;
 
-            int         *all_interp_node_indexes;
+            uint64_t    *all_interp_node_indexes;
             flow_aos<T> *all_interp_node_flow_fields;
 
             int *rank_nodal_sizes;
@@ -79,9 +79,9 @@ namespace minicombust::particles
             {
                 const size_t particles_array_size = reserve_particles_size * sizeof(Particle<T>);
                 
-                float fraction   = 0.125;
+                float fraction    = 0.125;
                 max_cell_storage  = fraction * mesh->mesh_size;
-                max_point_storage = fraction * mesh->points_size;
+                max_point_storage = 2 * fraction * mesh->points_size;
 
                 cell_index_array_size       = max_cell_storage * sizeof(uint64_t);
                 cell_flow_array_size        = max_cell_storage * sizeof(flow_aos<T>);
@@ -96,7 +96,7 @@ namespace minicombust::particles
                 cell_flow_aos                     =     (flow_aos<T> *)malloc(cell_flow_array_size);
                 cell_flow_grad_aos                =     (flow_aos<T> *)malloc(cell_flow_array_size);
 
-                all_interp_node_indexes           = (int *)        malloc(point_index_array_size);
+                all_interp_node_indexes           = (uint64_t *)   malloc(point_index_array_size);
                 all_interp_node_flow_fields       = (flow_aos<T> *)malloc(point_flow_array_size);
 
                 rank_nodal_sizes = (int *)malloc(mpi_config->particle_flow_world_size * sizeof(int));
@@ -146,6 +146,19 @@ namespace minicombust::particles
                     cell_particle_aos  = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
                     cell_flow_aos      = (flow_aos<T> *)    realloc(cell_flow_aos,      cell_flow_array_size);
                     cell_flow_grad_aos = (flow_aos<T> *)    realloc(cell_flow_grad_aos, cell_flow_array_size);
+                }
+            }
+
+            void resize_nodes_arrays(int elements)
+            {
+                if ( max_point_storage < (uint64_t) elements )
+                {
+                    max_point_storage      *= 2;
+                    point_index_array_size *= 2;
+                    point_flow_array_size  *= 2;
+
+                    all_interp_node_indexes     = (uint64_t*)         realloc(all_interp_node_indexes,     point_index_array_size);
+                    all_interp_node_flow_fields = (flow_aos<T> *)realloc(all_interp_node_flow_fields, point_flow_array_size);
                 }
             }
 

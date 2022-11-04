@@ -177,7 +177,8 @@ namespace minicombust::particles
                                   vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean, T temp, ProbabilityDistribution dist) :
                                   particles_per_timestep(particles_per_timestep), remainder_particles(remainder_particles), mpi_config(mpi_config), mesh(mesh)
             {   
-                srand (time(NULL) + mpi_config->rank);
+                // srand (time(NULL) + mpi_config->rank);
+                srand (0 + mpi_config->rank);
                 if (dist == UNIFORM)
                 {
                     T var = 0.2;

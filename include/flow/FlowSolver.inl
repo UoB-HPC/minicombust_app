@@ -17,53 +17,21 @@ namespace minicombust::flow
         int time_count = 0;
         time_stats[time_count]  -= MPI_Wtime(); //0
 
-        // Gather the size of each rank's cell array
-        MPI_Gather(MPI_IN_PLACE,     1, MPI_INT, cell_sizes,      1,    MPI_INT,  mpi_config->rank, mpi_config->world);
+        MPI_Barrier(mpi_config->world);
         performance_logger.my_papi_start();
-        MPI_Gather(MPI_IN_PLACE,     1, MPI_INT, neighbour_sizes, 1,    MPI_INT,  mpi_config->rank, mpi_config->world);
-
-        cell_sizes[mpi_config->rank]      = 0;
-        neighbour_sizes[mpi_config->rank] = 0;
-
-        // TODO: Fix for large counts and displacements over INT_MAX
-        int cell_size      = 0;
-        int neighbour_size = 0;
-        for (int rank = 0; rank < mpi_config->world_size; rank++) 
-        {
-            cell_disps[rank]  = cell_size;
-            cell_size        += cell_sizes[rank];
-
-            neighbour_disps[rank] = neighbour_size;
-            neighbour_size       += neighbour_sizes[rank];
-        }
-        resize_cells_arrays(cell_size);
-        resize_cells_arrays(neighbour_size);
 
         static uint64_t unreduced_counts = 0;
         static uint64_t reduced_counts   = 0;
-        unreduced_counts += neighbour_size;
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
-
-        if(cell_size > INT_MAX) 
-        {
-            printf("ERROR: DISPLACEMENT OVER INT_MAX\n");
-            printf("ERROR: DISPLACEMENT OVER INT_MAX\n");
-            printf("ERROR: DISPLACEMENT OVER INT_MAX\n");
-        }
-
-        // Receive the cells array of each rank
-        // MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    cell_indexes,       cell_sizes,      cell_disps,      MPI_UINT64_T, mpi_config->rank, mpi_config->world);
-        // MPI_Gatherv(MPI_IN_PLACE,    1, MPI_UINT64_T,    neighbour_indexes,  neighbour_sizes, neighbour_disps, MPI_UINT64_T, mpi_config->rank, mpi_config->world);
 
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
 
         MPI_GatherSet ( mpi_config, unordered_neighbours_set, neighbour_indexes );
-        // printf("Neighbour size %d cell_size %d reduced size %d rank 0 %d rank 2 %d \n", neighbour_size, cell_size, unordered_neighbours_set.size(), neighbour_sizes[0], neighbour_sizes[2]);
-
+    
         unordered_cells_set.erase(MESH_BOUNDARY);
         unordered_neighbours_set.erase(MESH_BOUNDARY);
         reduced_counts += unordered_neighbours_set.size();
@@ -71,17 +39,14 @@ namespace minicombust::flow
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //3
 
-        // printf("FLOW R0 sent %d R512 sent %d reduced %d\n", int_cell_sizes[0], int_cell_sizes[mpi_config->world_size-2], unordered_cells_set.size());
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //4
 
-        // set<uint64_t>  neighbours_set(unordered_neighbours_set.begin(), unordered_neighbours_set.end());
 
         uint64_t count = 0;
-        neighbour_size = unordered_neighbours_set.size();
+        int neighbour_size = unordered_neighbours_set.size();
         resize_cells_arrays(neighbour_size);
-
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime();//5

@@ -306,6 +306,7 @@ namespace minicombust::utils
         bool have_data = true;
         for ( int level = 2; level <= mpi_config->world_size ; level *= 2)
         {
+            MPI_Barrier(mpi_config->world);
             if (have_data)
             {
                 bool reciever = ((rank+1) % level) ? false : true;
@@ -326,10 +327,12 @@ namespace minicombust::utils
                     {
                         if ( !indexes_set.contains(recv_indexes[i]) )
                         {
+                            indexes[indexes_set.size()] = recv_indexes[i];
                             indexes_set.insert(recv_indexes[i]);
-                            indexes[send_count + count++] = recv_indexes[i];
                         }
                     }
+                    // printf("level %d Rank %d Contains 466727 cell? %d\n", level, mpi_config->rank, indexes_set.contains(466727));
+                    // printf("level %d Rank %d Contains 466728 cell? %d\n", level, mpi_config->rank, indexes_set.contains(466728));
                 }
                 else
                 {
@@ -376,10 +379,10 @@ namespace minicombust::utils
                     int count = 0;
                     for (int i = 0; i < send_count; i++)
                     {
-                        if ( !cell_particle_map.contains(recv_indexes[i].cell) )
+                        if ( !cell_particle_map.contains(recv_indexes[i].cell) ) // TODO FIX: NOT AGGREGATING FIELDS
                         {
+                            indexed_fields[cell_particle_map.size()]    = recv_indexes[i];
                             cell_particle_map[recv_indexes[i].cell] = recv_indexes[i];
-                            indexed_fields[send_count + count++]    = recv_indexes[i];
                         }
                     }
                 }
