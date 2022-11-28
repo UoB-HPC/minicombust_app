@@ -322,7 +322,6 @@ namespace minicombust::utils
                     MPI_Recv (&send_count,  1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
                     MPI_Recv (recv_indexes, send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
 
-                    int count = 0;
                     for (int i = 0; i < send_count; i++)
                     {
                         if ( !indexes_set.contains(recv_indexes[i]) )
@@ -331,8 +330,6 @@ namespace minicombust::utils
                             indexes_set.insert(recv_indexes[i]);
                         }
                     }
-                    // printf("level %d Rank %d Contains 466727 cell? %d\n", level, mpi_config->rank, indexes_set.contains(466727));
-                    // printf("level %d Rank %d Contains 466728 cell? %d\n", level, mpi_config->rank, indexes_set.contains(466728));
                 }
                 else
                 {
@@ -376,7 +373,6 @@ namespace minicombust::utils
                     MPI_Recv (recv_indexes, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
 
 
-                    int count = 0;
                     for (int i = 0; i < send_count; i++)
                     {
                         if ( !cell_particle_map.contains(recv_indexes[i].cell) ) // TODO FIX: NOT AGGREGATING FIELDS

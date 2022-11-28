@@ -85,38 +85,25 @@ namespace minicombust::flow
         neighbour_sizes[mpi_config->rank] = 0;
 
         // Send neighbours of cells back to ranks.
-        // MPI_Bcast(neighbour_indexes, neighbour_size,                    MPI_UINT64_T, mpi_config->rank, mpi_config->world);
-        MPI_Scatterv(neighbour_indexes, neighbour_sizes, neighbour_disps, MPI_UINT64_T, NULL, 0, MPI_UINT64_T, mpi_config->rank, mpi_config->world);
-
+        MPI_Request scatter_requests[2];
+        MPI_Iscatterv(neighbour_indexes, neighbour_sizes, neighbour_disps, MPI_UINT64_T, NULL, 0, MPI_UINT64_T, mpi_config->rank, mpi_config->world, &scatter_requests[0]);
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();//8
-
-
-
-        // // Create indexed type and send flow terms
-        // MPI_Datatype MPI_CELL_INDEXES;
-        // MPI_Type_create_indexed_block(neighbour_size, 1, int_neighbour_indexes, mpi_config->MPI_FLOW_STRUCTURE, &MPI_CELL_INDEXES);
-        // MPI_Type_commit(&MPI_CELL_INDEXES);
+        time_stats[time_count]   -= MPI_Wtime(); //8
 
         for (int i = 0; i < neighbour_size; i++)
         {
             neighbour_flow_aos_buffer[i]      = mesh->flow_terms[int_neighbour_indexes[i]];
             neighbour_flow_grad_aos_buffer[i] = mesh->flow_grad_terms[int_neighbour_indexes[i]];
         }
+        MPI_Wait(&scatter_requests[0], MPI_STATUS_IGNORE);
 
         // Change these from broadcast
-        MPI_Scatterv(neighbour_flow_aos_buffer,      neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world);
-        MPI_Scatterv(neighbour_flow_grad_aos_buffer, neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world);
-
-
-        // MPI_Bcast(mesh->flow_terms,       1,  MPI_CELL_INDEXES, mpi_config->rank, mpi_config->world);
-        // MPI_Bcast(mesh->flow_grad_terms,  1,  MPI_CELL_INDEXES, mpi_config->rank, mpi_config->world);
-
-
-        // MPI_Type_free(&MPI_CELL_INDEXES);
-
-
+        MPI_Iscatterv(neighbour_flow_aos_buffer,      neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world, &scatter_requests[0]);
+        MPI_Iscatterv(neighbour_flow_grad_aos_buffer, neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world, &scatter_requests[1]);
+        
+        
+        MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime();//9
 
@@ -126,8 +113,6 @@ namespace minicombust::flow
             // MPI_Gatherv(MPI_IN_PLACE,    1, mpi_config->MPI_PARTICLE_STRUCTURE, cell_particle_aos,  cell_sizes, cell_disps, mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->rank, mpi_config->world);
         }
 
-
-        
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime();//10
 
