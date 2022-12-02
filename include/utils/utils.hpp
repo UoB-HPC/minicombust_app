@@ -3,6 +3,7 @@
 
 #include <string>  
 #include <iostream> 
+#include <functional> 
 #include <sstream>   
 #include <math.h>
 #include <inttypes.h>
@@ -88,11 +89,22 @@ namespace minicombust::utils
     template <typename T> 
     struct particle_aos 
     {
-        uint64_t cell;
         vec<T> momentum = {0.0, 0.0, 0.0};
         T energy        = 0.0;
         T fuel          = 0.0;
     };
+
+    template<typename T>
+    inline bool vec_nequal(const vec<T> lhs, const vec<T> rhs)
+    {
+        return (lhs.x != rhs.x) || (lhs.y != rhs.y) || (lhs.z != rhs.z);
+    }
+
+    template<typename T>
+    inline bool vec_equal(const vec<T> lhs, const vec<T> rhs)
+    {
+        return (lhs.x == rhs.x) && (lhs.y == rhs.y) && (lhs.z == rhs.z);
+    }
 
     template<typename T>
     inline T sum(vec<T> a) 
@@ -215,6 +227,12 @@ namespace minicombust::utils
     }
 
     template<typename T> 
+    inline vec<T> abs_vec(vec<T> v)
+    {
+        return vec<T> {abs(v.x), abs(v.y), abs(v.z)};
+    }
+
+    template<typename T> 
     inline vec<T> cross_product(vec<T> a, vec<T> b)
     {
         vec<T> cross_product = {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x};
@@ -299,9 +317,11 @@ namespace minicombust::utils
         MPI_Op MPI_PARTICLE_OPERATION;
     };
 
-    inline void MPI_GatherSet (MPI_Config *mpi_config, unordered_set<uint64_t>& indexes_set, uint64_t *indexes)
-    { // NEED TO FIX ARRAY RESIZING
+    inline void MPI_GatherSet (MPI_Config *mpi_config, unordered_set<uint64_t>& indexes_set, uint64_t *indexes, function<void(uint64_t, uint64_t **)> resize_fn)
+    { 
         const uint64_t rank = mpi_config->rank;
+
+        uint64_t *curr_indexes = indexes; 
 
         bool have_data = true;
         for ( int level = 2; level <= mpi_config->world_size ; level *= 2)
@@ -317,16 +337,18 @@ namespace minicombust::utils
                     int send_count;
                     // printf("LEVEL %d: Rank %d recv from %d\n", level, rank, send_rank);
 
-                    uint64_t *recv_indexes = indexes + indexes_set.size();
-
                     MPI_Recv (&send_count,  1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
-                    MPI_Recv (recv_indexes, send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    resize_fn(indexes_set.size() + send_count, &curr_indexes);
+                    if (curr_indexes != indexes)  printf("Rank %d req'd size %lu\n", mpi_config->rank, indexes_set.size() + send_count);
 
+                    uint64_t *recv_indexes = curr_indexes + indexes_set.size(); // Make sure this is done after resizing to ensure memory is contiguous.
+                    MPI_Recv (recv_indexes, send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    
                     for (int i = 0; i < send_count; i++)
                     {
                         if ( !indexes_set.contains(recv_indexes[i]) )
                         {
-                            indexes[indexes_set.size()] = recv_indexes[i];
+                            curr_indexes[indexes_set.size()] = recv_indexes[i];
                             indexes_set.insert(recv_indexes[i]);
                         }
                     }
@@ -337,8 +359,8 @@ namespace minicombust::utils
                     int send_count = indexes_set.size();
                     // printf("LEVEL %d: Rank %d send to %d\n", level, rank, recv_rank);
 
-                    MPI_Send (&send_count,          1, MPI_UINT64_T, recv_rank, level, mpi_config->world);
-                    MPI_Send (indexes,     send_count, MPI_UINT64_T, recv_rank, level, mpi_config->world);
+                    MPI_Send (&send_count,           1, MPI_UINT64_T, recv_rank, level, mpi_config->world);
+                    MPI_Send (curr_indexes, send_count, MPI_UINT64_T, recv_rank, level, mpi_config->world);
                     
                     have_data = false;
                 }
@@ -350,9 +372,12 @@ namespace minicombust::utils
 
 
     template<typename T>
-    inline void MPI_GatherSet (MPI_Config *mpi_config, unordered_map<uint64_t, particle_aos<T>>& cell_particle_map, particle_aos<T> *indexed_fields)
+    inline void MPI_GatherMap (MPI_Config *mpi_config, unordered_map<uint64_t, particle_aos<T>>& cell_particle_map, uint64_t *indexes, particle_aos<T> *indexed_fields, function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_fn)
     { // NEED TO FIX ARRAY RESIZING
         const uint64_t rank = mpi_config->rank;
+
+        uint64_t *curr_indexes               = indexes; 
+        particle_aos<T> *curr_indexed_fields = indexed_fields; 
 
         bool have_data = true;
         for ( int level = 2; level <= mpi_config->world_size ; level *= 2)
@@ -367,18 +392,28 @@ namespace minicombust::utils
                     int send_count;
                     // printf("LEVEL %d: Rank %d recv from %d\n", level, rank, send_rank);
 
-                    particle_aos<T> *recv_indexes = indexed_fields + cell_particle_map.size();
+                    MPI_Recv (&send_count, 1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    resize_fn(cell_particle_map.size() + send_count, &curr_indexes, &curr_indexed_fields);
+                    uint64_t        *recv_indexes        = curr_indexes        + cell_particle_map.size();
+                    particle_aos<T> *recv_indexed_fields = curr_indexed_fields + cell_particle_map.size();
 
-                    MPI_Recv (&send_count,  1,          MPI_UINT64_T,                       send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
-                    MPI_Recv (recv_indexes, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
 
+                    MPI_Recv (recv_indexes,        send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    MPI_Recv (recv_indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
 
                     for (int i = 0; i < send_count; i++)
                     {
-                        if ( !cell_particle_map.contains(recv_indexes[i].cell) ) // TODO FIX: NOT AGGREGATING FIELDS
+                        if ( cell_particle_map.contains(recv_indexes[i]) )
                         {
-                            indexed_fields[cell_particle_map.size()]    = recv_indexes[i];
-                            cell_particle_map[recv_indexes[i].cell] = recv_indexes[i];
+                            cell_particle_map[recv_indexes[i]].momentum  += recv_indexed_fields[i].momentum;
+                            cell_particle_map[recv_indexes[i]].energy    += recv_indexed_fields[i].energy;
+                            cell_particle_map[recv_indexes[i]].fuel      += recv_indexed_fields[i].fuel;
+                        }
+                        else
+                        {
+                            curr_indexes[cell_particle_map.size()]        = recv_indexes[i];
+                            curr_indexed_fields[cell_particle_map.size()] = recv_indexed_fields[i];
+                            cell_particle_map[recv_indexes[i]]       = recv_indexed_fields[i];
                         }
                     }
                 }
@@ -388,8 +423,9 @@ namespace minicombust::utils
                     int send_count = cell_particle_map.size();
                     // printf("LEVEL %d: Rank %d send to %d\n", level, rank, recv_rank);
 
-                    MPI_Send (&send_count,             1, MPI_UINT64_T,                       recv_rank, level, mpi_config->world);
-                    MPI_Send (indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, mpi_config->world);
+                    MPI_Ssend (&send_count,                  1, MPI_UINT64_T,                       recv_rank, level, mpi_config->world);
+                    MPI_Ssend (curr_indexes,        send_count, MPI_UINT64_T,                       recv_rank, level, mpi_config->world);
+                    MPI_Ssend (curr_indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, mpi_config->world);
                     
                     have_data = false;
                 }

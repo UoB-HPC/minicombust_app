@@ -160,25 +160,25 @@ namespace minicombust::geometry
                 if (mpi_config->rank == 0)
                 {
                     printf("\nMesh storage requirements (per process):\n");
-                    printf("\tAllocating mesh cell centres                                (%.2f MB)\n",                 (float)(mesh_cell_centre_size)/1000000.0);
-                    printf("\tAllocating array of particles per cell                      (%.2f MB)\n",                 (float)(particles_per_point_size)/1000000.0);
+                    printf("\tAllocating mesh cell centres                                (%.2f MB)\n",                         (float)(mesh_cell_centre_size)/1000000.0);
+                    printf("\tAllocating array of particles per cell                      (%.2f MB)\n",                         (float)(particles_per_point_size)/1000000.0);
                     printf("\tAllocating vertexes                                         (%.2f MB) (%" PRIu64 " vertexes)\n",  (float)(points_array_size)/1000000.0, points_size);
                     printf("\tAllocating cells                                            (%.2f MB) (%" PRIu64 " cells)\n",     (float)(cells_array_size)/1000000.0, mesh_size);
                     printf("\tAllocating faces                                            (%.2f MB) (%" PRIu64 " faces)\n",     (float)(faces_array_size)/1000000.0, faces_size);
-                    printf("\tAllocating cell neighbour indexes                           (%.2f MB)\n",                 (float)(cell_neighbours_array_size)/1000000.0);
-                    printf("\tAllocating cells_per_point array                            (%.2f MB)\n",                 ((float)cells_per_point_size)/1000000.);
-                    printf("\tAllocating evaporated fuel mass source term                 (%.2f MB)\n",                 (float)(evaporated_fuel_mass_rate_size)/1000000.0);
-                    printf("\tAllocating particle energy source term                      (%.2f MB)\n",                 (float)(particle_energy_size)/1000000.0);
-                    printf("\tAllocating particle_momentum source term                    (%.2f MB)\n",                 (float)(particle_momentum_rate_size)/1000000.0);
-                    printf("\tAllocating gas velocity source term                         (%.2f MB)\n",                 (float)(gas_velocity_size)/1000000.0);
-                    printf("\tAllocating gas velocity gradient source term                (%.2f MB)\n",                 (float)(gas_velocity_size)/1000000.0);
-                    printf("\tAllocating gas pressure source term                         (%.2f MB)\n",                 (float)(gas_pressure_size)/1000000.0);
-                    printf("\tAllocating gas pressure gradient source term                (%.2f MB)\n",                 (float)(gas_pressure_size)/1000000.0);
-                    printf("\tAllocating gas temperature source term                      (%.2f MB)\n",                 (float)(gas_temperature_size)/1000000.0);
-                    printf("\tAllocating gas temperature gradient source term             (%.2f MB)\n",                 (float)(gas_temperature_size)/1000000.0);
-                    printf("\tAllocated mesh. Flow size                                   (%.2f MB)\n",                 (float)flow_size/1000000.0);
-                    printf("\tAllocated mesh. Particle size                               (%.2f MB)\n",                 (float)particle_size/1000000.0);
-                    printf("\tAllocated mesh. Total size (per world)                      (%.2f MB)\n\n",               (float)(flow_size * ( mpi_config->world_size - mpi_config->particle_flow_world_size) + particle_size * mpi_config->world_size)/1000000.0);
+                    printf("\tAllocating cell neighbour indexes                           (%.2f MB)\n",                         (float)(cell_neighbours_array_size)/1000000.0);
+                    printf("\tAllocating cells_per_point array                            (%.2f MB)\n",                         ((float)cells_per_point_size)/1000000.);
+                    printf("\tAllocating evaporated fuel mass source term                 (%.2f MB)\n",                         (float)(evaporated_fuel_mass_rate_size)/1000000.0);
+                    printf("\tAllocating particle energy source term                      (%.2f MB)\n",                         (float)(particle_energy_size)/1000000.0);
+                    printf("\tAllocating particle_momentum source term                    (%.2f MB)\n",                         (float)(particle_momentum_rate_size)/1000000.0);
+                    printf("\tAllocating gas velocity source term                         (%.2f MB)\n",                         (float)(gas_velocity_size)/1000000.0);
+                    printf("\tAllocating gas velocity gradient source term                (%.2f MB)\n",                         (float)(gas_velocity_size)/1000000.0);
+                    printf("\tAllocating gas pressure source term                         (%.2f MB)\n",                         (float)(gas_pressure_size)/1000000.0);
+                    printf("\tAllocating gas pressure gradient source term                (%.2f MB)\n",                         (float)(gas_pressure_size)/1000000.0);
+                    printf("\tAllocating gas temperature source term                      (%.2f MB)\n",                         (float)(gas_temperature_size)/1000000.0);
+                    printf("\tAllocating gas temperature gradient source term             (%.2f MB)\n",                         (float)(gas_temperature_size)/1000000.0);
+                    printf("\tAllocated mesh. Flow size                                   (%.2f MB)\n",                         (float)flow_size/1000000.0);
+                    printf("\tAllocated mesh. Particle size                               (%.2f MB)\n",                         (float)particle_size/1000000.0);
+                    printf("\tAllocated mesh. Total size (per world)                      (%.2f MB)\n\n",                       (float)(flow_size * ( mpi_config->world_size - mpi_config->particle_flow_world_size) + particle_size * mpi_config->world_size)/1000000.0);
                 }
 
                 calculate_cell_centres();

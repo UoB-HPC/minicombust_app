@@ -16,6 +16,9 @@ namespace minicombust::flow
         
         int time_count = 0;
         time_stats[time_count]  -= MPI_Wtime(); //0
+        
+        cell_particle_field_map.clear();
+        unordered_neighbours_set.clear();
 
         MPI_Barrier(mpi_config->world);
         performance_logger.my_papi_start();
@@ -29,10 +32,14 @@ namespace minicombust::flow
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
+        // printf("MPI 1\n");
 
-        MPI_GatherSet ( mpi_config, unordered_neighbours_set, neighbour_indexes );
+        // Gather and reduce each rank's neighbour indexes into unordered_neighbours_set and neighbour_indexes.
+        auto resize_cell_indexes_fn = [this] (uint64_t elements, uint64_t **indexes) { return resize_cell_indexes(elements, indexes); };
+        MPI_GatherSet ( mpi_config, unordered_neighbours_set, neighbour_indexes, resize_cell_indexes_fn );
+        
+        // printf("MPI 2\n");
     
-        unordered_cells_set.erase(MESH_BOUNDARY);
         unordered_neighbours_set.erase(MESH_BOUNDARY);
         reduced_counts += unordered_neighbours_set.size();
 
@@ -44,88 +51,85 @@ namespace minicombust::flow
         time_stats[time_count]   -= MPI_Wtime(); //4
 
 
-        uint64_t count = 0;
-        int neighbour_size = unordered_neighbours_set.size();
-        resize_cells_arrays(neighbour_size);
+        uint64_t neighbour_size = unordered_neighbours_set.size();
+        
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime();//5
 
-        for (unordered_set<uint64_t>::iterator cell_it = unordered_neighbours_set.begin(); cell_it != unordered_neighbours_set.end(); ++cell_it)
-        {
-            neighbour_indexes[count]          = *cell_it;
-            int_neighbour_indexes[count]      = (int)*cell_it;
-            count++;
-        }
+
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime();//6
         
-        // Send size of neighbours of cells back to ranks.
-        MPI_Bcast(&neighbour_size, 1, MPI_INT, mpi_config->rank, mpi_config->world);
+        // Send size of reduced neighbours of cells back to ranks.
+        MPI_Bcast(&neighbour_size, 1, MPI_UINT64_T, mpi_config->rank, mpi_config->world);
+        // printf("MPI 3\n");
 
 
         static uint64_t neighbour_avg = 0;
         neighbour_avg += neighbour_size;
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();//7
+        time_stats[time_count]   -= MPI_Wtime(); //7
 
+        // Get size of sizes and displacements
         int neighbour_disp = 0;
-        for (int rank = 0; rank < mpi_config->world_size; rank++)
+        for (uint64_t rank = 0; rank < (uint64_t)mpi_config->world_size; rank++)
         {
             neighbour_sizes[rank] = neighbour_size / (mpi_config->world_size - mpi_config->particle_flow_world_size);
 
-            if (rank < ((int)neighbour_size % (mpi_config->world_size - mpi_config->particle_flow_world_size)))
+            if (rank < (neighbour_size % (uint64_t)(mpi_config->world_size - mpi_config->particle_flow_world_size)))
                 neighbour_sizes[rank]++;
 
+            int last_disp         = neighbour_disp;
             neighbour_disps[rank] = neighbour_disp;
             neighbour_disp       += neighbour_sizes[rank];
+            if ((neighbour_disp < last_disp) || (neighbour_sizes[rank] < 0)) {
+                printf("OVERFLOW!!!!!");
+                exit(1);
+            }
+
         }
         neighbour_sizes[mpi_config->rank] = 0;
 
         // Send neighbours of cells back to ranks.
         MPI_Request scatter_requests[2];
         MPI_Iscatterv(neighbour_indexes, neighbour_sizes, neighbour_disps, MPI_UINT64_T, NULL, 0, MPI_UINT64_T, mpi_config->rank, mpi_config->world, &scatter_requests[0]);
+        // printf("MPI 4\n");
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //8
 
-        for (int i = 0; i < neighbour_size; i++)
+        resize_cell_flow(neighbour_size);
+        for (uint64_t i = 0; i < neighbour_size; i++)
         {
-            neighbour_flow_aos_buffer[i]      = mesh->flow_terms[int_neighbour_indexes[i]];
-            neighbour_flow_grad_aos_buffer[i] = mesh->flow_grad_terms[int_neighbour_indexes[i]];
+            neighbour_flow_aos_buffer[i]      = mesh->flow_terms[neighbour_indexes[i]];
+            neighbour_flow_grad_aos_buffer[i] = mesh->flow_grad_terms[neighbour_indexes[i]];
         }
         MPI_Wait(&scatter_requests[0], MPI_STATUS_IGNORE);
 
-        // Change these from broadcast
         MPI_Iscatterv(neighbour_flow_aos_buffer,      neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world, &scatter_requests[0]);
+        // printf("MPI 5\n");
         MPI_Iscatterv(neighbour_flow_grad_aos_buffer, neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world, &scatter_requests[1]);
         
+        // printf("MPI 6\n");
         
         MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime();//9
 
+        // printf("MPI 7\n");
         if (receive_particle_fields)
         {
-            MPI_GatherSet (mpi_config, cell_particle_field_map, cell_particle_aos);
-            // MPI_Gatherv(MPI_IN_PLACE,    1, mpi_config->MPI_PARTICLE_STRUCTURE, cell_particle_aos,  cell_sizes, cell_disps, mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->rank, mpi_config->world);
+            function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_cell_particles_fn = [this] (uint64_t elements, uint64_t **indexes, particle_aos<T> **cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
+            // MPI_GatherMap (mpi_config, cell_particle_field_map, neighbour_indexes, cell_particle_aos, resize_cell_particles_fn);
         }
+        // printf("MPI 8\n");
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime();//10
 
-        unordered_cells_set.clear();
-        cell_particle_field_map.clear();
-        unordered_neighbours_set.clear();
-        
-        // PROCESS DUPLICATE CELL INDEXES AND PARTICLE TERMS HERE
-        // for (uint64_t i = 0; i < cell_size; i++)
-        // {
-        //     unordered_cells_set.insert(cells[i]);
-        // }
-        
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
         
         time_stats[time_count++] += MPI_Wtime();
@@ -148,7 +152,6 @@ namespace minicombust::flow
             printf("Unreduced average count = %f\n", (double)unreduced_counts / 1500.);
             printf("Reduced neighbour count = %f\n", (double)neighbour_avg    / 1500.);
         }
-
     } 
     
     template<typename T> void FlowSolver<T>::solve_combustion_equations()
@@ -182,6 +185,20 @@ namespace minicombust::flow
         static int count = 0;
         int comms_timestep = 1;
         if ((count % comms_timestep) == 0)  update_flow_field(count > 0);
+
+        if ((count % 100) == 0)
+        {
+            double arr_usage = ((double)get_array_memory_usage()) / 1.e9;
+            double stl_usage = ((double)get_stl_memory_usage())   / 1.e9 ;
+            double arr_usage_total = arr_usage;
+            double stl_usage_total = stl_usage;
+
+            if ( mpi_config->particle_flow_rank == 0 )
+            {
+                printf("                Flow     Array mem (GB) %8.3f Array mem total (GB) %8.3f STL mem (GB) %8.3f STL mem total (GB) %8.3f\n", arr_usage, arr_usage_total, stl_usage, stl_usage_total);
+            }
+        }
+
         // solve_combustion_equations();
         // update_combustion_fields();
         // solve_turbulence_equations();

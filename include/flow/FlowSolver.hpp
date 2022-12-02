@@ -11,21 +11,15 @@ namespace minicombust::flow
 
             Mesh<T> *mesh;
 
-            uint64_t *cell_indexes;
             uint64_t *neighbour_indexes;
-            int      *int_neighbour_indexes;
            
             T turbulence_field;
             T combustion_field;
             T flow_field;
 
-            unordered_set<uint64_t>  unordered_cells_set;
             unordered_set<uint64_t>  unordered_neighbours_set;
 
             unordered_map<uint64_t, particle_aos<T>> cell_particle_field_map;
-
-            int *cell_sizes;
-            int *cell_disps;
 
             int *neighbour_sizes;
             int *neighbour_disps;
@@ -34,14 +28,16 @@ namespace minicombust::flow
             flow_aos<T>    *neighbour_flow_aos_buffer;
             flow_aos<T>    *neighbour_flow_grad_aos_buffer;
 
-            uint64_t max_cell_storage;
-            size_t cell_index_array_size;
-            size_t cell_particle_array_size;
-            size_t cell_flow_array_size;
+            
 
         public:
             MPI_Config *mpi_config;
             PerformanceLogger<T> performance_logger;
+
+            uint64_t max_cell_storage;
+            size_t cell_index_array_size;
+            size_t cell_particle_array_size;
+            size_t cell_flow_array_size;
 
             double time_stats[11] = {0.0};
 
@@ -54,16 +50,12 @@ namespace minicombust::flow
                 cell_particle_array_size = max_cell_storage * sizeof(particle_aos<T>);
                 cell_flow_array_size     = max_cell_storage * sizeof(flow_aos<T>);
 
-                cell_indexes          = (uint64_t*)malloc(cell_index_array_size);
                 neighbour_indexes     = (uint64_t*)malloc(cell_index_array_size);
-                int_neighbour_indexes = (int*)     malloc(cell_index_array_size);
                 
                 neighbour_flow_aos_buffer      = (flow_aos<T> * )    malloc(cell_flow_array_size);
                 neighbour_flow_grad_aos_buffer = (flow_aos<T> * )    malloc(cell_flow_array_size);
                 cell_particle_aos              = (particle_aos<T> * )malloc(cell_particle_array_size);
 
-                cell_sizes         = (int *)     malloc(sizeof(int) * mpi_config->world_size);
-                cell_disps         = (int *)     malloc(sizeof(int) * mpi_config->world_size);
                 neighbour_sizes    = (int *)     malloc(sizeof(int) * mpi_config->world_size);
                 neighbour_disps    = (int *)     malloc(sizeof(int) * mpi_config->world_size);
 
@@ -71,23 +63,52 @@ namespace minicombust::flow
                 performance_logger.load_papi_events(mpi_config->rank);
             }
 
-            void resize_cells_arrays(int elements)
+            void resize_cell_indexes(uint64_t elements, uint64_t **new_cell_indexes)
             {
-                if ( max_cell_storage < (uint64_t) elements )
+                while ( cell_index_array_size < ((uint64_t) elements * sizeof(uint64_t)) )
                 {
-                    max_cell_storage          *= 2;
+                    printf("Resizing flow %ld to  %ld address %p neighbour_indexes address %p\n", cell_index_array_size / sizeof(uint64_t), (cell_index_array_size*2) / sizeof(uint64_t), (void*)&cell_index_array_size, (void*)neighbour_indexes);
                     cell_index_array_size     *= 2;
-                    cell_particle_array_size  *= 2;
-                    cell_flow_array_size      *= 2;
 
-                    cell_indexes          = (uint64_t*) realloc(cell_indexes,          cell_index_array_size);
                     neighbour_indexes     = (uint64_t*) realloc(neighbour_indexes,     cell_index_array_size);
-                    int_neighbour_indexes = (int*)      realloc(int_neighbour_indexes, cell_index_array_size);
-
-                    neighbour_flow_aos_buffer       = (flow_aos<T> *)realloc(neighbour_flow_aos_buffer,      cell_flow_array_size);
-                    neighbour_flow_grad_aos_buffer  = (flow_aos<T> *)realloc(neighbour_flow_grad_aos_buffer, cell_flow_array_size);
-                    cell_particle_aos               = (particle_aos<T> *)realloc(cell_particle_aos,              cell_particle_array_size);
                 }
+
+                if (new_cell_indexes != NULL) *new_cell_indexes = neighbour_indexes;
+            }
+
+            void resize_cell_flow (uint64_t elements)
+            {
+                resize_cell_indexes(elements, NULL);
+                while ( cell_flow_array_size < ((size_t) elements * sizeof(flow_aos<T>)) )
+                {
+                    cell_flow_array_size *= 2;
+
+                    neighbour_flow_aos_buffer      = (flow_aos<T> *)realloc(neighbour_flow_aos_buffer,      cell_flow_array_size);
+                    neighbour_flow_grad_aos_buffer = (flow_aos<T> *)realloc(neighbour_flow_grad_aos_buffer, cell_flow_array_size);
+                }
+            }
+
+            void resize_cell_particle (uint64_t elements, uint64_t **new_cell_indexes, particle_aos<T> **new_cell_particle)
+            {
+                resize_cell_indexes(elements, new_cell_indexes);
+                while ( cell_particle_array_size < ((size_t) elements * sizeof(particle_aos<T>)) )
+                {
+                    cell_particle_array_size *= 2;
+
+                    cell_particle_aos = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
+                }
+
+                if (new_cell_particle != NULL)  *new_cell_particle = cell_particle_aos;
+            }
+
+            size_t get_array_memory_usage ()
+            {
+                return cell_index_array_size + 2 * cell_flow_array_size + cell_particle_array_size;
+            }
+
+            size_t get_stl_memory_usage ()
+            {
+                return unordered_neighbours_set.size()*sizeof(uint64_t) + cell_particle_field_map.size()*sizeof(particle_aos<T>);
             }
 
             void update_flow_field(bool receive_particle);  // Synchronize point with flow solver

@@ -75,7 +75,7 @@ namespace minicombust::particles
 
             bool decayed = false;
 
-            T mass        = 0.02;           // DUMMY_VAL Current mass (kg)
+            T mass        = 0.02;          // DUMMY_VAL Current mass (kg)
             T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
             T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
@@ -333,7 +333,7 @@ namespace minicombust::particles
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
 
                 // Store particle fields
-                particle_cell_fields = {cell, mass * v1 * delta, (air_heat_transfer - evaporation_heat) * delta, mass_delta * delta};
+                particle_cell_fields = {mass * v1 * delta, (air_heat_transfer - evaporation_heat) * delta, mass_delta * delta};
 
 
 

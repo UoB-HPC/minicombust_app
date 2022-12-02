@@ -28,10 +28,8 @@ namespace minicombust::particles
            
             vector<Particle<T>>                       particles;
             unordered_map<uint64_t, particle_aos<T>>  cell_particle_field_map;
-            unordered_map<uint64_t, flow_aos<T>>      nodal_flow_field_map;
             unordered_map<uint64_t, uint64_t>         node_to_position_map;
             unordered_set<uint64_t>                   neighbours_set;
-            unordered_set<uint64_t>                   particle_nodes_set;
             ParticleDistribution<T>                  *particle_dist;
 
             Mesh<T> *mesh;
@@ -54,11 +52,6 @@ namespace minicombust::particles
             uint64_t  rank_neighbours_size;
             uint64_t *cell_indexes;
 
-            size_t   cell_index_array_size;
-            size_t   point_index_array_size;
-            size_t   cell_flow_array_size;
-            size_t   cell_particle_array_size;
-            size_t   point_flow_array_size;
             
             uint64_t max_cell_storage;
             uint64_t max_point_storage;
@@ -69,10 +62,17 @@ namespace minicombust::particles
             int *rank_nodal_sizes;
             int *rank_nodal_disps;
 
+            size_t   cell_index_array_size;
+            size_t   point_index_array_size;
+            size_t   cell_flow_array_size;
+            size_t   cell_particle_array_size;
+            size_t   point_flow_array_size;
 
         public:
             MPI_Config *mpi_config;
 
+
+            
             template<typename M>
             ParticleSolver(MPI_Config *mpi_config, uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t reserve_particles_size) : 
                            delta(delta), num_timesteps(ntimesteps), reserve_particles_size(reserve_particles_size), particle_dist(particle_dist), mesh(mesh), mpi_config(mpi_config)
@@ -87,7 +87,7 @@ namespace minicombust::particles
                 cell_flow_array_size        = max_cell_storage * sizeof(flow_aos<T>);
                 cell_particle_array_size    = max_cell_storage * sizeof(particle_aos<T>);
 
-                point_index_array_size     = max_point_storage * sizeof(int); 
+                point_index_array_size     = max_point_storage * sizeof(uint64_t); 
                 point_flow_array_size      = max_point_storage * sizeof(flow_aos<T>); 
 
 
@@ -134,32 +134,76 @@ namespace minicombust::particles
 
             }
 
-            void resize_cells_arrays(int elements)
+            void resize_cell_indexes (uint64_t elements, uint64_t **new_cell_indexes)
             {
-                if ( max_cell_storage < (uint64_t) elements )
+                while ( cell_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
                 {
-                    max_cell_storage      *= 2;
+                    printf("Rank %d resizing particle %ld to  %ld\n", mpi_config->rank, cell_index_array_size / sizeof(uint64_t), cell_index_array_size*2 / sizeof(uint64_t));
                     cell_index_array_size *= 2;
-                    cell_flow_array_size  *= 2;
 
-                    cell_indexes       = (uint64_t*)        realloc(cell_indexes,       cell_index_array_size);
-                    cell_particle_aos  = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
-                    cell_flow_aos      = (flow_aos<T> *)    realloc(cell_flow_aos,      cell_flow_array_size);
-                    cell_flow_grad_aos = (flow_aos<T> *)    realloc(cell_flow_grad_aos, cell_flow_array_size);
+                    cell_indexes = (uint64_t*)realloc(cell_indexes,       cell_index_array_size);
+                }
+                
+                if (new_cell_indexes != NULL)  *new_cell_indexes = cell_indexes;
+            }
+
+            void resize_cell_flow (uint64_t elements)
+            {
+                resize_cell_indexes(elements, NULL);
+                while ( cell_flow_array_size < ((size_t) elements * sizeof(flow_aos<T>)) )
+                {
+                    cell_flow_array_size *= 2;
+
+                    cell_flow_aos      = (flow_aos<T> *)realloc(cell_flow_aos,      cell_flow_array_size);
+                    cell_flow_grad_aos = (flow_aos<T> *)realloc(cell_flow_grad_aos, cell_flow_array_size);
                 }
             }
 
-            void resize_nodes_arrays(int elements)
+            void resize_cell_particle (uint64_t elements, uint64_t **new_cell_indexes, particle_aos<T> **new_cell_particle)
             {
-                if ( max_point_storage < (uint64_t) elements )
+                resize_cell_indexes(elements, new_cell_indexes);
+                while ( cell_particle_array_size < ((size_t) elements * sizeof(particle_aos<T>)) )
                 {
+                    cell_particle_array_size *= 2;
+
+                    cell_particle_aos = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
+                }
+
+                if (new_cell_particle != NULL)  *new_cell_particle = cell_particle_aos;
+            }
+
+            void resize_nodes_arrays (uint64_t elements)
+            {
+                while ( max_point_storage < (uint64_t) elements )
+                {
+                    printf("Resizing points!!\n");
                     max_point_storage      *= 2;
                     point_index_array_size *= 2;
                     point_flow_array_size  *= 2;
 
-                    all_interp_node_indexes     = (uint64_t*)         realloc(all_interp_node_indexes,     point_index_array_size);
+                    all_interp_node_indexes     = (uint64_t*)    realloc(all_interp_node_indexes,     point_index_array_size);
                     all_interp_node_flow_fields = (flow_aos<T> *)realloc(all_interp_node_flow_fields, point_flow_array_size);
                 }
+            }
+
+            size_t get_array_memory_usage ()
+            {
+                // if (mpi_config->particle_flow_rank == 0)
+                // {
+                //     printf("cell_index_array_size %.2f\n",    cell_index_array_size    / 1.e9);
+                //     printf("cell_particle_array_size %.2f\n", cell_particle_array_size / 1.e9);
+                //     printf("cell_flow_array_size %.2f\n",     cell_flow_array_size     / 1.e9);
+                //     printf("point_index_array_size %.2f\n",   point_index_array_size   / 1.e9);
+                //     printf("point_flow_array_size %.2f\n",    point_flow_array_size    / 1.e9);
+
+                // }
+
+                return cell_index_array_size + cell_particle_array_size + 2 * cell_flow_array_size + point_index_array_size + point_flow_array_size;
+            }
+
+            size_t get_stl_memory_usage ()
+            {
+                return particles.size()*sizeof(Particle<T>) + cell_particle_field_map.size()*sizeof(particle_aos<T>) + node_to_position_map.size()*sizeof(uint64_t) + neighbours_set.size()*sizeof(neighbours_set);
             }
 
             void output_data(uint64_t timestep);
