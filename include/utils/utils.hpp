@@ -339,7 +339,6 @@ namespace minicombust::utils
 
                     MPI_Recv (&send_count,  1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
                     resize_fn(indexes_set.size() + send_count, &curr_indexes);
-                    if (curr_indexes != indexes)  printf("Rank %d req'd size %lu\n", mpi_config->rank, indexes_set.size() + send_count);
 
                     uint64_t *recv_indexes = curr_indexes + indexes_set.size(); // Make sure this is done after resizing to ensure memory is contiguous.
                     MPI_Recv (recv_indexes, send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);

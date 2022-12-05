@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -q arm
 #PBS -l select=MC_NODES:ncpus=MC_MAX_PPN
-#PBS -l walltime=00:20:00
+#PBS -l walltime=00:10:00
 #PBS -o results/isambard-MC_PROCSprocs-MC_PARTICLESparticles-MC_CELLScells_modifier.log
 #PBS -N strong-MC_PROCS
 #PBS -j oe

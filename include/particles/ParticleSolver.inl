@@ -187,8 +187,6 @@ namespace minicombust::particles
         
         MPI_Barrier(mpi_config->world);
 
-        // printf("Rank %d contains 480327 %d\n", mpi_config->rank, neighbours_set.contains(480327));
-
         // Send local neighbours size
         auto resize_cell_indexes_fn = [this] (uint64_t elements, uint64_t **indexes) { return resize_cell_indexes(elements, indexes); };
         MPI_GatherSet ( mpi_config, neighbours_set, cell_indexes, resize_cell_indexes_fn);
@@ -212,25 +210,25 @@ namespace minicombust::particles
         // Write local particle fields to array
         count = 0;
         cell_particle_field_map.erase(MESH_BOUNDARY);
-        // for (auto& cell_it: cell_particle_field_map)
-        // {
-        //     cell_indexes[count]         = cell_it.first;
-        //     cell_particle_aos[count++]  = cell_it.second;
-            
-        // }
+        for (auto& cell_it: cell_particle_field_map)
+        {
+            cell_particle_indexes[count] = cell_it.first;
+            cell_particle_aos[count++]   = cell_it.second;
+        }
 
         node_to_position_map.clear(); 
         neighbours_set.clear();
 
         logger.interpolated_cells += ((float) neighbours_size) / ((float)num_timesteps);
 
-        MPI_Waitall(3, scatter_requests, MPI_STATUSES_IGNORE);
 
         if (send_particle)
         {
             function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_cell_particles_fn = [this] (uint64_t elements, uint64_t **indexes, particle_aos<T> **cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
-            // MPI_GatherMap (mpi_config, cell_particle_field_map, cell_indexes, cell_particle_aos, resize_cell_particles_fn);
+            MPI_GatherMap (mpi_config, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, resize_cell_particles_fn);
         }
+
+        MPI_Waitall(3, scatter_requests, MPI_STATUSES_IGNORE);
         cell_particle_field_map.clear();
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
@@ -399,27 +397,16 @@ namespace minicombust::particles
 
         // Faster if particles in some of the cells
         static int time = 0;
-        static double time_stats0 = 0;
-        static double time_stats1 = 0;
-        static double time_stats3 = 0;
-        static double time_stats4 = 0;
-        static double time_stats45 = 0;
-        static double time_stats5 = 0;
+        int time_count = 0;
 
         time++;
 
-
-        time_stats1 -= MPI_Wtime();
-
-        time_stats1 += MPI_Wtime();
-        time_stats3 -= MPI_Wtime();
-
+        time_stats[time_count]   -= MPI_Wtime(); // 0
 
         uint64_t local_nodes_size = 0;
         resize_nodes_arrays(rank_neighbours_size * node_neighbours);
 
-
-
+        // Process the allocation of cell fields (NOTE: Imperfect solution near edges. Fix by doing interpolation on flow side.)
         #pragma ivdep
         for (uint64_t i = 0; i < rank_neighbours_size; i++)
         {
@@ -446,8 +433,6 @@ namespace minicombust::particles
                 const uint64_t node_id = cell[n];
                 const vec<T> direction             = mesh->points[node_id] - cell_centre;
 
-
-
                 if (node_to_position_map.contains(node_id))
                 {
                     all_interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
@@ -473,6 +458,7 @@ namespace minicombust::particles
             }
         }
 
+        // USEFUL FOR ERROR CHECKING
         // for (uint64_t i = 0; i < mesh->mesh_size * cell_size; i++ )
         // {
         //     if (mpi_config->rank == 0 && mesh->cells[i] == 516076)
@@ -482,17 +468,14 @@ namespace minicombust::particles
         // }
         // if (node_to_position_map.contains(516076)) printf("rank %d node flow size %f\n", mpi_config->rank, all_interp_node_flow_fields[node_to_position_map[516076]].temp );
 
-        time_stats3 += MPI_Wtime();
-        time_stats4 -= MPI_Wtime();
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //1
         
         rank_nodal_sizes[mpi_config->particle_flow_rank] = local_nodes_size;
 
         static uint64_t node_avg = 0;
         node_avg += node_to_position_map.size();
 
-        // Send indexes to everyone
-        time_stats4  += MPI_Wtime();
-        time_stats45 -= MPI_Wtime();
 
         const uint64_t rank = mpi_config->particle_flow_rank;
 
@@ -558,46 +541,41 @@ namespace minicombust::particles
                     
                     have_data = false;
                 }
-                // if (!have_data) printf("LEVEL %d: Rank %d NO DATA \n", level, rank);
             }
         }
 
-        // if (mpi_config->rank == 0) printf("Rank %d PAYLOAD %f\n", mpi_config->rank, all_interp_node_flow_fields[node_to_position_map[516076]].temp );
-        
-        time_stats45 += MPI_Wtime();
-        time_stats5 -= MPI_Wtime();
-        MPI_Request request;
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //2
 
-        MPI_Bcast (&local_nodes_size,           1,                MPI_UINT64_T,                   0, mpi_config->particle_flow_world);
-        resize_nodes_arrays(local_nodes_size); // RESIZE within comms loop
-        MPI_Bcast (all_interp_node_indexes,     local_nodes_size, MPI_UINT64_T,                   0, mpi_config->particle_flow_world);
+        MPI_Request requests[2];
 
-        MPI_Ibcast (all_interp_node_flow_fields, local_nodes_size, mpi_config->MPI_FLOW_STRUCTURE, 0, mpi_config->particle_flow_world, &request);
+        MPI_Bcast (&local_nodes_size,           1,                 MPI_UINT64_T,                    0, mpi_config->particle_flow_world);
+        resize_nodes_arrays(local_nodes_size); 
+        MPI_Ibcast (all_interp_node_indexes,     local_nodes_size,  MPI_UINT64_T,                   0, mpi_config->particle_flow_world, &requests[0]);
+        MPI_Ibcast (all_interp_node_flow_fields, local_nodes_size,  mpi_config->MPI_FLOW_STRUCTURE, 0, mpi_config->particle_flow_world, &requests[1]);
+        MPI_Wait(&requests[0], MPI_STATUS_IGNORE);
 
         for (uint64_t i = 0; i < local_nodes_size; i++)
         {
             node_to_position_map[all_interp_node_indexes[i]] = i;
         }
 
-        MPI_Wait(&request, MPI_STATUS_IGNORE);
-        // if (mpi_config->rank == 0) printf("Rank2 %d PAYLOAD %f\n", mpi_config->rank, all_interp_node_flow_fields[node_to_position_map[516076]].temp );
+        MPI_Wait(&requests[1], MPI_STATUS_IGNORE);
 
-        time_stats5 += MPI_Wtime();
-        time_stats0 -= MPI_Wtime();
-        time_stats0 += MPI_Wtime();
-        
+        time_stats[time_count++] += MPI_Wtime();
 
         if ( time == 1500 )
         {
             if (mpi_config->rank == 0)
             {
-                printf("TIME1: %f\n", time_stats1);
-                printf("TIME3: %f\n", time_stats3);
-                printf("TIME4: %f\n", time_stats4);
-                printf("TIME45: %f\n",time_stats45);
-                printf("TIME5: %f\n", time_stats5);
-                printf("TIME0: %f\n", time_stats0);
-                printf("NODE AVG: %f\n", node_avg / 1500.);
+                double total_time = 0.0;
+                printf("\nInterpolate Nodal Timings:\n");
+
+                for (int i = 0; i < time_count; i++)
+                    total_time += time_stats[i];
+                for (int i = 0; i < time_count; i++)
+                    printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
+                printf("Total time %f\n", total_time);
             }
         }
         performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_time);

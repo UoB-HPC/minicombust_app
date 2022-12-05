@@ -67,7 +67,6 @@ namespace minicombust::flow
             {
                 while ( cell_index_array_size < ((uint64_t) elements * sizeof(uint64_t)) )
                 {
-                    printf("Resizing flow %ld to  %ld address %p neighbour_indexes address %p\n", cell_index_array_size / sizeof(uint64_t), (cell_index_array_size*2) / sizeof(uint64_t), (void*)&cell_index_array_size, (void*)neighbour_indexes);
                     cell_index_array_size     *= 2;
 
                     neighbour_indexes     = (uint64_t*) realloc(neighbour_indexes,     cell_index_array_size);

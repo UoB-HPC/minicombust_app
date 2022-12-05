@@ -23,55 +23,30 @@ namespace minicombust::flow
         MPI_Barrier(mpi_config->world);
         performance_logger.my_papi_start();
 
-        static uint64_t unreduced_counts = 0;
-        static uint64_t reduced_counts   = 0;
-
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
-
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //2
-        // printf("MPI 1\n");
 
         // Gather and reduce each rank's neighbour indexes into unordered_neighbours_set and neighbour_indexes.
         auto resize_cell_indexes_fn = [this] (uint64_t elements, uint64_t **indexes) { return resize_cell_indexes(elements, indexes); };
         MPI_GatherSet ( mpi_config, unordered_neighbours_set, neighbour_indexes, resize_cell_indexes_fn );
         
-        // printf("MPI 2\n");
-    
         unordered_neighbours_set.erase(MESH_BOUNDARY);
-        reduced_counts += unordered_neighbours_set.size();
 
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //3
-
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //4
-
-
-        uint64_t neighbour_size = unordered_neighbours_set.size();
         
-
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();//5
-
-
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();//6
+        time_stats[time_count]   -= MPI_Wtime(); //2
         
         // Send size of reduced neighbours of cells back to ranks.
-        MPI_Bcast(&neighbour_size, 1, MPI_UINT64_T, mpi_config->rank, mpi_config->world);
-        // printf("MPI 3\n");
-
-
+        uint64_t neighbour_size = unordered_neighbours_set.size();
+        
         static uint64_t neighbour_avg = 0;
         neighbour_avg += neighbour_size;
 
+        MPI_Bcast(&neighbour_size, 1, MPI_UINT64_T, mpi_config->rank, mpi_config->world);
+
+
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //7
+        time_stats[time_count]   -= MPI_Wtime(); //3
 
         // Get size of sizes and displacements
         int neighbour_disp = 0;
@@ -96,39 +71,38 @@ namespace minicombust::flow
         // Send neighbours of cells back to ranks.
         MPI_Request scatter_requests[2];
         MPI_Iscatterv(neighbour_indexes, neighbour_sizes, neighbour_disps, MPI_UINT64_T, NULL, 0, MPI_UINT64_T, mpi_config->rank, mpi_config->world, &scatter_requests[0]);
-        // printf("MPI 4\n");
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //8
+        time_stats[time_count]   -= MPI_Wtime(); // 4
 
         resize_cell_flow(neighbour_size);
         for (uint64_t i = 0; i < neighbour_size; i++)
         {
             neighbour_flow_aos_buffer[i]      = mesh->flow_terms[neighbour_indexes[i]];
+        }
+
+        MPI_Wait(&scatter_requests[0], MPI_STATUS_IGNORE);
+        MPI_Iscatterv(neighbour_flow_aos_buffer,      neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world, &scatter_requests[0]);
+
+        for (uint64_t i = 0; i < neighbour_size; i++)
+        {
             neighbour_flow_grad_aos_buffer[i] = mesh->flow_grad_terms[neighbour_indexes[i]];
         }
-        MPI_Wait(&scatter_requests[0], MPI_STATUS_IGNORE);
 
-        MPI_Iscatterv(neighbour_flow_aos_buffer,      neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world, &scatter_requests[0]);
-        // printf("MPI 5\n");
         MPI_Iscatterv(neighbour_flow_grad_aos_buffer, neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->rank, mpi_config->world, &scatter_requests[1]);
-        
-        // printf("MPI 6\n");
-        
-        MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();//9
 
-        // printf("MPI 7\n");
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //5
+
         if (receive_particle_fields)
         {
             function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_cell_particles_fn = [this] (uint64_t elements, uint64_t **indexes, particle_aos<T> **cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
-            // MPI_GatherMap (mpi_config, cell_particle_field_map, neighbour_indexes, cell_particle_aos, resize_cell_particles_fn);
+            MPI_GatherMap (mpi_config, cell_particle_field_map, neighbour_indexes, cell_particle_aos, resize_cell_particles_fn);
         }
-        // printf("MPI 8\n");
+        MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime();//10
+        time_stats[time_count]   -= MPI_Wtime(); //6
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
         
@@ -138,18 +112,14 @@ namespace minicombust::flow
         if (timestep_count++ == 1499)
         {
             double total_time = 0.0;
-            for (int i = 0; i < 11; i++)
-            {
+            printf("\nUpdate Flow Field Communuication Timings\n");
+
+            for (int i = 0; i < time_count; i++)
                 total_time += time_stats[i];
-            }
-            for (int i = 0; i < 11; i++)
-            {
+            for (int i = 0; i < time_count; i++)
                 printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
-            }
             printf("Total time %f\n", total_time);
 
-            printf("Reduced average count = %f\n",   (double)reduced_counts   / 1500.);
-            printf("Unreduced average count = %f\n", (double)unreduced_counts / 1500.);
             printf("Reduced neighbour count = %f\n", (double)neighbour_avg    / 1500.);
         }
     } 

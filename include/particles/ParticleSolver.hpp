@@ -51,6 +51,7 @@ namespace minicombust::particles
             uint64_t  neighbours_size;
             uint64_t  rank_neighbours_size;
             uint64_t *cell_indexes;
+            uint64_t *cell_particle_indexes;
 
             
             uint64_t max_cell_storage;
@@ -63,10 +64,14 @@ namespace minicombust::particles
             int *rank_nodal_disps;
 
             size_t   cell_index_array_size;
+            size_t   cell_particle_index_array_size;
             size_t   point_index_array_size;
             size_t   cell_flow_array_size;
             size_t   cell_particle_array_size;
             size_t   point_flow_array_size;
+
+            double time_stats[6] = {0.0};
+
 
         public:
             MPI_Config *mpi_config;
@@ -83,15 +88,17 @@ namespace minicombust::particles
                 max_cell_storage  = fraction * mesh->mesh_size;
                 max_point_storage = 2 * fraction * mesh->points_size;
 
-                cell_index_array_size       = max_cell_storage * sizeof(uint64_t);
-                cell_flow_array_size        = max_cell_storage * sizeof(flow_aos<T>);
-                cell_particle_array_size    = max_cell_storage * sizeof(particle_aos<T>);
+                cell_index_array_size          = max_cell_storage * sizeof(uint64_t);
+                cell_particle_index_array_size = max_cell_storage * sizeof(uint64_t);
+                cell_flow_array_size           = max_cell_storage * sizeof(flow_aos<T>);
+                cell_particle_array_size       = max_cell_storage * sizeof(particle_aos<T>);
 
                 point_index_array_size     = max_point_storage * sizeof(uint64_t); 
                 point_flow_array_size      = max_point_storage * sizeof(flow_aos<T>); 
 
 
                 cell_indexes                      =        (uint64_t *)malloc(cell_index_array_size);
+                cell_particle_indexes             =        (uint64_t *)malloc(cell_particle_index_array_size);
                 cell_particle_aos                 = (particle_aos<T> *)malloc(cell_particle_array_size);
                 cell_flow_aos                     =     (flow_aos<T> *)malloc(cell_flow_array_size);
                 cell_flow_grad_aos                =     (flow_aos<T> *)malloc(cell_flow_array_size);
@@ -138,7 +145,6 @@ namespace minicombust::particles
             {
                 while ( cell_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
                 {
-                    printf("Rank %d resizing particle %ld to  %ld\n", mpi_config->rank, cell_index_array_size / sizeof(uint64_t), cell_index_array_size*2 / sizeof(uint64_t));
                     cell_index_array_size *= 2;
 
                     cell_indexes = (uint64_t*)realloc(cell_indexes,       cell_index_array_size);
@@ -159,9 +165,21 @@ namespace minicombust::particles
                 }
             }
 
+            void resize_cell_particle_indexes (uint64_t elements, uint64_t **new_cell_indexes)
+            {
+                while ( cell_particle_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
+                {
+                    cell_particle_index_array_size *= 2;
+
+                    cell_particle_indexes = (uint64_t*)realloc(cell_particle_indexes,       cell_particle_index_array_size);
+                }
+                
+                if (new_cell_indexes != NULL)  *new_cell_indexes = cell_particle_indexes;
+            }
+
             void resize_cell_particle (uint64_t elements, uint64_t **new_cell_indexes, particle_aos<T> **new_cell_particle)
             {
-                resize_cell_indexes(elements, new_cell_indexes);
+                resize_cell_particle_indexes(elements, new_cell_indexes);
                 while ( cell_particle_array_size < ((size_t) elements * sizeof(particle_aos<T>)) )
                 {
                     cell_particle_array_size *= 2;
@@ -176,7 +194,6 @@ namespace minicombust::particles
             {
                 while ( max_point_storage < (uint64_t) elements )
                 {
-                    printf("Resizing points!!\n");
                     max_point_storage      *= 2;
                     point_index_array_size *= 2;
                     point_flow_array_size  *= 2;
@@ -198,7 +215,7 @@ namespace minicombust::particles
 
                 // }
 
-                return cell_index_array_size + cell_particle_array_size + 2 * cell_flow_array_size + point_index_array_size + point_flow_array_size;
+                return cell_index_array_size + cell_particle_array_size + 2 * cell_flow_array_size + point_index_array_size + point_flow_array_size + cell_particle_index_array_size;
             }
 
             size_t get_stl_memory_usage ()

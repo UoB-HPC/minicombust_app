@@ -70,7 +70,7 @@ namespace minicombust::geometry
             vec<T> cell_size_vector;      // Cell size
             vec<T> *points;               // Mesh points    = {{0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, ...}:
             uint64_t *cells;              // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
-            Face<T> *faces;               // Faces          = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...}; 
+            Face<T> *faces;               // Faces          = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...};  TODO: Not needed by particle ranks (25%)
             vec<T> *cell_centres;         // Cell centres   = {{0.5, 3.0, 4.0}, {2.5, 3.0, 4.0}, ...};
             uint64_t *cell_neighbours;    // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}}
             uint8_t *cells_per_point;     // Number of neighbouring cells for each point
@@ -130,6 +130,7 @@ namespace minicombust::geometry
                         flow_grad_terms[c] = {{0.0, 0.0, 0.0}, 0.0, 0.0};
                     }
                 }
+
                 particles_per_point                          = (uint64_t *)   malloc(particles_per_point_size);
                 cell_centres                                 = (vec<T> *)     malloc(mesh_cell_centre_size);
                 cells_per_point                              = (uint8_t *)    malloc(cells_per_point_size);
