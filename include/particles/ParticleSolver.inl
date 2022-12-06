@@ -607,8 +607,6 @@ namespace minicombust::particles
             {
                 printf("Timestep %6d Particle Array mem (GB) %8.3f Array mem total (GB) %8.3f STL mem (GB) %8.3f STL mem total (GB) %8.3f Particles %lu\n", count, arr_usage, arr_usage_total, stl_usage, stl_usage_total, total_particles_in_simulation);
             }
-
-
         }
 
         particle_release();

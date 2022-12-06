@@ -70,7 +70,7 @@ namespace minicombust::geometry
             vec<T> cell_size_vector;      // Cell size
             vec<T> *points;               // Mesh points    = {{0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, ...}:
             uint64_t *cells;              // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
-            Face<T> *faces;               // Faces          = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...};  TODO: Not needed by particle ranks (25%)
+            Face<T> *faces;               // Faces          = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...};  TODO: Not needed by particle ranks (25% mesh mem)
             vec<T> *cell_centres;         // Cell centres   = {{0.5, 3.0, 4.0}, {2.5, 3.0, 4.0}, ...};
             uint64_t *cell_neighbours;    // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}}
             uint8_t *cells_per_point;     // Number of neighbouring cells for each point
@@ -87,11 +87,6 @@ namespace minicombust::geometry
             const T      dummy_gas_pre = 4000.;
             const T      dummy_gas_tem = 2000.;
 
-            // vec_soa<T> points_soa;
-            // vec_soa<T> cell_centres_soa;
-            // vec_soa<T> gas_velocity_soa;
-            // vec_soa<T> gas_velocity_gradient_soa;
-
             flow_aos<T> *flow_terms;
             flow_aos<T> *flow_grad_terms;
 
@@ -106,23 +101,21 @@ namespace minicombust::geometry
                 const size_t faces_array_size                = faces_size*sizeof(Face<T>);
                 const size_t cell_neighbours_array_size      = mesh_size*faces_per_cell*sizeof(uint64_t);
                 const size_t cells_per_point_size            = points_size*sizeof(uint8_t);
+                
                 const size_t evaporated_fuel_mass_rate_size  = mesh_size*sizeof(T);
                 const size_t particle_energy_size            = mesh_size*sizeof(T);
                 const size_t particle_momentum_rate_size     = mesh_size*sizeof(vec<T>);
-                const size_t gas_velocity_size               = mesh_size*sizeof(vec<T>);
-                const size_t gas_velocity_gradient_size      = mesh_size*sizeof(vec<T>);
-                const size_t gas_pressure_size               = mesh_size*sizeof(T);
-                const size_t gas_pressure_gradient_size      = mesh_size*sizeof(T);
-                const size_t gas_temperature_size            = mesh_size*sizeof(T);
-                const size_t gas_temperature_gradient_size   = mesh_size*sizeof(T);
+                
+                
+                const size_t flow_term_size     = mesh_size * sizeof(flow_aos<T>);
                  
                 if (mpi_config->solver_type == FLOW || mpi_config->world_size == 1)
                 {
                     evaporated_fuel_mass_rate                    = (T *)          malloc(evaporated_fuel_mass_rate_size);
                     particle_energy_rate                         = (T *)          malloc(particle_energy_size);
                     particle_momentum_rate                       = (vec<T> *)     malloc(particle_momentum_rate_size);
-                    flow_terms                                   = (flow_aos<T> *)malloc(mesh_size * sizeof(flow_aos<T>));
-                    flow_grad_terms                              = (flow_aos<T> *)malloc(mesh_size * sizeof(flow_aos<T>));
+                    flow_terms                                   = (flow_aos<T> *)malloc(flow_term_size);
+                    flow_grad_terms                              = (flow_aos<T> *)malloc(flow_term_size);
 
                     for (uint64_t c = 0; c < mesh_size; c++)
                     {
@@ -152,8 +145,7 @@ namespace minicombust::geometry
                 const size_t flow_size = mesh_cell_centre_size + particles_per_point_size + points_array_size + cells_array_size + 
                                           faces_array_size + cell_neighbours_array_size + cells_per_point_size +
                                           evaporated_fuel_mass_rate_size + particle_energy_size + particle_momentum_rate_size + 
-                                          gas_velocity_size + gas_pressure_size + gas_temperature_size +
-                                          gas_velocity_gradient_size + gas_pressure_gradient_size + gas_temperature_gradient_size;
+                                          2 * flow_term_size;
 
                 const size_t particle_size = mesh_cell_centre_size + particles_per_point_size + points_array_size + cells_array_size + 
                                           faces_array_size + cell_neighbours_array_size + cells_per_point_size;
@@ -171,12 +163,8 @@ namespace minicombust::geometry
                     printf("\tAllocating evaporated fuel mass source term                 (%.2f MB)\n",                         (float)(evaporated_fuel_mass_rate_size)/1000000.0);
                     printf("\tAllocating particle energy source term                      (%.2f MB)\n",                         (float)(particle_energy_size)/1000000.0);
                     printf("\tAllocating particle_momentum source term                    (%.2f MB)\n",                         (float)(particle_momentum_rate_size)/1000000.0);
-                    printf("\tAllocating gas velocity source term                         (%.2f MB)\n",                         (float)(gas_velocity_size)/1000000.0);
-                    printf("\tAllocating gas velocity gradient source term                (%.2f MB)\n",                         (float)(gas_velocity_size)/1000000.0);
-                    printf("\tAllocating gas pressure source term                         (%.2f MB)\n",                         (float)(gas_pressure_size)/1000000.0);
-                    printf("\tAllocating gas pressure gradient source term                (%.2f MB)\n",                         (float)(gas_pressure_size)/1000000.0);
-                    printf("\tAllocating gas temperature source term                      (%.2f MB)\n",                         (float)(gas_temperature_size)/1000000.0);
-                    printf("\tAllocating gas temperature gradient source term             (%.2f MB)\n",                         (float)(gas_temperature_size)/1000000.0);
+                    printf("\tAllocating flow source term                                 (%.2f MB)\n",                         (float)(flow_term_size)/1000000.0);
+                    printf("\tAllocating flow grad source term                            (%.2f MB)\n",                         (float)(flow_term_size)/1000000.0);
                     printf("\tAllocated mesh. Flow size                                   (%.2f MB)\n",                         (float)flow_size/1000000.0);
                     printf("\tAllocated mesh. Particle size                               (%.2f MB)\n",                         (float)particle_size/1000000.0);
                     printf("\tAllocated mesh. Total size (per world)                      (%.2f MB)\n\n",                       (float)(flow_size * ( mpi_config->world_size - mpi_config->particle_flow_world_size) + particle_size * mpi_config->world_size)/1000000.0);
@@ -186,8 +174,6 @@ namespace minicombust::geometry
                 cell_size_vector = points[cells[H_VERTEX]] - points[cells[A_VERTEX]];
 
                 // DUMMY VALUES 
-                
-                
                 
                 // cell_centres_soa = allocate_vec_soa<T>(mesh_size);
                 // for (uint64_t c = 0; c < mesh_size; c++)
