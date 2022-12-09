@@ -319,31 +319,36 @@ namespace minicombust::utils
 
     inline void MPI_GatherSet (MPI_Config *mpi_config, unordered_set<uint64_t>& indexes_set, uint64_t *indexes, function<void(uint64_t, uint64_t **)> resize_fn)
     { 
-        const uint64_t rank = mpi_config->rank;
+        const int world_size = mpi_config->world_size;
+        int rank             = mpi_config->rank;
+        int alias_rank       = (rank + 1) % world_size;
+        
+        int rounded_world_size = (int)pow(2., ceil(log((double)world_size)/log(2.)));
 
         uint64_t *curr_indexes = indexes; 
 
         bool have_data = true;
-        for ( int level = 2; level <= mpi_config->world_size ; level *= 2)
+        for ( int level = 2; level <= rounded_world_size ; level *= 2)
         {
-            MPI_Barrier(mpi_config->world);
             if (have_data)
             {
-                bool reciever = ((rank+1) % level) ? false : true;
+                bool reciever        = !(alias_rank % level);
+                int alias_send_rank  = alias_rank + (level / 2);
+                int alias_recv_rank  = alias_rank - (level / 2);
 
                 if ( reciever )
                 {
-                    uint64_t send_rank = rank - (level / 2);
-                    int send_count;
-                    // printf("LEVEL %d: Rank %d recv from %d\n", level, rank, send_rank);
+                    if (alias_send_rank >= world_size)  continue;
 
-                    MPI_Recv (&send_count,  1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    uint64_t send_count;
+                    int send_rank = (alias_send_rank + world_size - 1) % world_size;
+                    // printf("LEVEL %d: Rank %d (AR %d) recv from %d\n", level, rank, alias_rank, send_rank);
+                
+                    MPI_Recv (&send_count, 1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
                     resize_fn(indexes_set.size() + send_count, &curr_indexes);
-
-                    uint64_t *recv_indexes = curr_indexes + indexes_set.size(); // Make sure this is done after resizing to ensure memory is contiguous.
+                    uint64_t *recv_indexes = curr_indexes + indexes_set.size();  // Make sure this is done after resizing to ensure memory is contiguous.
                     MPI_Recv (recv_indexes, send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
-                    
-                    for (int i = 0; i < send_count; i++)
+                    for (uint64_t i = 0; i < send_count; i++)
                     {
                         if ( !indexes_set.contains(recv_indexes[i]) )
                         {
@@ -354,53 +359,56 @@ namespace minicombust::utils
                 }
                 else
                 {
-                    uint64_t recv_rank  = rank + (level / 2);
-                    int send_count = indexes_set.size();
-                    // printf("LEVEL %d: Rank %d send to %d\n", level, rank, recv_rank);
+                    uint64_t send_count = indexes_set.size();
+                    int recv_rank = (alias_recv_rank + world_size - 1) % world_size;
+                    // printf("LEVEL %d: Rank %d (AR %d) send to %d\n", level, rank, alias_rank, recv_rank);
 
-                    MPI_Send (&send_count,           1, MPI_UINT64_T, recv_rank, level, mpi_config->world);
-                    MPI_Send (curr_indexes, send_count, MPI_UINT64_T, recv_rank, level, mpi_config->world);
-                    
+                    MPI_Ssend (&send_count,           1, MPI_UINT64_T, recv_rank, level, mpi_config->world);
+                    MPI_Ssend (curr_indexes, send_count, MPI_UINT64_T, recv_rank, level, mpi_config->world);
                     have_data = false;
                 }
-
-                // if (!have_data) printf("LEVEL %d: Rank %d NO DATA \n", level, rank);
+                // if (!have_data) printf("LEVEL %d: Rank %d HAVE DATA %d \n", level, rank, have_data);
             }
         }
     }
 
-
     template<typename T>
     inline void MPI_GatherMap (MPI_Config *mpi_config, unordered_map<uint64_t, particle_aos<T>>& cell_particle_map, uint64_t *indexes, particle_aos<T> *indexed_fields, function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_fn)
-    { // NEED TO FIX ARRAY RESIZING
-        const uint64_t rank = mpi_config->rank;
+    { 
+        const int world_size = mpi_config->world_size;
+        int rank             = mpi_config->rank;
+        int alias_rank       = (rank + 1) % world_size;
+        
+        int rounded_world_size = (int)pow(2., ceil(log((double)world_size)/log(2.)));
 
         uint64_t *curr_indexes               = indexes; 
         particle_aos<T> *curr_indexed_fields = indexed_fields; 
 
         bool have_data = true;
-        for ( int level = 2; level <= mpi_config->world_size ; level *= 2)
+        for ( int level = 2; level <= rounded_world_size ; level *= 2)
         {
             if (have_data)
             {
-                bool reciever = ((rank+1) % level) ? false : true;
+                bool reciever        = !(alias_rank % level);
+                int alias_send_rank  = alias_rank + (level / 2);
+                int alias_recv_rank  = alias_rank - (level / 2);
 
                 if ( reciever )
                 {
-                    uint64_t send_rank = rank - (level / 2);
-                    int send_count;
-                    // printf("LEVEL %d: Rank %d recv from %d\n", level, rank, send_rank);
+                    if (alias_send_rank >= world_size)  continue;
 
+                    uint64_t send_count;
+                    int send_rank = (alias_send_rank + world_size - 1) % world_size;
+                    // printf("LEVEL %d: Rank %d (AR %d) recv from %d\n", level, rank, alias_rank, send_rank);
                     MPI_Recv (&send_count, 1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
                     resize_fn(cell_particle_map.size() + send_count, &curr_indexes, &curr_indexed_fields);
                     uint64_t        *recv_indexes        = curr_indexes        + cell_particle_map.size();
                     particle_aos<T> *recv_indexed_fields = curr_indexed_fields + cell_particle_map.size();
 
-
-                    MPI_Recv (recv_indexes,        send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    MPI_Recv (recv_indexes,        send_count, MPI_UINT64_T,                       send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
                     MPI_Recv (recv_indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
 
-                    for (int i = 0; i < send_count; i++)
+                    for (uint64_t i = 0; i < send_count; i++)
                     {
                         if ( cell_particle_map.contains(recv_indexes[i]) )
                         {
@@ -418,20 +426,24 @@ namespace minicombust::utils
                 }
                 else
                 {
-                    uint64_t recv_rank  = rank + (level / 2);
-                    int send_count = cell_particle_map.size();
-                    // printf("LEVEL %d: Rank %d send to %d\n", level, rank, recv_rank);
+                    uint64_t send_count = cell_particle_map.size();
+                    int recv_rank = (alias_recv_rank + world_size - 1) % world_size;
+                    // printf("LEVEL %d: Rank %d (AR %d) send to %d\n", level, rank, alias_rank, recv_rank);
 
                     MPI_Ssend (&send_count,                  1, MPI_UINT64_T,                       recv_rank, level, mpi_config->world);
                     MPI_Ssend (curr_indexes,        send_count, MPI_UINT64_T,                       recv_rank, level, mpi_config->world);
                     MPI_Ssend (curr_indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, mpi_config->world);
-                    
+
+                    // printf("LEVEL %d: Rank %d (AR %d) send to %d\n", level, rank, alias_rank, recv_rank);
                     have_data = false;
                 }
-                // if (!have_data) printf("LEVEL %d: Rank %d NO DATA \n", level, rank);
+
+                // if (!have_data) printf("LEVEL %d: Rank %d HAVE DATA %d \n", level, rank, have_data);
             }
         }
+
     }
+
 
     template<typename T>
     void sum_particle_aos(void* inputBuffer, void* outputBuffer, int* len, MPI_Datatype* datatype)

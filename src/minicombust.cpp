@@ -53,6 +53,10 @@ int main (int argc, char ** argv)
     const uint64_t modifier                     = (argc > 2) ? atoi(argv[2]) : 10;
     const vec<uint64_t> elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
 
+
+    
+
+
     // Performance
     double setup_time = 0., program_time = 0., output_time = 0.;
 
