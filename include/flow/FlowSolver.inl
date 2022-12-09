@@ -56,6 +56,7 @@ namespace minicombust::flow
 
             if (rank < (neighbour_size % (uint64_t)(mpi_config->world_size - mpi_config->particle_flow_world_size)))
                 neighbour_sizes[rank]++;
+            
 
             int last_disp         = neighbour_disp;
             neighbour_disps[rank] = neighbour_disp;

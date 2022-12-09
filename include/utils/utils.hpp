@@ -71,6 +71,46 @@ namespace minicombust::utils
         }
     };
 
+    inline int get_prime_factors ( int n, int *prime_factors )
+    {
+        const int max_factors = ceil(log2(n));
+        cout << n << " prime factors: ";
+        prime_factors = (int *)malloc(max_factors * sizeof(int));
+
+
+        int nfactors = 0;
+
+        // Print the number of 2s that divide n
+        while (n % 2 == 0)
+        {
+            prime_factors[nfactors++] = 2;
+            n = n/2;
+        }
+    
+        // n must be odd at this point. So we can skip
+        // one element (Note i = i+2)
+        for (int i = 3; i <= sqrt(n); i += 2)
+        {
+            // While i divides n, print i and divide n
+            while (n % i == 0)
+            {
+                prime_factors[nfactors++] = i;
+                n = n/i;
+            }
+        }
+    
+        // This condition is to handle the case when n
+        // is a prime number greater than 2
+        if (n > 2 || nfactors == 0)
+            prime_factors[nfactors++] = n;
+
+        for (int x = 0;  x < nfactors; x++)
+            cout << prime_factors[x] << " ";
+        cout << endl;
+    
+        return nfactors;
+    }
+
     template <typename T> 
     struct vec_soa {
         T *x;
@@ -287,6 +327,8 @@ namespace minicombust::utils
         v.z = (T*)malloc(n*sizeof(T));
         return v;
     }
+
+
 
     struct Particle_Logger {
         uint64_t num_particles;

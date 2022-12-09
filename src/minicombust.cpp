@@ -21,13 +21,33 @@ int main (int argc, char ** argv)
     // MPI Initialisation 
     MPI_Init(NULL, NULL);
     MPI_Config mpi_config;
-    mpi_config.world = MPI_COMM_WORLD;
-    MPI_Comm_rank(mpi_config.world,  &mpi_config.rank);
-    MPI_Comm_size(mpi_config.world,  &mpi_config.world_size);
-    mpi_config.solver_type = (mpi_config.world_size == 1 || mpi_config.rank < mpi_config.world_size - 1); // 1 for particle, 0 for flow
-    MPI_Comm_split(mpi_config.world, mpi_config.solver_type, mpi_config.rank, &mpi_config.particle_flow_world);
+    MPI_Comm temp_world = MPI_COMM_WORLD;
+    int temp_rank;
+
+    // Create overall world
+    
+    MPI_Comm_rank(temp_world,  &temp_rank);
+    MPI_Comm_size(temp_world,  &mpi_config.world_size);
+
+    int full_world_size = mpi_config.world_size;
+
+    // If rank < given number of particle ranks.
+    mpi_config.solver_type = (temp_rank < atoi(argv[1])); // 1 for particle, 0 for flow
+    MPI_Comm_split(temp_world, mpi_config.solver_type, temp_rank, &mpi_config.particle_flow_world);
     MPI_Comm_rank(mpi_config.particle_flow_world,  &mpi_config.particle_flow_rank);
     MPI_Comm_size(mpi_config.particle_flow_world,  &mpi_config.particle_flow_world_size);
+
+    int one_flow_world = (mpi_config.solver_type || (temp_rank == mpi_config.world_size - 1));
+    MPI_Comm_split(temp_world, one_flow_world, temp_rank, &mpi_config.world);
+    MPI_Comm_rank(mpi_config.world,  &mpi_config.rank);
+    MPI_Comm_size(mpi_config.world,  &mpi_config.world_size);
+    if (!one_flow_world) 
+    {
+        printf("Rank %d stuck\n", temp_rank);
+        while(2) one_flow_world = false;  ;
+    }
+    else if (!mpi_config.solver_type)
+        mpi_config.particle_flow_world_size = 1;
 
     MPI_Type_contiguous(sizeof(flow_aos<double>)/sizeof(double),     MPI_DOUBLE, &mpi_config.MPI_FLOW_STRUCTURE);
     MPI_Type_contiguous(sizeof(particle_aos<double>)/sizeof(double), MPI_DOUBLE, &mpi_config.MPI_PARTICLE_STRUCTURE);
@@ -35,27 +55,32 @@ int main (int argc, char ** argv)
     MPI_Type_commit(&mpi_config.MPI_PARTICLE_STRUCTURE);
 
     MPI_Op_create(&sum_particle_aos<double>, 1, &mpi_config.MPI_PARTICLE_OPERATION);
+
+    int *prime_factors;
+    int flow_ranks = full_world_size - atoi(argv[1]);
+    get_prime_factors(flow_ranks, prime_factors);
     
     if (mpi_config.rank == 0)  
     {
         printf("Starting miniCOMBUST..\n");
-        printf("MPI Configuration:\n\tFlow Ranks: %d\n\tParticle Ranks: %d\n", mpi_config.world_size - mpi_config.particle_flow_world_size, mpi_config.particle_flow_world_size);
+        // printf("MPI Configuration:\n\tFlow Ranks: %d\n\tParticle Ranks: %d\n", mpi_config.world_size - mpi_config.particle_flow_world_size, mpi_config.particle_flow_world_size);
+        printf("MPI Configuration:\n\tFlow Ranks: %d\n\tParticle Ranks: %d\n", flow_ranks, mpi_config.particle_flow_world_size);
     }
 
     // Run Configuration
     const uint64_t ntimesteps                   = 1500;
     const double   delta                        = 2.5e-6;
-    const int64_t output_iteration              = (argc > 3) ? atoi(argv[3]) : 10;
-    const uint64_t particles_per_timestep       = (argc > 1) ? atoi(argv[1]) : 10;
+    const int64_t output_iteration              = (argc > 4) ? atoi(argv[4]) : 10;
+    const uint64_t particles_per_timestep       = (argc > 2) ? atoi(argv[2]) : 10;
     
     // Mesh Configuration
     const vec<double>   box_dim                 = {0.10, 0.05, 0.05};
-    const uint64_t modifier                     = (argc > 2) ? atoi(argv[2]) : 10;
+    const uint64_t modifier                     = (argc > 3) ? atoi(argv[3]) : 10;
     const vec<uint64_t> elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
 
-
-    
-
+    MPI_Barrier(mpi_config.world);
+    printf("Rank %d solver %d world %d\n", mpi_config.rank, mpi_config.solver_type, mpi_config.world_size);
+    MPI_Barrier(mpi_config.world);
 
     // Performance
     double setup_time = 0., program_time = 0., output_time = 0.;

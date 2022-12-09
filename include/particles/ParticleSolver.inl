@@ -100,7 +100,7 @@ namespace minicombust::particles
         performance_logger.my_papi_start();
 
         if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_flow_field.\n");
-        int flow_rank = mpi_config->particle_flow_world_size;
+        int flow_rank = mpi_config->world_size - 1;
 
         uint64_t count = 0;
         for (auto& cell_it: cell_particle_field_map)
@@ -189,6 +189,7 @@ namespace minicombust::particles
 
         // Send local neighbours size
         auto resize_cell_indexes_fn = [this] (uint64_t elements, uint64_t **indexes) { return resize_cell_indexes(elements, indexes); };
+
         MPI_GatherSet ( mpi_config, neighbours_set, cell_indexes, resize_cell_indexes_fn);
 
         // Get reduced neighbours size
@@ -412,6 +413,7 @@ namespace minicombust::particles
         {
             const uint64_t c = cell_indexes[i];
 
+
             const uint64_t *cell             = mesh->cells + c*cell_size;
             const vec<T> cell_centre         = mesh->cell_centres[c];
 
@@ -441,7 +443,7 @@ namespace minicombust::particles
                 }
                 else
                 {
-                    const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id]; 
+                    const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id];
 
                     node_to_position_map[node_id] = local_nodes_size;
                     
@@ -452,6 +454,7 @@ namespace minicombust::particles
                     
                     all_interp_node_indexes[local_nodes_size]     = node_id;
                     all_interp_node_flow_fields[local_nodes_size] = temp_term;
+
 
                     local_nodes_size++;
                 }
@@ -471,8 +474,6 @@ namespace minicombust::particles
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
         
-        rank_nodal_sizes[mpi_config->particle_flow_rank] = local_nodes_size;
-
         static uint64_t node_avg = 0;
         node_avg += node_to_position_map.size();
 
@@ -548,6 +549,8 @@ namespace minicombust::particles
         time_stats[time_count]   -= MPI_Wtime(); //2
 
         MPI_Request requests[2];
+
+
 
         MPI_Bcast (&local_nodes_size,           1,                 MPI_UINT64_T,                    0, mpi_config->particle_flow_world);
         resize_nodes_arrays(local_nodes_size); 
