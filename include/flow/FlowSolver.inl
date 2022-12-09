@@ -69,6 +69,7 @@ namespace minicombust::flow
         }
         neighbour_sizes[mpi_config->rank] = 0;
 
+
         // Send neighbours of cells back to ranks.
         MPI_Request scatter_requests[2];
         MPI_Iscatterv(neighbour_indexes, neighbour_sizes, neighbour_disps, MPI_UINT64_T, NULL, 0, MPI_UINT64_T, mpi_config->rank, mpi_config->world, &scatter_requests[0]);
@@ -109,20 +110,20 @@ namespace minicombust::flow
         
         time_stats[time_count++] += MPI_Wtime();
 
-        static int timestep_count = 0;
-        if (timestep_count++ == 1499)
-        {
-            double total_time = 0.0;
-            printf("\nUpdate Flow Field Communuication Timings\n");
+        // static int timestep_count = 0;
+        // if (timestep_count++ == 1499)
+        // {
+        //     double total_time = 0.0;
+        //     printf("\nUpdate Flow Field Communuication Timings\n");
 
-            for (int i = 0; i < time_count; i++)
-                total_time += time_stats[i];
-            for (int i = 0; i < time_count; i++)
-                printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
-            printf("Total time %f\n", total_time);
+        //     for (int i = 0; i < time_count; i++)
+        //         total_time += time_stats[i];
+        //     for (int i = 0; i < time_count; i++)
+        //         printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
+        //     printf("Total time %f\n", total_time);
 
-            printf("Reduced neighbour count = %f\n", (double)neighbour_avg    / 1500.);
-        }
+        //     printf("Reduced neighbour count = %f\n", (double)neighbour_avg    / 1500.);
+        // }
     } 
     
     template<typename T> void FlowSolver<T>::solve_combustion_equations()
@@ -164,7 +165,8 @@ namespace minicombust::flow
             double arr_usage_total = arr_usage;
             double stl_usage_total = stl_usage;
 
-            if ( mpi_config->particle_flow_rank == 0 )
+
+            if ( unordered_neighbours_set.size() != 0 )
             {
                 printf("                Flow     Array mem (GB) %8.3f Array mem total (GB) %8.3f STL mem (GB) %8.3f STL mem total (GB) %8.3f\n", arr_usage, arr_usage_total, stl_usage, stl_usage_total);
             }

@@ -69,14 +69,20 @@ namespace minicombust::utils
             z /= rhs.z;
 	        return *this;
         }
+
+        inline T &operator[](int i) 
+        {
+            if ( i == 0 )  return this->x;
+            if ( i == 1 )  return this->y;
+            if ( i == 2 )  return this->z;
+            printf("ERROR: Undefined struct index\n");
+            exit(1);
+        }
     };
 
     inline int get_prime_factors ( int n, int *prime_factors )
     {
-        const int max_factors = ceil(log2(n));
-        cout << n << " prime factors: ";
-        prime_factors = (int *)malloc(max_factors * sizeof(int));
-
+        // cout << n << " prime factors: " ;
 
         int nfactors = 0;
 
@@ -104,9 +110,8 @@ namespace minicombust::utils
         if (n > 2 || nfactors == 0)
             prime_factors[nfactors++] = n;
 
-        for (int x = 0;  x < nfactors; x++)
-            cout << prime_factors[x] << " ";
-        cout << endl;
+        // for (int x = 0;  x < nfactors; x++)
+        //     cout << prime_factors[x] << " ";
     
         return nfactors;
     }
@@ -158,6 +163,9 @@ namespace minicombust::utils
         vec<T> sum = {a.x + b.x, a.y + b.y, a.z + b.z};
         return sum;
     }
+    
+    
+
     template<typename T>
     inline vec<T> operator+(vec<T> a, T b) 
     {
