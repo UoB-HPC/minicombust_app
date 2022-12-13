@@ -42,7 +42,8 @@ int main (int argc, char ** argv)
     MPI_Comm_rank(mpi_config.world,  &mpi_config.rank);
     MPI_Comm_size(mpi_config.world,  &mpi_config.world_size);
     
-
+    
+    // Create Flow/Particle Datatypes
     MPI_Type_contiguous(sizeof(flow_aos<double>)/sizeof(double),     MPI_DOUBLE, &mpi_config.MPI_FLOW_STRUCTURE);
     MPI_Type_contiguous(sizeof(particle_aos<double>)/sizeof(double), MPI_DOUBLE, &mpi_config.MPI_PARTICLE_STRUCTURE);
     MPI_Type_commit(&mpi_config.MPI_FLOW_STRUCTURE);
@@ -58,31 +59,13 @@ int main (int argc, char ** argv)
     
 
     // Mesh Configuration
-    const vec<double>   box_dim                 = {0.10, 0.05, 0.05};
-    const uint64_t      modifier                = (argc > 3) ? atoi(argv[3]) : 10;
-    vec<uint64_t>       elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
+    const uint64_t modifier                = (argc > 3) ? atoi(argv[3]) : 10;
+    vec<double>    box_dim                 = {0.10, 0.05, 0.05};
+    vec<uint64_t>  elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
     
-    int flow_ranks     = full_world_size - atoi(argv[1]);
-    int *prime_factors = (int *)malloc(ceil(log2(flow_ranks)) * sizeof(int));
-    int nfactors       = get_prime_factors(flow_ranks, prime_factors);
+    int flow_ranks = full_world_size - atoi(argv[1]);
 
-    vec<uint64_t> flow_elements_per_dim;
-    vec<uint64_t> divide_dim = {1, 1, 1};
-    for ( int f = nfactors - 1; f >= 0; f-- )
-    {
-        flow_elements_per_dim = elements_per_dim / divide_dim;
-        int max_component = 0;
-        for ( int i = 1; i < 3; i++ )
-        {
-            if ( flow_elements_per_dim[i-1] < flow_elements_per_dim[i] )
-                max_component = i;
-        }
-
-        divide_dim[max_component]            = divide_dim[max_component]            * prime_factors[f];
-        flow_elements_per_dim[max_component] = flow_elements_per_dim[max_component] / prime_factors[f];
-    }
-
-
+    if (!one_flow_world && mpi_config.rank == 0) mpi_config.rank = -1;
     if (mpi_config.rank == 0 && one_flow_world)  
     {
         printf("Starting miniCOMBUST..\n");
@@ -90,13 +73,12 @@ int main (int argc, char ** argv)
         printf("MPI Configuration:\n\tFlow Ranks: %d\n\tParticle Ranks: %d\n", flow_ranks, mpi_config.particle_flow_world_size);
     }
 
-
     // Performance
     double setup_time = 0., program_time = 0., output_time = 0.;
 
     // Perform setup and benchmark cases
     MPI_Barrier(mpi_config.world); setup_time  -= MPI_Wtime(); 
-    Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim);
+    Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks);
 
     //Setup solvers
     ParticleSolver<double> *particle_solver = nullptr;
@@ -113,27 +95,7 @@ int main (int argc, char ** argv)
     }
     else
     {
-        MPI_Barrier(mpi_config.particle_flow_world);
-        int remainder;
-        for ( int i = 0; i < 3; i++ )
-        {
-            flow_elements_per_dim[i] = elements_per_dim[i] / divide_dim[i]; 
-            remainder                = elements_per_dim[i] % divide_dim[i]; 
-            if ( mpi_config.particle_flow_rank < remainder ) flow_elements_per_dim[i]++;
-        }
-        if (flow_elements_per_dim.x * flow_elements_per_dim.y * flow_elements_per_dim.z == 0)
-            printf("Warning! Flow Rank %d has 0 size mesh\n", mpi_config.particle_flow_rank);
-        // cout << " Flow Rank " << mpi_config.particle_flow_rank << ": " << print_vec(flow_elements_per_dim) << endl;
-        MPI_Barrier(mpi_config.particle_flow_world);
-        // if (!one_flow_world) 
-        // {
-        //     // printf("Rank %d stuck\n", temp_rank);
-        //     while(2) one_flow_world = false;
-        // }
-       
-
         mpi_config.particle_flow_world_size = 1;
-
         flow_solver     = new FlowSolver<double>(&mpi_config, mesh);
     }
     if (mpi_config.rank == 0 && one_flow_world)   cout << endl;
@@ -158,7 +120,7 @@ int main (int argc, char ** argv)
         if (mpi_config.solver_type == PARTICLE) 
             particle_solver->timestep();
         else
-            flow_solver->timestep();
+            if (one_flow_world) flow_solver->timestep();
         
         if (((int64_t)(t % output_iteration) == output_iteration - 1) && mpi_config.rank == 0)  
         {
