@@ -11,8 +11,8 @@ cd /home/br-hwaugh/repos/minicombust_app_tx2_gcc12/
 source env.sh
 
 module unload cray-python/3.8.5.1
-echo "Running: aprun -n MC_PROCS -N MC_PPN ./bin/minicombust $(( MC_PROCS - 1 )) MC_PARTICLES MC_CELLS -1"
-aprun -n MC_PROCS -N MC_PPN ./bin/minicombust $(( MC_PROCS - 1 )) MC_PARTICLES MC_CELLS -1
+echo "Running: aprun -n MC_PROCS -N MC_PPN ./bin/minicombust $(( 3 * MC_PROCS / 4 )) MC_PARTICLES MC_CELLS -1"
+aprun -n MC_PROCS -N MC_PPN ./bin/minicombust $(( 3 * MC_PROCS / 4 )) MC_PARTICLES MC_CELLS -1
 module load cray-python/3.8.5.1
 
 echo "Running: python analysis/get_roofline_cmd.py TX2 MC_NODESnodes MC_PPN | tee /tmp/roofline.log"

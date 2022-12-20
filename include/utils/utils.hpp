@@ -20,7 +20,6 @@
 #define PARTICLE_DEBUG 0
 #define LOGGER 1
 #define PARTICLE_SOLVER_DEBUG 0
-
 #define FLOW 0
 #define PARTICLE 1
 
@@ -114,6 +113,11 @@ namespace minicombust::utils
         //     cout << prime_factors[x] << " ";
     
         return nfactors;
+    }
+
+    inline int get_block_id(vec<uint64_t> pos, vec<uint64_t> dim)
+    {
+        return pos.z * dim.y * dim.x + pos.y * dim.x + pos.x;
     }
 
     template <typename T> 
@@ -359,74 +363,116 @@ namespace minicombust::utils
         int particle_flow_rank;
         int world_size;
         int particle_flow_world_size;
+
         MPI_Comm world;
         MPI_Comm particle_flow_world;
+
+        int      *one_flow_rank;
+        int      *one_flow_world_size;
+        MPI_Comm *one_flow_world;
+        
         int solver_type;
+        
         MPI_Datatype MPI_FLOW_STRUCTURE;
         MPI_Datatype MPI_PARTICLE_STRUCTURE;
         MPI_Op MPI_PARTICLE_OPERATION;
     };
 
-    inline void MPI_GatherSet (MPI_Config *mpi_config, unordered_set<uint64_t>& indexes_set, uint64_t *indexes, function<void(uint64_t, uint64_t **)> resize_fn)
+    inline void MPI_GatherSet (MPI_Config *mpi_config, uint64_t num_blocks, vector<unordered_set<uint64_t>>& indexes_sets, uint64_t **indexes, uint64_t *elements, function<void(uint64_t*, uint64_t ***)> resize_fn)
     { 
-        const int world_size = mpi_config->world_size;
-        int rank             = mpi_config->rank;
-        int alias_rank       = (rank + 1) % world_size;
+        const int *world_sizes = mpi_config->one_flow_world_size;
+        int       *ranks       = mpi_config->one_flow_rank;
+        int        alias_rank[num_blocks];
+        for ( uint64_t b = 0; b < num_blocks; b++ )
+            alias_rank[b] = (ranks[b] + 1) % world_sizes[b];
         
-        int rounded_world_size = (int)pow(2., ceil(log((double)world_size)/log(2.)));
-
-        uint64_t *curr_indexes = indexes; 
-
-        bool have_data = true;
-        for ( int level = 2; level <= rounded_world_size ; level *= 2)
+        int max_rounded_world_size = (mpi_config->solver_type == FLOW) ?  (int)pow(2., ceil(log((double)world_sizes[mpi_config->particle_flow_rank])/log(2.))) : 1;
+        MPI_Allreduce( MPI_IN_PLACE, &max_rounded_world_size, 1, MPI_INT, MPI_MAX, mpi_config->world);
+        
+        bool have_data[num_blocks]   = {true};
+        for ( uint64_t b = 0; b < num_blocks; b++ )
         {
-            if (have_data)
+            alias_rank[b]          = (ranks[b] + 1) % world_sizes[b];
+            have_data[b]           = ((mpi_config->solver_type == PARTICLE && indexes_sets[b].size()) || (mpi_config->solver_type == FLOW && (uint64_t)mpi_config->particle_flow_rank == b) );
+        }
+        uint64_t **curr_indexes = indexes; 
+
+        uint64_t send_counts[num_blocks];
+        uint64_t *recv_indexes[num_blocks];
+
+        for ( int level = 2; level <= max_rounded_world_size ; level *= 2)
+        {
+            for (uint64_t b = 0; b < num_blocks; b++)
             {
-                bool reciever        = !(alias_rank % level);
-                int alias_send_rank  = alias_rank + (level / 2);
-                int alias_recv_rank  = alias_rank - (level / 2);
-
-                if ( reciever )
+                if (have_data[b])
                 {
-                    if (alias_send_rank >= world_size)  continue;
+                    bool reciever         = !(alias_rank[b] % level);
+                    int  alias_send_rank  = alias_rank[b] + (level / 2);
+                    int  alias_recv_rank  = alias_rank[b] - (level / 2);
 
-                    uint64_t send_count;
-                    int send_rank = (alias_send_rank + world_size - 1) % world_size;
-                    // printf("LEVEL %d: Rank %d (AR %d) recv from %d\n", level, rank, alias_rank, send_rank);
-                
-                    MPI_Recv (&send_count, 1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
-                    resize_fn(indexes_set.size() + send_count, &curr_indexes);
-                    uint64_t *recv_indexes = curr_indexes + indexes_set.size();  // Make sure this is done after resizing to ensure memory is contiguous.
-                    MPI_Recv (recv_indexes, send_count, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
-                    for (uint64_t i = 0; i < send_count; i++)
+                    if (reciever)
                     {
-                        if ( !indexes_set.contains(recv_indexes[i]) )
+                        if (alias_send_rank >= world_sizes[b])  continue;
+
+                        int send_rank = (alias_send_rank + world_sizes[b] - 1) % world_sizes[b];
+                        // printf("LEVEL %d | Block %lu | Rank %d (AR %d) recv from %d \n", level, b, ranks[b], alias_rank[b], send_rank);
+
+                        uint64_t flow_block_index = mpi_config->solver_type == PARTICLE ? b : 0;
+                
+                        MPI_Recv (&send_counts[b], 1, MPI_UINT64_T, send_rank, level, mpi_config->one_flow_world[b], MPI_STATUS_IGNORE);
+                        elements[flow_block_index] = indexes_sets[flow_block_index].size() + send_counts[b];
+                        resize_fn(elements, &curr_indexes);
+                        recv_indexes[b] = curr_indexes[flow_block_index] + indexes_sets[flow_block_index].size();  // Make sure this is done after resizing to ensure correct pointer
+                        MPI_Recv (recv_indexes[b], send_counts[b], MPI_UINT64_T, send_rank, level, mpi_config->one_flow_world[b], MPI_STATUS_IGNORE);
+                    }
+                    else 
+                    {
+                        send_counts[b] = indexes_sets[b].size();
+                        int recv_rank = (alias_recv_rank + world_sizes[b] - 1) % world_sizes[b];
+                        // printf("LEVEL %d | Block %lu | Rank %d (AR %d) send to %d send_count %lu\n", level, b, ranks[b], alias_rank[b], recv_rank, send_counts[b]);
+
+                        MPI_Ssend (&send_counts[b],              1, MPI_UINT64_T, recv_rank, level, mpi_config->one_flow_world[b]);
+                        MPI_Ssend (curr_indexes[b], send_counts[b], MPI_UINT64_T, recv_rank, level, mpi_config->one_flow_world[b]);
+                        have_data[b] = false;
+                    }
+                }
+            }
+
+            for (uint64_t b = 0; b < num_blocks; b++)
+            {
+                if (have_data[b])
+                {
+                    bool reciever         = !(alias_rank[b] % level);
+                    int  alias_send_rank  = alias_rank[b] + (level / 2);
+
+                    if (reciever)
+                    {
+                        if (alias_send_rank >= world_sizes[b])  continue;
+
+                        uint64_t flow_block_index = mpi_config->solver_type == PARTICLE ? b : 0;
+                        // printf("LEVEL %d | Block %lu | Rank %d (AR %d) recv processing %lu elements \n", level, b, ranks[b], alias_rank[b], send_counts[b]);
+
+
+                        for (uint64_t i = 0; i < send_counts[b]; i++)
                         {
-                            curr_indexes[indexes_set.size()] = recv_indexes[i];
-                            indexes_set.insert(recv_indexes[i]);
+                            if ( !indexes_sets[flow_block_index].contains(recv_indexes[b][i]) )
+                            {
+                                curr_indexes[flow_block_index][indexes_sets[flow_block_index].size()] = recv_indexes[b][i];
+                                indexes_sets[flow_block_index].insert(recv_indexes[b][i]);
+                            }
                         }
                     }
                 }
-                else
-                {
-                    uint64_t send_count = indexes_set.size();
-                    int recv_rank = (alias_recv_rank + world_size - 1) % world_size;
-                    // printf("LEVEL %d: Rank %d (AR %d) send to %d\n", level, rank, alias_rank, recv_rank);
-
-                    MPI_Ssend (&send_count,           1, MPI_UINT64_T, recv_rank, level, mpi_config->world);
-                    MPI_Ssend (curr_indexes, send_count, MPI_UINT64_T, recv_rank, level, mpi_config->world);
-                    have_data = false;
-                }
-                // if (!have_data) printf("LEVEL %d: Rank %d HAVE DATA %d \n", level, rank, have_data);
             }
+            MPI_Barrier(mpi_config->world);
         }
     }
 
     template<typename T>
-    inline void MPI_GatherMap (MPI_Config *mpi_config, unordered_map<uint64_t, particle_aos<T>>& cell_particle_map, uint64_t *indexes, particle_aos<T> *indexed_fields, function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_fn)
+    inline void MPI_GatherMap (MPI_Config *mpi_config, uint64_t num_blocks, unordered_map<uint64_t, particle_aos<T>>& cell_particle_map, uint64_t *indexes, particle_aos<T> *indexed_fields, function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_fn)
     { 
-        const int world_size = mpi_config->world_size;
-        int rank             = mpi_config->rank;
+        const int world_size = mpi_config->one_flow_world_size[num_blocks - 1];
+        int rank             = mpi_config->one_flow_rank[num_blocks - 1];
         int alias_rank       = (rank + 1) % world_size;
         
         int rounded_world_size = (int)pow(2., ceil(log((double)world_size)/log(2.)));
@@ -450,13 +496,13 @@ namespace minicombust::utils
                     uint64_t send_count;
                     int send_rank = (alias_send_rank + world_size - 1) % world_size;
                     // printf("LEVEL %d: Rank %d (AR %d) recv from %d\n", level, rank, alias_rank, send_rank);
-                    MPI_Recv (&send_count, 1, MPI_UINT64_T, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    MPI_Recv (&send_count, 1, MPI_UINT64_T, send_rank, level, mpi_config->one_flow_world[num_blocks - 1], MPI_STATUS_IGNORE);
                     resize_fn(cell_particle_map.size() + send_count, &curr_indexes, &curr_indexed_fields);
                     uint64_t        *recv_indexes        = curr_indexes        + cell_particle_map.size();
                     particle_aos<T> *recv_indexed_fields = curr_indexed_fields + cell_particle_map.size();
 
-                    MPI_Recv (recv_indexes,        send_count, MPI_UINT64_T,                       send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
-                    MPI_Recv (recv_indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->world, MPI_STATUS_IGNORE);
+                    MPI_Recv (recv_indexes,        send_count, MPI_UINT64_T,                       send_rank, level, mpi_config->one_flow_world[num_blocks - 1], MPI_STATUS_IGNORE);
+                    MPI_Recv (recv_indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->one_flow_world[num_blocks - 1], MPI_STATUS_IGNORE);
 
                     for (uint64_t i = 0; i < send_count; i++)
                     {
@@ -480,9 +526,9 @@ namespace minicombust::utils
                     int recv_rank = (alias_recv_rank + world_size - 1) % world_size;
                     // printf("LEVEL %d: Rank %d (AR %d) send to %d\n", level, rank, alias_rank, recv_rank);
 
-                    MPI_Ssend (&send_count,                  1, MPI_UINT64_T,                       recv_rank, level, mpi_config->world);
-                    MPI_Ssend (curr_indexes,        send_count, MPI_UINT64_T,                       recv_rank, level, mpi_config->world);
-                    MPI_Ssend (curr_indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, mpi_config->world);
+                    MPI_Ssend (&send_count,                  1, MPI_UINT64_T,                       recv_rank, level, mpi_config->one_flow_world[num_blocks - 1]);
+                    MPI_Ssend (curr_indexes,        send_count, MPI_UINT64_T,                       recv_rank, level, mpi_config->one_flow_world[num_blocks - 1]);
+                    MPI_Ssend (curr_indexed_fields, send_count, mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, mpi_config->one_flow_world[num_blocks - 1]);
 
                     // printf("LEVEL %d: Rank %d (AR %d) send to %d\n", level, rank, alias_rank, recv_rank);
                     have_data = false;

@@ -74,6 +74,10 @@ namespace minicombust::geometry
             vec<T> *cell_centres;         // Cell centres   = {{0.5, 3.0, 4.0}, {2.5, 3.0, 4.0}, ...};
             uint64_t *cell_neighbours;    // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}}
             uint8_t *cells_per_point;     // Number of neighbouring cells for each point
+
+            uint64_t     num_blocks;
+            uint64_t     *block_element_disp;
+            vec<uint64_t> flow_block_dim;
  
             uint64_t *particles_per_point; // Number of particles in each cell
 
@@ -90,8 +94,8 @@ namespace minicombust::geometry
             flow_aos<T> *flow_terms;
             flow_aos<T> *flow_grad_terms;
 
-            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours) 
-            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours)
+            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours, uint64_t num_blocks, uint64_t *block_element_disp, vec<uint64_t> flow_block_dim) 
+            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours), num_blocks(num_blocks), block_element_disp(block_element_disp), flow_block_dim(flow_block_dim)
             {
                 // Allocate space for and calculate cell centre co-ordinates
                 const size_t mesh_cell_centre_size           = mesh_size * sizeof(vec<T>);
@@ -131,7 +135,7 @@ namespace minicombust::geometry
 
                 memset(cells_per_point, 0, cells_per_point_size);
                 #pragma ivdep
-                for (uint64_t c = 0; c < mesh_size; c++)
+                for (uint64_t c = 0; c < mesh_size; c++) // TODO: Doesn't work for distributed meshes.
                 {
                     #pragma ivdep
                     for (uint64_t n = 0; n < cell_size; n++)
@@ -211,6 +215,28 @@ namespace minicombust::geometry
             void clear_particles_per_point_array(void)
             {
                 memset(particles_per_point, 0, points_size * sizeof(uint64_t));
+            }
+
+            inline uint64_t get_block_id(const uint64_t cell)
+            {
+                uint64_t low  = 0;
+                uint64_t high = num_blocks;
+                
+
+                uint64_t block = UINT64_MAX;
+                while (block == UINT64_MAX)
+                {
+
+                    uint64_t mid = (low + high) / 2;
+
+                    if (low == mid)  block = mid;
+
+                    if ( cell >= block_element_disp[low] && cell < block_element_disp[mid] )
+                        high = mid;
+                    else
+                        low = mid;
+                }
+                return block;
             }
 
 

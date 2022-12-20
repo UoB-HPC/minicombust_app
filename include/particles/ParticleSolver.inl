@@ -99,138 +99,226 @@ namespace minicombust::particles
     {
         performance_logger.my_papi_start();
 
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_flow_field.\n");
-        int flow_rank = mpi_config->world_size - 1;
+        if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: update_flow_field.\n");
+        // printf("Rank %d Update flow\n", mpi_config->rank);
 
         uint64_t count = 0;
         for (auto& cell_it: cell_particle_field_map)
         {
             uint64_t cell = cell_it.first;
-            // cell_indexes[count++] = cell;
 
-            // Get 9 cells neighbours below
+            neighbours_sets[mesh->get_block_id(cell)].insert(cell); 
+
+            // Get 6 immediate neighbours
             const uint64_t below_neighbour                = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + DOWN_FACE];
-            const uint64_t below_left_neighbour           = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + LEFT_FACE];
-            const uint64_t below_right_neighbour          = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + RIGHT_FACE];
-            const uint64_t below_front_neighbour          = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + FRONT_FACE];
-            const uint64_t below_back_neighbour           = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + BACK_FACE];
-            const uint64_t below_left_front_neighbour     = mesh->cell_neighbours[below_left_neighbour*mesh->faces_per_cell   + FRONT_FACE];
-            const uint64_t below_left_back_neighbour      = mesh->cell_neighbours[below_left_neighbour*mesh->faces_per_cell   + BACK_FACE];
-            const uint64_t below_right_front_neighbour    = mesh->cell_neighbours[below_right_neighbour*mesh->faces_per_cell  + FRONT_FACE];
-            const uint64_t below_right_back_neighbour     = mesh->cell_neighbours[below_right_neighbour*mesh->faces_per_cell  + BACK_FACE];
-
-            // Get 9 cells neighbours above
             const uint64_t above_neighbour                = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + UP_FACE];
-            const uint64_t above_left_neighbour           = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + LEFT_FACE];
-            const uint64_t above_right_neighbour          = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + RIGHT_FACE];
-            const uint64_t above_front_neighbour          = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + FRONT_FACE];
-            const uint64_t above_back_neighbour           = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + BACK_FACE];
-            const uint64_t above_left_front_neighbour     = mesh->cell_neighbours[above_left_neighbour*mesh->faces_per_cell   + FRONT_FACE];
-            const uint64_t above_left_back_neighbour      = mesh->cell_neighbours[above_left_neighbour*mesh->faces_per_cell   + BACK_FACE];
-            const uint64_t above_right_front_neighbour    = mesh->cell_neighbours[above_right_neighbour*mesh->faces_per_cell  + FRONT_FACE];
-            const uint64_t above_right_back_neighbour     = mesh->cell_neighbours[above_right_neighbour*mesh->faces_per_cell  + BACK_FACE];
-
-            // Get 8 cells neighbours around
             const uint64_t around_left_neighbour          = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + LEFT_FACE];
             const uint64_t around_right_neighbour         = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + RIGHT_FACE];
             const uint64_t around_front_neighbour         = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + FRONT_FACE];
             const uint64_t around_back_neighbour          = mesh->cell_neighbours[cell*mesh->faces_per_cell                   + BACK_FACE];
-            const uint64_t around_left_front_neighbour    = mesh->cell_neighbours[around_left_neighbour*mesh->faces_per_cell  + FRONT_FACE];
-            const uint64_t around_left_back_neighbour     = mesh->cell_neighbours[around_left_neighbour*mesh->faces_per_cell  + BACK_FACE];
-            const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + FRONT_FACE];
-            const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + BACK_FACE];
 
-            neighbours_set.insert(cell); 
+            neighbours_sets[mesh->get_block_id(below_neighbour)].insert(below_neighbour);                
+            neighbours_sets[mesh->get_block_id(above_neighbour)].insert(above_neighbour);               
+            neighbours_sets[mesh->get_block_id(around_left_neighbour)].insert(around_left_neighbour);          
+            neighbours_sets[mesh->get_block_id(around_right_neighbour)].insert(around_right_neighbour);         
+            neighbours_sets[mesh->get_block_id(around_front_neighbour)].insert(around_front_neighbour);         
+            neighbours_sets[mesh->get_block_id(around_back_neighbour)].insert(around_back_neighbour);          
 
-            // Get 9 cells neighbours below
-            neighbours_set.insert(below_neighbour);                
-            neighbours_set.insert(below_left_neighbour);           
-            neighbours_set.insert(below_right_neighbour);          
-            neighbours_set.insert(below_front_neighbour);          
-            neighbours_set.insert(below_back_neighbour);           
-            neighbours_set.insert(below_left_front_neighbour);     
-            neighbours_set.insert(below_left_back_neighbour);      
-            neighbours_set.insert(below_right_front_neighbour);    
-            neighbours_set.insert(below_right_back_neighbour);     
 
-            // Get 9 cells neighbours above
-            neighbours_set.insert(above_neighbour);                
-            neighbours_set.insert(above_left_neighbour);           
-            neighbours_set.insert(above_right_neighbour);          
-            neighbours_set.insert(above_front_neighbour);          
-            neighbours_set.insert(above_back_neighbour);           
-            neighbours_set.insert(above_left_front_neighbour);     
-            neighbours_set.insert(above_left_back_neighbour);      
-            neighbours_set.insert(above_right_front_neighbour);    
-            neighbours_set.insert(above_right_back_neighbour);     
 
             // Get 8 cells neighbours around
-            neighbours_set.insert(around_left_neighbour);          
-            neighbours_set.insert(around_right_neighbour);         
-            neighbours_set.insert(around_front_neighbour);         
-            neighbours_set.insert(around_back_neighbour);          
-            neighbours_set.insert(around_left_front_neighbour);    
-            neighbours_set.insert(around_left_back_neighbour);     
-            neighbours_set.insert(around_right_front_neighbour);   
-            neighbours_set.insert(around_right_back_neighbour); 
+            if (around_left_neighbour != MESH_BOUNDARY)   
+            {
+                const uint64_t around_left_front_neighbour    = mesh->cell_neighbours[around_left_neighbour*mesh->faces_per_cell  + FRONT_FACE];
+                const uint64_t around_left_back_neighbour     = mesh->cell_neighbours[around_left_neighbour*mesh->faces_per_cell  + BACK_FACE];
+                neighbours_sets[mesh->get_block_id(around_left_front_neighbour)].insert(around_left_front_neighbour);    
+                neighbours_sets[mesh->get_block_id(around_left_back_neighbour)].insert(around_left_back_neighbour);     
+            }
+            if (around_right_neighbour != MESH_BOUNDARY)
+            {
+                const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + FRONT_FACE];
+                const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[around_right_neighbour*mesh->faces_per_cell + BACK_FACE];
+                neighbours_sets[mesh->get_block_id(around_right_front_neighbour)].insert(around_right_front_neighbour);   
+                neighbours_sets[mesh->get_block_id(around_right_back_neighbour)].insert(around_right_back_neighbour); 
+            }
+            if (below_neighbour != MESH_BOUNDARY)
+            {
+                // Get 8 cells around below cell
+                const uint64_t below_left_neighbour           = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + LEFT_FACE];
+                const uint64_t below_right_neighbour          = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + RIGHT_FACE];
+                const uint64_t below_front_neighbour          = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + FRONT_FACE];
+                const uint64_t below_back_neighbour           = mesh->cell_neighbours[below_neighbour*mesh->faces_per_cell        + BACK_FACE];
+                neighbours_sets[mesh->get_block_id(below_left_neighbour)].insert(below_left_neighbour);           
+                neighbours_sets[mesh->get_block_id(below_right_neighbour)].insert(below_right_neighbour);          
+                neighbours_sets[mesh->get_block_id(below_front_neighbour)].insert(below_front_neighbour);          
+                neighbours_sets[mesh->get_block_id(below_back_neighbour)].insert(below_back_neighbour);           
+                if (below_left_neighbour != MESH_BOUNDARY)
+                {
+                    const uint64_t below_left_front_neighbour     = mesh->cell_neighbours[below_left_neighbour*mesh->faces_per_cell   + FRONT_FACE];
+                    const uint64_t below_left_back_neighbour      = mesh->cell_neighbours[below_left_neighbour*mesh->faces_per_cell   + BACK_FACE];
+                    neighbours_sets[mesh->get_block_id(below_left_front_neighbour)].insert(below_left_front_neighbour);     
+                    neighbours_sets[mesh->get_block_id(below_left_back_neighbour)].insert(below_left_back_neighbour);      
+                }
+                if (below_right_neighbour != MESH_BOUNDARY)
+                {
+                    const uint64_t below_right_front_neighbour    = mesh->cell_neighbours[below_right_neighbour*mesh->faces_per_cell  + FRONT_FACE];
+                    const uint64_t below_right_back_neighbour     = mesh->cell_neighbours[below_right_neighbour*mesh->faces_per_cell  + BACK_FACE];
+                    neighbours_sets[mesh->get_block_id(below_right_front_neighbour)].insert(below_right_front_neighbour);    
+                    neighbours_sets[mesh->get_block_id(below_right_back_neighbour)].insert(below_right_back_neighbour); 
+                }
+            }
+            if (above_neighbour != MESH_BOUNDARY)
+            {
+                // Get 8 cells neighbours above
+                const uint64_t above_left_neighbour           = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + LEFT_FACE];
+                const uint64_t above_right_neighbour          = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + RIGHT_FACE];
+                const uint64_t above_front_neighbour          = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + FRONT_FACE];
+                const uint64_t above_back_neighbour           = mesh->cell_neighbours[above_neighbour*mesh->faces_per_cell        + BACK_FACE];
+                neighbours_sets[mesh->get_block_id(above_left_neighbour)].insert(above_left_neighbour);           
+                neighbours_sets[mesh->get_block_id(above_right_neighbour)].insert(above_right_neighbour);          
+                neighbours_sets[mesh->get_block_id(above_front_neighbour)].insert(above_front_neighbour);          
+                neighbours_sets[mesh->get_block_id(above_back_neighbour)].insert(above_back_neighbour);           
+                if (above_left_neighbour != MESH_BOUNDARY)
+                {
+                    const uint64_t above_left_front_neighbour     = mesh->cell_neighbours[above_left_neighbour*mesh->faces_per_cell   + FRONT_FACE];
+                    const uint64_t above_left_back_neighbour      = mesh->cell_neighbours[above_left_neighbour*mesh->faces_per_cell   + BACK_FACE];
+                    neighbours_sets[mesh->get_block_id(above_left_front_neighbour)].insert(above_left_front_neighbour);     
+                    neighbours_sets[mesh->get_block_id(above_left_back_neighbour)].insert(above_left_back_neighbour);      
+                }
+                if (above_right_neighbour != MESH_BOUNDARY)
+                {
+                    const uint64_t above_right_front_neighbour    = mesh->cell_neighbours[above_right_neighbour*mesh->faces_per_cell  + FRONT_FACE];
+                    const uint64_t above_right_back_neighbour     = mesh->cell_neighbours[above_right_neighbour*mesh->faces_per_cell  + BACK_FACE];
+                    neighbours_sets[mesh->get_block_id(above_right_front_neighbour)].insert(above_right_front_neighbour);    
+                    neighbours_sets[mesh->get_block_id(above_right_back_neighbour)].insert(above_right_back_neighbour);     
+                }
+            }
         }
 
-        count = 0;
-        neighbours_set.erase(MESH_BOUNDARY);
 
-        resize_cell_indexes (neighbours_set.size(), NULL);
-
-        for (auto& cell: neighbours_set)
+        uint64_t elements[mesh->num_blocks];
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
-            cell_indexes[count++] = cell;
+            neighbours_sets[b].erase(MESH_BOUNDARY);
+            elements[b] = neighbours_sets[b].size();
         }
-        
+
+        resize_cell_indexes (elements, NULL);
+
+        // printf("Rank %d Resized\n", mpi_config->rank);
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+        {
+            count = 0;
+            for (auto& cell: neighbours_sets[b])
+            {
+                cell_indexes[b][count++] = cell;
+            }
+        }
+
+        // printf("Rank %d compiled neighbours\n", mpi_config->rank);
         MPI_Barrier(mpi_config->world);
 
-        // Send local neighbours size
-        auto resize_cell_indexes_fn = [this] (uint64_t elements, uint64_t **indexes) { return resize_cell_indexes(elements, indexes); };
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+        {
+            neighbours_size[b] = neighbours_sets[b].size();
+            MPI_Comm_split(mpi_config->world, neighbours_size[b] ? 1 : 0, mpi_config->rank, &mpi_config->one_flow_world[b]); 
+            MPI_Comm_rank(mpi_config->one_flow_world[b], &mpi_config->one_flow_rank[b]);
+            MPI_Comm_size(mpi_config->one_flow_world[b], &mpi_config->one_flow_world_size[b]);
+            // printf("Rank %d block %ld elements %lu \n", mpi_config->rank, b, elements[b]);
+            if (neighbours_size[b] == 0)  mpi_config->one_flow_world_size[b] = 0; 
+        }
+        // printf("Rank %d created world\n", mpi_config->rank);
 
-        MPI_GatherSet ( mpi_config, neighbours_set, cell_indexes, resize_cell_indexes_fn);
+        // Send local neighbours size
+        auto resize_cell_indexes_fn = [this] (uint64_t *elements, uint64_t ***indexes) { return resize_cell_indexes(elements, indexes); };
+
+        MPI_GatherSet ( mpi_config, mesh->num_blocks, neighbours_sets, cell_indexes, elements, resize_cell_indexes_fn);
 
         // Get reduced neighbours size
-        MPI_Bcast(&neighbours_size,                1, MPI_UINT64_T, flow_rank, mpi_config->world);
-
-        rank_neighbours_size = neighbours_size / mpi_config->particle_flow_world_size;
-        if ((uint64_t)mpi_config->particle_flow_rank < (neighbours_size % (uint64_t)mpi_config->particle_flow_world_size))
-            rank_neighbours_size++;
-
-
-        resize_cell_flow (rank_neighbours_size);
-
-        //Get local portion of neighbour cells and cell fields
-        MPI_Request scatter_requests[3];
-        MPI_Iscatterv(NULL, NULL, NULL, MPI_UINT64_T,                   cell_indexes,       rank_neighbours_size, MPI_UINT64_T,                   flow_rank, mpi_config->world, &scatter_requests[0]);
-        MPI_Iscatterv(NULL, NULL, NULL, mpi_config->MPI_FLOW_STRUCTURE, cell_flow_aos,      rank_neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world, &scatter_requests[1]);
-        MPI_Iscatterv(NULL, NULL, NULL, mpi_config->MPI_FLOW_STRUCTURE, cell_flow_grad_aos, rank_neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, flow_rank, mpi_config->world, &scatter_requests[2]);
-        
-        // Write local particle fields to array
-        count = 0;
-        cell_particle_field_map.erase(MESH_BOUNDARY);
-        for (auto& cell_it: cell_particle_field_map)
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
-            cell_particle_indexes[count] = cell_it.first;
-            cell_particle_aos[count++]   = cell_it.second;
+            if (neighbours_size[b] != 0) MPI_Bcast(&neighbours_size[b], 1, MPI_UINT64_T, mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b]);
+            // printf("Rank %d block %lu bcast size %lu\n", mpi_config->rank, b, neighbours_size[b]);
         }
 
-        node_to_position_map.clear(); 
-        neighbours_set.clear();
+        // rank_neighbours_size = neighbours_size / mpi_config->particle_flow_world_size;
+        // if ((uint64_t)mpi_config->particle_flow_rank < (neighbours_size % (uint64_t)mpi_config->particle_flow_world_size))
+        //     rank_neighbours_size++;
+        // resize_cell_flow (rank_neighbours_size);
 
-        logger.interpolated_cells += ((float) neighbours_size) / ((float)num_timesteps);
+        //Get local portion of neighbour cells and cell fields
+        // MPI_Iscatterv(NULL, NULL, NULL, MPI_UINT64_T,                   cell_indexes,       rank_neighbours_size, MPI_UINT64_T,                   one_flow_root_rank, mpi_config->one_flow_world, &scatter_requests[0]);
+        // MPI_Iscatterv(NULL, NULL, NULL, mpi_config->MPI_FLOW_STRUCTURE, cell_flow_aos,      rank_neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, one_flow_root_rank, mpi_config->one_flow_world, &scatter_requests[1]);
+        // MPI_Iscatterv(NULL, NULL, NULL, mpi_config->MPI_FLOW_STRUCTURE, cell_flow_grad_aos, rank_neighbours_size, mpi_config->MPI_FLOW_STRUCTURE, one_flow_root_rank, mpi_config->one_flow_world, &scatter_requests[2]);
 
+        resize_nodes_arrays(neighbours_size); 
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+        {
+            if (neighbours_size[b] != 0)  
+            {
+                MPI_Ibcast(all_interp_node_indexes[b],     neighbours_size[b], MPI_UINT64_T,                   mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &scatter_requests[2 * b + 0]);
+                MPI_Ibcast(all_interp_node_flow_fields[b], neighbours_size[b], mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &scatter_requests[2 * b + 1]);
+            }
+        }
+        
+
+        node_to_field_address_map.clear(); // OVERLAPS
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+            neighbours_sets[b].clear();
+
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+        {
+            if (neighbours_size[b] != 0)
+            {
+                MPI_Wait(&scatter_requests[2 * b + 0], MPI_STATUS_IGNORE);
+                MPI_Wait(&scatter_requests[2 * b + 1], MPI_STATUS_IGNORE);
+            }
+        }
+
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+        {
+            for (uint64_t i = 0; i < neighbours_size[b]; i++)
+            {
+                node_to_field_address_map[all_interp_node_indexes[b][i]] = &all_interp_node_flow_fields[b][i];
+            }
+        }
+
+        // logger.interpolated_cells += ((float) neighbours_size) / ((float)num_timesteps);
 
         if (send_particle)
         {
+            // Write local particle fields to array
+            count = 0;
+            cell_particle_field_map.erase(MESH_BOUNDARY);
+            resize_cell_particle(cell_particle_field_map.size(), NULL, NULL);
+            for (auto& cell_it: cell_particle_field_map)
+            {
+                cell_particle_indexes[count] = cell_it.first;
+                cell_particle_aos[count++]   = cell_it.second;
+            }
+
             function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_cell_particles_fn = [this] (uint64_t elements, uint64_t **indexes, particle_aos<T> **cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
-            MPI_GatherMap (mpi_config, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, resize_cell_particles_fn);
+            MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, resize_cell_particles_fn);
         }
 
-        MPI_Waitall(3, scatter_requests, MPI_STATUSES_IGNORE);
+        // for (auto& node_it: node_to_field_address_map)
+        // {
+            // if (node_it.second->temp     != mesh->dummy_gas_tem)              
+            //     {printf("ERROR UPDATE FLOW: Wrong temp value %f at %lu\n", node_it.second->temp,           node_it.first); exit(1);}
+            // if (node_it.second->pressure != mesh->dummy_gas_pre)              
+            //     {printf("ERROR UPDATE FLOW: Wrong pres value %f at %lu\n", node_it.second->pressure,       node_it.first); exit(1);}
+            // if (node_it.second->vel.x != mesh->dummy_gas_vel.x) 
+            //     {printf("ERROR UPDATE FLOW: Wrong velo value {%.10f y z} at %lu\n", node_it.second->vel.x, node_it.first); exit(1);}
+        // }
+
+
         cell_particle_field_map.clear();
+        MPI_Barrier(mpi_config->world);
+
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+        {
+            MPI_Comm_free(&mpi_config->one_flow_world[b]);
+        }
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
     }
@@ -241,7 +329,7 @@ namespace minicombust::particles
         performance_logger.my_papi_start();
 
         // TODO: Reuse decaying particle space
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: particle_release.\n");
+        if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: particle_release.\n");
         particle_dist->emit_particles(particles, cell_particle_field_map, &logger);
 
         performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_time);
@@ -250,7 +338,7 @@ namespace minicombust::particles
     template<class T> 
     void ParticleSolver<T>::solve_spray_equations()
     {
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: solve_spray_equations.\n");
+        if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: solve_spray_equations.\n");
 
         const uint64_t cell_size       = mesh->cell_size; 
 
@@ -285,16 +373,15 @@ namespace minicombust::particles
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
 
-                // if (all_interp_node_flow_fields[node_to_position_map[node]].temp     != mesh->dummy_gas_tem)              
-                //     {printf("ERROR2: Wrong temp value %f at %lu\n", all_interp_node_flow_fields[node_to_position_map[node]].temp,     node); exit(1);}
-                // if (all_interp_node_flow_fields[node_to_position_map[node]].pressure != mesh->dummy_gas_pre)              
-                //     {printf("ERROR2: Wrong pres value %f at %lu\n", all_interp_node_flow_fields[node_to_position_map[node]].pressure, node); exit(1);}
-                // if (all_interp_node_flow_fields[node_to_position_map[node]].vel.x != mesh->dummy_gas_vel.x) 
-                //     {printf("ERROR2: Wrong velo value {%.10f y z} at %lu\n", all_interp_node_flow_fields[node_to_position_map[node]].vel.x, node); exit(1);}
-
-                interp_gas_vel        += weight           * all_interp_node_flow_fields[node_to_position_map[node]].vel;
-                interp_gas_pre        += weight_magnitude * all_interp_node_flow_fields[node_to_position_map[node]].pressure;
-                interp_gas_tem        += weight_magnitude * all_interp_node_flow_fields[node_to_position_map[node]].temp;
+                // if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
+                //     {printf("ERROR SOLVE SPRAY: Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
+                // if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
+                //     {printf("ERROR SOLVE SPRAY: Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
+                // if (node_to_field_address_map[node]->vel.x != mesh->dummy_gas_vel.x) 
+                //     {printf("ERROR SOLVE SPRAY: Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
+                interp_gas_vel        += weight           * node_to_field_address_map[node]->vel;
+                interp_gas_pre        += weight_magnitude * node_to_field_address_map[node]->pressure;
+                interp_gas_tem        += weight_magnitude * node_to_field_address_map[node]->temp;
             }
 
             particles[p].gas_vel           = interp_gas_vel / total_vector_weight;
@@ -342,7 +429,7 @@ namespace minicombust::particles
     {
         performance_logger.my_papi_start();
 
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_particle_positions.\n");
+        if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: update_particle_positions.\n");
         const uint64_t particles_size  = particles.size();
 
         // Update particle positions
@@ -376,13 +463,13 @@ namespace minicombust::particles
     template<class T>
     void ParticleSolver<T>::update_spray_source_terms()
     {
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: update_spray_source_terms.\n");
+        if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: update_spray_source_terms.\n");
     }
 
     template<class T> 
     void ParticleSolver<T>::map_source_terms_to_grid()
     {
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: map_source_terms_to_grid.\n");
+        if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: map_source_terms_to_grid.\n");
     }
 
     template<class T> 
@@ -390,197 +477,199 @@ namespace minicombust::particles
     {
         performance_logger.my_papi_start();
 
-        if (PARTICLE_SOLVER_DEBUG)  printf("\tRunning fn: interpolate_data.\n");
+        if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: interpolate_data.\n");
 
-        const uint64_t cell_size  = mesh->cell_size; 
+    //     const uint64_t cell_size  = mesh->cell_size; 
 
-        const T node_neighbours       = 8; // Cube specific
+    //     const T node_neighbours       = 8; // Cube specific
 
-        // Faster if particles in some of the cells
-        static int time = 0;
-        int time_count = 0;
+    //     // Faster if particles in some of the cells
+    //     static int time = 0;
+    //     int time_count = 0;
 
-        time++;
+    //     time++;
 
-        time_stats[time_count]   -= MPI_Wtime(); // 0
+    //     time_stats[time_count]   -= MPI_Wtime(); // 0
 
-        uint64_t local_nodes_size = 0;
-        resize_nodes_arrays(rank_neighbours_size * node_neighbours);
+    //     uint64_t local_nodes_size = 0;
 
-        // Process the allocation of cell fields (NOTE: Imperfect solution near edges. Fix by doing interpolation on flow side.)
-        #pragma ivdep
-        for (uint64_t i = 0; i < rank_neighbours_size; i++)
-        {
-            const uint64_t c = cell_indexes[i];
+    //     // Process the allocation of cell fields (NOTE: Imperfect solution near edges. Fix by doing interpolation on flow side.)
+    //     #pragma ivdep
+    //     for (uint64_t i = 0; i < rank_neighbours_size; i++)
+    //     {
+    //         const uint64_t c = cell_indexes[i];
 
 
-            const uint64_t *cell             = mesh->cells + c*cell_size;
-            const vec<T> cell_centre         = mesh->cell_centres[c];
+    //         const uint64_t *cell             = mesh->cells + c*cell_size;
+    //         const vec<T> cell_centre         = mesh->cell_centres[c];
 
-            const flow_aos<T> flow_term      = cell_flow_aos[i];      
-            const flow_aos<T> flow_grad_term = cell_flow_grad_aos[i]; 
+    //         const flow_aos<T> flow_term      = cell_flow_aos[i];      
+    //         const flow_aos<T> flow_grad_term = cell_flow_grad_aos[i]; 
 
-            // USEFUL ERROR CHECKING!
-            // if (flow_term.temp     != mesh->dummy_gas_tem) {printf("ERROR: Wrong temp value\n"); exit(1);}
-            // if (flow_term.pressure != mesh->dummy_gas_pre) {printf("ERROR: Wrong pres value\n"); exit(1);}
-            // if (flow_term.vel      != mesh->dummy_gas_vel) {printf("ERROR: Wrong velo value\n"); exit(1);}
+    //         // USEFUL ERROR CHECKING!
+    //         // if (flow_term.temp     != mesh->dummy_gas_tem) {printf("INTERP NODAL ERROR: Wrong temp value\n"); exit(1);}
+    //         // if (flow_term.pressure != mesh->dummy_gas_pre) {printf("INTERP NODAL ERROR: Wrong pres value\n"); exit(1);}
+    //         // if (flow_term.vel.x      != mesh->dummy_gas_vel.x) {printf("INTERP NODAL ERROR: Wrong velo value\n"); exit(1);}
 
-            // if (flow_grad_term.temp     != 0.)                 {printf("ERROR: Wrong temp grad value\n"); exit(1);}
-            // if (flow_grad_term.pressure != 0.)                 {printf("ERROR: Wrong pres grad value\n"); exit(1);}
-            // if (flow_grad_term.vel      != vec<T>{0., 0., 0.}) {printf("ERROR: Wrong velo grad value\n"); exit(1);}
+    //         // if (flow_grad_term.temp     != 0.)                 {printf("INTERP NODAL ERROR: Wrong temp grad value\n"); exit(1);}
+    //         // if (flow_grad_term.pressure != 0.)                 {printf("INTERP NODAL ERROR: Wrong pres grad value\n"); exit(1);}
+    //         // if (flow_grad_term.vel.x    != 0.) {printf("INTERP NODAL ERROR: Wrong velo grad value\n"); exit(1);}
 
-            #pragma ivdep
-            for (uint64_t n = 0; n < cell_size; n++)
-            {
-                const uint64_t node_id = cell[n];
-                const vec<T> direction             = mesh->points[node_id] - cell_centre;
+    //         #pragma ivdep
+    //         for (uint64_t n = 0; n < cell_size; n++)
+    //         {
+    //             const uint64_t node_id = cell[n];
+    //             const vec<T> direction             = mesh->points[node_id] - cell_centre;
 
-                if (node_to_position_map.contains(node_id))
-                {
-                    all_interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
-                    all_interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-                    all_interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
-                }
-                else
-                {
-                    const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id];
+    //             if (node_to_position_map.contains(node_id))
+    //             {
+    //                 all_interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
+    //                 all_interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
+    //                 all_interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
+    //                 // if (node_id == 16)
+    //                 //     printf("rank %d node cell %d flow size %f temp %f\n", mpi_config->rank, c, all_interp_node_flow_fields[node_to_position_map[16]].temp , flow_term.temp);
+    //             }
+    //             else
+    //             {
+    //                 const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id];
 
-                    node_to_position_map[node_id] = local_nodes_size;
+    //                 node_to_position_map[node_id] = local_nodes_size;
                     
-                    flow_aos<T> temp_term;
-                    temp_term.vel      = ((mesh->dummy_gas_vel * boundary_neighbours) + flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
-                    temp_term.pressure = ((mesh->dummy_gas_pre * boundary_neighbours) + flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-                    temp_term.temp     = ((mesh->dummy_gas_tem * boundary_neighbours) + flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
+    //                 flow_aos<T> temp_term;
+    //                 temp_term.vel      = ((mesh->dummy_gas_vel * boundary_neighbours) + flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
+    //                 temp_term.pressure = ((mesh->dummy_gas_pre * boundary_neighbours) + flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
+    //                 temp_term.temp     = ((mesh->dummy_gas_tem * boundary_neighbours) + flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
                     
-                    all_interp_node_indexes[local_nodes_size]     = node_id;
-                    all_interp_node_flow_fields[local_nodes_size] = temp_term;
+    //                 all_interp_node_indexes[local_nodes_size]     = node_id;
+    //                 all_interp_node_flow_fields[local_nodes_size] = temp_term;
 
+    //                 // if (node_id == 16)
+    //                 //     printf("rank %d node cell %d flow size %f boundary_neighbours %f temp %f\n", mpi_config->rank, c, all_interp_node_flow_fields[node_to_position_map[16]].temp , boundary_neighbours, temp_term.temp);
 
-                    local_nodes_size++;
-                }
-            }
-        }
+    //                 local_nodes_size++;
+    //             }
+    //         }
+    //     }
 
-        // USEFUL FOR ERROR CHECKING
-        // for (uint64_t i = 0; i < mesh->mesh_size * cell_size; i++ )
-        // {
-        //     if (mpi_config->rank == 0 && mesh->cells[i] == 516076)
-        //     {
-        //         printf("cell found %lu per point %d \n", i / 8, mesh->cells_per_point[516076] );
-        //     }
-        // }
-        // if (node_to_position_map.contains(516076)) printf("rank %d node flow size %f\n", mpi_config->rank, all_interp_node_flow_fields[node_to_position_map[516076]].temp );
+    //     // USEFUL FOR ERROR CHECKING
+    //     // for (uint64_t i = 0; i < mesh->mesh_size * cell_size; i++ )
+    //     // {
+    //     //     if (mpi_config->rank == 0 && mesh->cells[i] == 16)
+    //     //     {
+    //     //         printf("cell found %lu for point %d \n", i / 8, mesh->cells_per_point[16] );
+    //     //     }
+    //     // }
+    //     // if (node_to_position_map.contains(16)) printf("rank %d node flow size %f\n", mpi_config->rank, all_interp_node_flow_fields[node_to_position_map[16]].temp );
 
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //1
+    //     time_stats[time_count++] += MPI_Wtime();
+    //     time_stats[time_count]   -= MPI_Wtime(); //1
         
-        static uint64_t node_avg = 0;
-        node_avg += node_to_position_map.size();
+    //     static uint64_t node_avg = 0;
+    //     node_avg += node_to_position_map.size();
 
 
-        const uint64_t rank = mpi_config->particle_flow_rank;
+    //     const uint64_t rank = mpi_config->particle_flow_rank;
 
-        int max_levels = 1;
-        while (max_levels < mpi_config->particle_flow_world_size)
-            max_levels *= 2;
+    //     int max_levels = 1;
+    //     while (max_levels < mpi_config->particle_flow_world_size)
+    //         max_levels *= 2;
 
-        bool have_data = true;
-        for ( int level = 2; level <= max_levels ; level *= 2)
-        {
+    //     bool have_data = true;
+    //     for ( int level = 2; level <= max_levels ; level *= 2)
+    //     {
 
-            if (have_data)
-            {
-                bool reciever = ((rank % level) == 0) ? true : false;
-                if ( reciever )
-                {
-                    uint64_t send_rank = rank + (level / 2);
-                    if (send_rank >= (uint64_t) mpi_config->particle_flow_world_size) {
-                        continue;
-                    }
+    //         if (have_data)
+    //         {
+    //             bool reciever = ((rank % level) == 0) ? true : false;
+    //             if ( reciever )
+    //             {
+    //                 uint64_t send_rank = rank + (level / 2);
+    //                 if (send_rank >= (uint64_t) mpi_config->particle_flow_world_size) {
+    //                     continue;
+    //                 }
 
                 
-                    uint64_t send_count;
+    //                 uint64_t send_count;
 
-                    MPI_Recv (&send_count,     1,          MPI_UINT64_T,                   send_rank, level, mpi_config->particle_flow_world, MPI_STATUS_IGNORE);
-                    // printf("LEVEL %d: Rank %lu recv from %lu size %lu local size %lu\n", level, rank, send_rank, send_count, local_nodes_size);
-                    resize_nodes_arrays(local_nodes_size + send_count); // RESIZE within comms loop
-                    uint64_t    *recv_indexes    = all_interp_node_indexes     + local_nodes_size;
-                    flow_aos<T> *recv_flow_terms = all_interp_node_flow_fields + local_nodes_size;
+    //                 MPI_Recv (&send_count,     1,          MPI_UINT64_T,                   send_rank, level, mpi_config->particle_flow_world, MPI_STATUS_IGNORE);
+    //                 // printf("LEVEL %d: Rank %lu recv from %lu size %lu local size %lu\n", level, rank, send_rank, send_count, local_nodes_size);
+    //                 resize_nodes_arrays(local_nodes_size + send_count); // RESIZE within comms loop
+    //                 uint64_t    *recv_indexes    = all_interp_node_indexes     + local_nodes_size;
+    //                 flow_aos<T> *recv_flow_terms = all_interp_node_flow_fields + local_nodes_size;
 
-                    MPI_Recv (recv_indexes,    send_count, MPI_UINT64_T,                   send_rank, level, mpi_config->particle_flow_world, MPI_STATUS_IGNORE);
-                    MPI_Recv (recv_flow_terms, send_count, mpi_config->MPI_FLOW_STRUCTURE, send_rank, level, mpi_config->particle_flow_world, MPI_STATUS_IGNORE);
+    //                 MPI_Recv (recv_indexes,    send_count, MPI_UINT64_T,                   send_rank, level, mpi_config->particle_flow_world, MPI_STATUS_IGNORE);
+    //                 MPI_Recv (recv_flow_terms, send_count, mpi_config->MPI_FLOW_STRUCTURE, send_rank, level, mpi_config->particle_flow_world, MPI_STATUS_IGNORE);
 
-                    for (uint64_t i = 0; i < send_count; i++)
-                    {
-                        if ( node_to_position_map.contains(recv_indexes[i]) ) // Aggregate terms
-                        {
-                            all_interp_node_flow_fields[node_to_position_map[recv_indexes[i]]].vel      += recv_flow_terms[i].vel;
-                            all_interp_node_flow_fields[node_to_position_map[recv_indexes[i]]].temp     += recv_flow_terms[i].temp;
-                            all_interp_node_flow_fields[node_to_position_map[recv_indexes[i]]].pressure += recv_flow_terms[i].pressure;
+    //                 for (uint64_t i = 0; i < send_count; i++)
+    //                 {
+    //                     if ( node_to_position_map.contains(recv_indexes[i]) ) // Aggregate terms
+    //                     {
+    //                         all_interp_node_flow_fields[node_to_position_map[recv_indexes[i]]].vel      += recv_flow_terms[i].vel;
+    //                         all_interp_node_flow_fields[node_to_position_map[recv_indexes[i]]].temp     += recv_flow_terms[i].temp;
+    //                         all_interp_node_flow_fields[node_to_position_map[recv_indexes[i]]].pressure += recv_flow_terms[i].pressure;
 
-                        }
-                        else // Create new entry
-                        { 
-                            all_interp_node_indexes[local_nodes_size]     = recv_indexes[i];
-                            all_interp_node_flow_fields[local_nodes_size] = recv_flow_terms[i];
+    //                     }
+    //                     else // Create new entry
+    //                     { 
+    //                         all_interp_node_indexes[local_nodes_size]     = recv_indexes[i];
+    //                         all_interp_node_flow_fields[local_nodes_size] = recv_flow_terms[i];
                     
-                            node_to_position_map[recv_indexes[i]] = local_nodes_size;
-                            local_nodes_size++;
-                        }
+    //                         node_to_position_map[recv_indexes[i]] = local_nodes_size;
+    //                         local_nodes_size++;
+    //                     }
 
-                    }
-                    // if (node_to_position_map.contains(516076)) printf("LEVEL %d: RANK %d RECIEVED THE PAYLOAD %f %p\n", level, mpi_config->rank, all_interp_node_flow_fields[node_to_position_map[516076]].temp, &all_interp_node_flow_fields[node_to_position_map[516076]]);
-                }
-                else
-                {
-                    uint64_t recv_rank  = rank - (level / 2);
-                    // printf("LEVEL %d: Rank %lu send to %lu size %lu\n", level, rank, recv_rank, local_nodes_size);
+    //                 }
+    //                 // if (node_to_position_map.contains(516076)) printf("LEVEL %d: RANK %d RECIEVED THE PAYLOAD %f %p\n", level, mpi_config->rank, all_interp_node_flow_fields[node_to_position_map[516076]].temp, &all_interp_node_flow_fields[node_to_position_map[516076]]);
+    //             }
+    //             else
+    //             {
+    //                 uint64_t recv_rank  = rank - (level / 2);
+    //                 // printf("LEVEL %d: Rank %lu send to %lu size %lu\n", level, rank, recv_rank, local_nodes_size);
 
-                    MPI_Ssend (&local_nodes_size,           1,                MPI_UINT64_T,                   recv_rank, level, mpi_config->particle_flow_world);
-                    MPI_Ssend (all_interp_node_indexes,     local_nodes_size, MPI_UINT64_T,                   recv_rank, level, mpi_config->particle_flow_world);
-                    MPI_Ssend (all_interp_node_flow_fields, local_nodes_size, mpi_config->MPI_FLOW_STRUCTURE, recv_rank, level, mpi_config->particle_flow_world);
+    //                 MPI_Ssend (&local_nodes_size,           1,                MPI_UINT64_T,                   recv_rank, level, mpi_config->particle_flow_world);
+    //                 MPI_Ssend (all_interp_node_indexes,     local_nodes_size, MPI_UINT64_T,                   recv_rank, level, mpi_config->particle_flow_world);
+    //                 MPI_Ssend (all_interp_node_flow_fields, local_nodes_size, mpi_config->MPI_FLOW_STRUCTURE, recv_rank, level, mpi_config->particle_flow_world);
                     
-                    have_data = false;
-                }
-            }
-        }
+    //                 have_data = false;
+    //             }
+    //         }
+    //     }
 
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //2
+    //     time_stats[time_count++] += MPI_Wtime();
+    //     time_stats[time_count]   -= MPI_Wtime(); //2
 
-        MPI_Request requests[2];
+    //     MPI_Request requests[2];
 
 
+    //     MPI_Bcast (&local_nodes_size,           1,                 MPI_UINT64_T,                    0, mpi_config->particle_flow_world);
+    //     resize_nodes_arrays(local_nodes_size); 
+    //     MPI_Ibcast (all_interp_node_indexes,     local_nodes_size,  MPI_UINT64_T,                   0, mpi_config->particle_flow_world, &requests[0]);
+    //     MPI_Ibcast (all_interp_node_flow_fields, local_nodes_size,  mpi_config->MPI_FLOW_STRUCTURE, 0, mpi_config->particle_flow_world, &requests[1]);
+    //     MPI_Wait(&requests[0], MPI_STATUS_IGNORE);
 
-        MPI_Bcast (&local_nodes_size,           1,                 MPI_UINT64_T,                    0, mpi_config->particle_flow_world);
-        resize_nodes_arrays(local_nodes_size); 
-        MPI_Ibcast (all_interp_node_indexes,     local_nodes_size,  MPI_UINT64_T,                   0, mpi_config->particle_flow_world, &requests[0]);
-        MPI_Ibcast (all_interp_node_flow_fields, local_nodes_size,  mpi_config->MPI_FLOW_STRUCTURE, 0, mpi_config->particle_flow_world, &requests[1]);
-        MPI_Wait(&requests[0], MPI_STATUS_IGNORE);
+    //     for (uint64_t i = 0; i < local_nodes_size; i++)
+    //     {
+    //         node_to_position_map[all_interp_node_indexes[i]] = i;
+    //     }
 
-        for (uint64_t i = 0; i < local_nodes_size; i++)
-        {
-            node_to_position_map[all_interp_node_indexes[i]] = i;
-        }
+    //     MPI_Wait(&requests[1], MPI_STATUS_IGNORE);
 
-        MPI_Wait(&requests[1], MPI_STATUS_IGNORE);
+    //     time_stats[time_count++] += MPI_Wtime();
 
-        time_stats[time_count++] += MPI_Wtime();
+    //     if ( time == 1500 )
+    //     {
+    //         if (mpi_config->rank == 0)
+    //         {
+    //             double total_time = 0.0;
+    //             printf("\nInterpolate Nodal Timings:\n");
 
-        if ( time == 1500 )
-        {
-            if (mpi_config->rank == 0)
-            {
-                double total_time = 0.0;
-                printf("\nInterpolate Nodal Timings:\n");
-
-                for (int i = 0; i < time_count; i++)
-                    total_time += time_stats[i];
-                for (int i = 0; i < time_count; i++)
-                    printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
-                printf("Total time %f\n", total_time);
-            }
-        }
+    //             for (int i = 0; i < time_count; i++)
+    //                 total_time += time_stats[i];
+    //             for (int i = 0; i < time_count; i++)
+    //                 printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
+    //             printf("Total time %f\n", total_time);
+    //         }
+    //     }
         performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_time);
     }
 
@@ -590,7 +679,7 @@ namespace minicombust::particles
         static int count = 0;
         const int  comms_timestep = 1;
 
-        if (PARTICLE_SOLVER_DEBUG)  printf("Start particle timestep\n");
+        if (PARTICLE_SOLVER_DEBUG )  printf("Start particle timestep\n");
         if ( (count % 100) == 0 )
         {
             uint64_t particles_in_simulation = particles.size();
@@ -616,11 +705,11 @@ namespace minicombust::particles
         if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
         {
             update_flow_field(count > 0);
-            interpolate_nodal_data(); 
+            // interpolate_nodal_data(); 
         }
         else if (mpi_config->world_size == 1)
         {
-            interpolate_nodal_data(); 
+            // interpolate_nodal_data(); 
         }
         solve_spray_equations();
         update_particle_positions();
@@ -629,6 +718,6 @@ namespace minicombust::particles
 
         count++;
 
-        if (PARTICLE_SOLVER_DEBUG)  printf("Stop particle timestep\n");
+        if (PARTICLE_SOLVER_DEBUG )  printf("Stop particle timestep\n");
     }
 }   // namespace minicombust::particles 

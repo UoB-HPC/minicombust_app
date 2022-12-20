@@ -213,7 +213,6 @@ namespace minicombust::particles
                 for (uint64_t p = 0; p < particles_per_timestep + remainder; p++)
                 {
                     const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), start_cell, logger);
-
                     if (particle.decayed) 
                     {
                         continue;
