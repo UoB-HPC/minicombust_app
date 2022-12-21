@@ -17,8 +17,8 @@ namespace minicombust::flow
             T combustion_field;
             T flow_field;
 
-            vector<unordered_set<uint64_t>>          unordered_neighbours_set;
-            unordered_map<uint64_t, particle_aos<T>> cell_particle_field_map;
+            vector<unordered_set<uint64_t>>                  unordered_neighbours_set;
+            vector<unordered_map<uint64_t, particle_aos<T>>> cell_particle_field_map;
             unordered_map<uint64_t, uint64_t>        node_to_position_map;
 
             int *neighbour_sizes;
@@ -72,7 +72,7 @@ namespace minicombust::flow
                 neighbour_disps    = (int *)     malloc(sizeof(int) * mpi_config->world_size);
                 
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
-
+                cell_particle_field_map.push_back(unordered_map<uint64_t, particle_aos<T>>());
 
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
@@ -102,17 +102,17 @@ namespace minicombust::flow
                 }
             }
 
-            void resize_cell_particle (uint64_t elements, uint64_t **new_cell_indexes, particle_aos<T> **new_cell_particle)
+            void resize_cell_particle (uint64_t *elements, uint64_t ***new_cell_indexes, particle_aos<T> ***new_cell_particle)
             {
-                resize_cell_indexes(&elements, &new_cell_indexes);
-                while ( cell_particle_array_size < ((size_t) elements * sizeof(particle_aos<T>)) )
+                resize_cell_indexes(elements, new_cell_indexes);
+                while ( cell_particle_array_size < ((size_t) *elements * sizeof(particle_aos<T>)) )
                 {
                     cell_particle_array_size *= 2;
 
                     cell_particle_aos = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
                 }
 
-                if (new_cell_particle != NULL)  *new_cell_particle = cell_particle_aos;
+                if (*new_cell_particle != NULL)  **new_cell_particle = cell_particle_aos;
             }
 
             void resize_nodes_arrays (uint64_t elements)

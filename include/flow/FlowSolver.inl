@@ -32,11 +32,11 @@ namespace minicombust::flow
             // USEFUL ERROR CHECKING!
             // if (flow_term.temp     != mesh->dummy_gas_tem) {printf("INTERP NODAL ERROR: Wrong temp value\n"); exit(1);}
             // if (flow_term.pressure != mesh->dummy_gas_pre) {printf("INTERP NODAL ERROR: Wrong pres value\n"); exit(1);}
-            // if (flow_term.vel.x      != mesh->dummy_gas_vel.x) {printf("INTERP NODAL ERROR: Wrong velo value\n"); exit(1);}
+            // if (flow_term.vel.x    != mesh->dummy_gas_vel.x) {printf("INTERP NODAL ERROR: Wrong velo value\n"); exit(1);}
 
             // if (flow_grad_term.temp     != 0.)                 {printf("INTERP NODAL ERROR: Wrong temp grad value\n"); exit(1);}
             // if (flow_grad_term.pressure != 0.)                 {printf("INTERP NODAL ERROR: Wrong pres grad value\n"); exit(1);}
-            // if (flow_grad_term.vel.x    != 0.) {printf("INTERP NODAL ERROR: Wrong velo grad value\n"); exit(1);}
+            // if (flow_grad_term.vel.x    != 0.)                 {printf("INTERP NODAL ERROR: Wrong velo grad value\n"); exit(1);}
 
             resize_nodes_arrays(node_to_position_map.size() + cell_size );
 
@@ -74,6 +74,21 @@ namespace minicombust::flow
                 }
             }
         }
+
+        // Useful for checking errors and comms
+        for (auto& node_it: node_to_position_map)
+        {
+            // if (interp_node_flow_fields[node_it.second].temp     != mesh->dummy_gas_tem)              
+            //     {printf("ERROR UPDATE FLOW: Wrong temp value %f at %lu\n", interp_node_flow_fields[node_it.second].temp,           interp_node_indexes[node_it.second]); exit(1);}
+            // if (interp_node_flow_fields[node_it.second].pressure != mesh->dummy_gas_pre)              
+            //     {printf("ERROR UPDATE FLOW: Wrong pres value %f at %lu\n", interp_node_flow_fields[node_it.second].pressure,       interp_node_indexes[node_it.second]); exit(1);}
+            // if (interp_node_flow_fields[node_it.second].vel.x != mesh->dummy_gas_vel.x) 
+            //     {printf("ERROR UPDATE FLOW: Wrong velo value {%.10f y z} at %lu\n", interp_node_flow_fields[node_it.second].vel.x, interp_node_indexes[node_it.second]); exit(1);}
+
+            interp_node_flow_fields[node_it.second].temp = mesh->dummy_gas_tem;
+            interp_node_flow_fields[node_it.second].pressure = mesh->dummy_gas_pre;
+            interp_node_flow_fields[node_it.second].vel = mesh->dummy_gas_vel;
+        }
     }
     
     template<typename T> void FlowSolver<T>::update_flow_field(bool receive_particle_fields)
@@ -83,7 +98,7 @@ namespace minicombust::flow
         int time_count = 0;
         time_stats[time_count]  -= MPI_Wtime(); //0
         
-        cell_particle_field_map.clear();
+        cell_particle_field_map[0].clear();
         unordered_neighbours_set[0].clear();
         node_to_position_map.clear();
 
@@ -99,6 +114,7 @@ namespace minicombust::flow
             MPI_Comm_rank(mpi_config->one_flow_world[b], &mpi_config->one_flow_rank[b]);
             MPI_Comm_size(mpi_config->one_flow_world[b], &mpi_config->one_flow_world_size[b]);
         }
+        // printf("Flow rank %d world size %d\n", mpi_config->rank, mpi_config->one_flow_world_size[mpi_config->particle_flow_rank]);
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
@@ -175,16 +191,17 @@ namespace minicombust::flow
         // }
 
         // MPI_Iscatterv(neighbour_flow_grad_aos_buffer, neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank, mpi_config->one_flow_world, &scatter_requests[1]);
-        if (neighbour_point_size != 0) MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //6
 
         if (receive_particle_fields)
         {
-            function<void(uint64_t, uint64_t **, particle_aos<T> **)> resize_cell_particles_fn = [this] (uint64_t elements, uint64_t **indexes, particle_aos<T> **cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
-            if (mpi_config->particle_flow_rank == mesh->num_blocks-1)  MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, neighbour_indexes, cell_particle_aos, resize_cell_particles_fn);
+            function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
+            MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, &neighbour_indexes, &cell_particle_aos, &elements, resize_cell_particles_fn);
         }
+        
+        if (neighbour_point_size != 0) MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
 
 
         MPI_Barrier(mpi_config->world);
