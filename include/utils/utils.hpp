@@ -19,6 +19,7 @@
 
 #define PARTICLE_DEBUG 0
 #define LOGGER 1
+#define FLOW_DEBUG 0
 #define PARTICLE_SOLVER_DEBUG 0
 #define FLOW 0
 #define PARTICLE 1
@@ -390,11 +391,14 @@ namespace minicombust::utils
         int max_rounded_world_size = (mpi_config->solver_type == FLOW) ?  (int)pow(2., ceil(log((double)world_sizes[mpi_config->particle_flow_rank])/log(2.))) : 1;
         MPI_Allreduce( MPI_IN_PLACE, &max_rounded_world_size, 1, MPI_INT, MPI_MAX, mpi_config->world);
         
+        if ( (world_sizes[mpi_config->particle_flow_rank] == 1) && (mpi_config->solver_type == FLOW) )  return;
+
+
         bool have_data[num_blocks]   = {true};
         for ( uint64_t b = 0; b < num_blocks; b++ )
         {
             alias_rank[b]          = (ranks[b] + 1) % world_sizes[b];
-            have_data[b]           = ((mpi_config->solver_type == PARTICLE && indexes_sets[b].size()) || (mpi_config->solver_type == FLOW && (uint64_t)mpi_config->particle_flow_rank == b) );
+            have_data[b]           = ((mpi_config->solver_type == PARTICLE && indexes_sets[b].size()) || (mpi_config->solver_type == FLOW && (uint64_t)mpi_config->particle_flow_rank == b &&(mpi_config->solver_type == FLOW)) );
         }
         uint64_t **curr_indexes = indexes; 
 
@@ -544,6 +548,9 @@ namespace minicombust::utils
 
         int max_rounded_world_size = (mpi_config->solver_type == FLOW) ?  (int)pow(2., ceil(log((double)world_sizes[mpi_config->particle_flow_rank])/log(2.))) : 1;
         MPI_Allreduce( MPI_IN_PLACE, &max_rounded_world_size, 1, MPI_INT, MPI_MAX, mpi_config->world);
+        
+        
+        if ( (world_sizes[mpi_config->particle_flow_rank] == 1) && (mpi_config->solver_type == FLOW) )  return;
         
         bool have_data[num_blocks]   = {true};
         for ( uint64_t b = 0; b < num_blocks; b++ )

@@ -3,7 +3,6 @@
 
 #include "flow/FlowSolver.hpp"
 
-#define FLOW_DEBUG 0
 
 using namespace std;
 
@@ -108,9 +107,20 @@ namespace minicombust::flow
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
 
-        MPI_Comm_split(mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], 1, mpi_config->rank, &mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
-        MPI_Comm_rank(mpi_config->one_flow_world[mpi_config->particle_flow_rank], &mpi_config->one_flow_rank[mpi_config->particle_flow_rank]);
-        MPI_Comm_size(mpi_config->one_flow_world[mpi_config->particle_flow_rank], &mpi_config->one_flow_world_size[mpi_config->particle_flow_rank]);
+        uint64_t block_world_size = 1;
+        MPI_Request requests;
+        MPI_Iallreduce(MPI_IN_PLACE, &block_world_size, 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests);
+        mpi_config->one_flow_world_size[mpi_config->particle_flow_rank] = block_world_size;
+
+        
+        MPI_Wait(&requests, MPI_STATUS_IGNORE);
+        if (block_world_size > 1) 
+        {
+            MPI_Comm_split(mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], 1, mpi_config->rank, &mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
+            MPI_Comm_rank(mpi_config->one_flow_world[mpi_config->particle_flow_rank], &mpi_config->one_flow_rank[mpi_config->particle_flow_rank]);
+            MPI_Comm_size(mpi_config->one_flow_world[mpi_config->particle_flow_rank], &mpi_config->one_flow_world_size[mpi_config->particle_flow_rank]);
+        }
+
 
         MPI_Barrier(mpi_config->world);
 
@@ -125,6 +135,7 @@ namespace minicombust::flow
         uint64_t elements;
         auto resize_cell_indexes_fn = [this] (uint64_t *elements, uint64_t ***indexes) { return resize_cell_indexes(elements, indexes); };
         MPI_GatherSet ( mpi_config, mesh->num_blocks, unordered_neighbours_set, &neighbour_indexes, &elements, resize_cell_indexes_fn );
+
 
         // printf("Flow Rank %d elements %lu \n", mpi_config->rank, unordered_neighbours_set[0].size());
         
@@ -215,7 +226,10 @@ namespace minicombust::flow
 
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
-            if (((uint64_t)mpi_config->particle_flow_rank == b))  MPI_Comm_free(&mpi_config->one_flow_world[b]);
+            if (block_world_size > 1) 
+            {
+                if (((uint64_t)mpi_config->particle_flow_rank == b))  MPI_Comm_free(&mpi_config->one_flow_world[b]);
+            }
         }
 
         MPI_Barrier(mpi_config->particle_flow_world);
@@ -226,11 +240,17 @@ namespace minicombust::flow
         
         time_stats[time_count++] += MPI_Wtime();
 
+        // Check how many flow ranks are seen.
+        // int empty_world = (mpi_config->one_flow_world_size[mpi_config->particle_flow_rank] == 1) ? 1 : 0;
+        // int total_empty_worlds;
+        // MPI_Reduce(&empty_world, &total_empty_worlds, 1, MPI_INT, MPI_SUM, 0, mpi_config->particle_flow_world);
+        // if ( mpi_config->particle_flow_rank == 0)
+        //     printf("%d flow ranks are all alone, out of %d\n", total_empty_worlds, mpi_config->particle_flow_world_size);
+
 
         static int timestep_count = 0;
         if (timestep_count++ == 1499)
         {
-
             if ( mpi_config->particle_flow_rank == 0 )
             {
                 for (int i = 0; i < time_count; i++)

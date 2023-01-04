@@ -221,18 +221,37 @@ namespace minicombust::particles
         // printf("Rank %d compiled neighbours\n", mpi_config->rank);
         MPI_Barrier(mpi_config->world);
 
+        uint64_t block_world_size[mesh->num_blocks];
+        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+        {
+            block_world_size[b] = neighbours_sets[b].size() ? 1 : 0;
+            MPI_Iallreduce(MPI_IN_PLACE, &block_world_size[b], 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[b], &scatter_requests[2*b]);
+        }
+
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
             neighbours_size[b] = neighbours_sets[b].size();
-            MPI_Comm_split(mpi_config->every_one_flow_world[b], neighbours_size[b] ? 1 : MPI_UNDEFINED, mpi_config->rank, &mpi_config->one_flow_world[b]); 
-            if (neighbours_size[b]) MPI_Comm_rank(mpi_config->one_flow_world[b], &mpi_config->one_flow_rank[b]);
-            if (neighbours_size[b]) MPI_Comm_size(mpi_config->one_flow_world[b], &mpi_config->one_flow_world_size[b]);
-            if (neighbours_size[b] == 0)  mpi_config->one_flow_world_size[b] = 0; 
+            MPI_Wait(&scatter_requests[2*b], MPI_STATUS_IGNORE);
+
+            if ( block_world_size[b] > 1 )
+            {
+                if ( neighbours_size[b] )
+                {
+                    MPI_Comm_split(mpi_config->every_one_flow_world[b], 1, mpi_config->rank, &mpi_config->one_flow_world[b]); 
+                    MPI_Comm_rank(mpi_config->one_flow_world[b], &mpi_config->one_flow_rank[b]);
+                    MPI_Comm_size(mpi_config->one_flow_world[b], &mpi_config->one_flow_world_size[b]);
+                }
+                else
+                {
+                    MPI_Comm_split(mpi_config->every_one_flow_world[b], MPI_UNDEFINED, mpi_config->rank, &mpi_config->one_flow_world[b]); 
+                    mpi_config->one_flow_world_size[b] = 0; 
+                }
+            }
         }
+
+
         MPI_Barrier(mpi_config->world);
         // printf("Rank %d created world\n", mpi_config->rank);
-
-
 
         // Send local neighbours size
         auto resize_cell_indexes_fn = [this] (uint64_t *elements, uint64_t ***indexes) { return resize_cell_indexes(elements, indexes); };
@@ -345,7 +364,7 @@ namespace minicombust::particles
         MPI_Barrier(mpi_config->world);
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
-            if (mpi_config->one_flow_world_size[b] != 0) MPI_Comm_free(&mpi_config->one_flow_world[b]);
+            if ( neighbours_size[b] ) MPI_Comm_free(&mpi_config->one_flow_world[b]);
         }
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
