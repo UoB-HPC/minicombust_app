@@ -108,14 +108,16 @@ namespace minicombust::flow
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
 
-        for (uint64_t b = 0; b < mesh->num_blocks; b++)
-        {
-            MPI_Comm_split(mpi_config->world, ((uint64_t)mpi_config->particle_flow_rank == b), mpi_config->rank, &mpi_config->one_flow_world[b]);
-            MPI_Comm_rank(mpi_config->one_flow_world[b], &mpi_config->one_flow_rank[b]);
-            MPI_Comm_size(mpi_config->one_flow_world[b], &mpi_config->one_flow_world_size[b]);
-        }
+        MPI_Comm_split(mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], 1, mpi_config->rank, &mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
+        MPI_Comm_rank(mpi_config->one_flow_world[mpi_config->particle_flow_rank], &mpi_config->one_flow_rank[mpi_config->particle_flow_rank]);
+        MPI_Comm_size(mpi_config->one_flow_world[mpi_config->particle_flow_rank], &mpi_config->one_flow_world_size[mpi_config->particle_flow_rank]);
+
+        MPI_Barrier(mpi_config->world);
+
+
         // printf("Flow rank %d world size %d\n", mpi_config->rank, mpi_config->one_flow_world_size[mpi_config->particle_flow_rank]);
 
+        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
 
@@ -128,6 +130,7 @@ namespace minicombust::flow
         
         unordered_neighbours_set[0].erase(MESH_BOUNDARY);
 
+        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //3
         
@@ -142,6 +145,7 @@ namespace minicombust::flow
         // MPI_Bcast(&neighbour_size, 1, MPI_UINT64_T, mpi_config->one_flow_rank, mpi_config->one_flow_world);
         if (neighbour_point_size != 0)  MPI_Bcast(&neighbour_point_size, 1, MPI_UINT64_T, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
 
+        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //4
 
@@ -172,6 +176,7 @@ namespace minicombust::flow
         if (neighbour_point_size != 0) MPI_Ibcast(interp_node_indexes, neighbour_point_size, MPI_UINT64_T, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &scatter_requests[0]);
 
 
+        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); // 5
 
@@ -191,7 +196,9 @@ namespace minicombust::flow
         // }
 
         // MPI_Iscatterv(neighbour_flow_grad_aos_buffer, neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank, mpi_config->one_flow_world, &scatter_requests[1]);
+        if (neighbour_point_size != 0) MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
 
+        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //6
 
@@ -201,36 +208,49 @@ namespace minicombust::flow
             MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, &neighbour_indexes, &cell_particle_aos, &elements, resize_cell_particles_fn);
         }
         
-        if (neighbour_point_size != 0) MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
-
-
         MPI_Barrier(mpi_config->world);
+        MPI_Barrier(mpi_config->particle_flow_world);
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //7
 
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
-            MPI_Comm_free(&mpi_config->one_flow_world[b]);
+            if (((uint64_t)mpi_config->particle_flow_rank == b))  MPI_Comm_free(&mpi_config->one_flow_world[b]);
         }
 
+        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //7
+        time_stats[time_count]   -= MPI_Wtime(); //8
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
         
         time_stats[time_count++] += MPI_Wtime();
 
+
         static int timestep_count = 0;
-        if (timestep_count++ == 1499 && (mpi_config->particle_flow_rank == mpi_config->particle_flow_world_size - 1))
+        if (timestep_count++ == 1499)
         {
-            double total_time = 0.0;
-            printf("\nUpdate Flow Field Communuication Timings\n");
 
-            for (int i = 0; i < time_count; i++)
-                total_time += time_stats[i];
-            for (int i = 0; i < time_count; i++)
-                printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
-            printf("Total time %f\n", total_time);
+            if ( mpi_config->particle_flow_rank == 0 )
+            {
+                for (int i = 0; i < time_count; i++)
+                    MPI_Reduce(MPI_IN_PLACE, &time_stats[i], 1, MPI_DOUBLE, MPI_MAX, 0, mpi_config->particle_flow_world);
 
-            printf("Reduced neighbour count = %f\n", (double)neighbour_avg    / 1500.);
+                double total_time = 0.0;
+                printf("\nUpdate Flow Field Communuication Timings\n");
+
+                for (int i = 0; i < time_count; i++)
+                    total_time += time_stats[i];
+                for (int i = 0; i < time_count; i++)
+                    printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
+                printf("Total time %f\n", total_time);
+
+                printf("Reduced neighbour count = %f\n", (double)neighbour_avg    / 1500.);
+            }
+            else{
+                for (int i = 0; i < time_count; i++)
+                    MPI_Reduce(&time_stats[i], nullptr, 1, MPI_DOUBLE, MPI_MAX, 0, mpi_config->particle_flow_world);
+            }
         }
     } 
     

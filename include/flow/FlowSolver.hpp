@@ -74,6 +74,11 @@ namespace minicombust::flow
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, particle_aos<T>>());
 
+                for (uint64_t b = 0; b < mesh->num_blocks; b++)
+                {
+                    MPI_Comm_split(mpi_config->world, ((uint64_t)mpi_config->particle_flow_rank == b) ? 1 : MPI_UNDEFINED, mpi_config->rank, &mpi_config->every_one_flow_world[b]);
+                }
+
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
             }

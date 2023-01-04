@@ -1,6 +1,6 @@
 ## Compilers and Flags
 CC := CC 
-CFLAGS := -g -Wall -Wextra -std=c++20 -O3 -march=native -Wno-unknown-pragmas
+CFLAGS := -g -Wall -Wextra -std=c++20 -O3 -march=native -Wno-unknown-pragmas 
 #CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
 LIB := -Lbuild/
 INC := -Iinclude/

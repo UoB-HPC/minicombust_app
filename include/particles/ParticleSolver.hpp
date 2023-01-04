@@ -179,6 +179,11 @@ namespace minicombust::particles
                     printf("\tAllocated particle solver. Total size (per world)            (%.2f MB)\n\n", ((float)total_size * mpi_config->particle_flow_world_size)/1000000.0);
                 }
 
+                for (uint64_t b = 0; b < mesh->num_blocks; b++)
+                {
+                    MPI_Comm_split(mpi_config->world, 1, mpi_config->rank, &mpi_config->every_one_flow_world[b]); 
+                }
+
 
                 memset(&logger,           0, sizeof(Particle_Logger));
 

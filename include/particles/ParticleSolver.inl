@@ -224,12 +224,15 @@ namespace minicombust::particles
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
             neighbours_size[b] = neighbours_sets[b].size();
-            MPI_Comm_split(mpi_config->world, neighbours_size[b] ? 1 : 0, mpi_config->rank, &mpi_config->one_flow_world[b]); 
-            MPI_Comm_rank(mpi_config->one_flow_world[b], &mpi_config->one_flow_rank[b]);
-            MPI_Comm_size(mpi_config->one_flow_world[b], &mpi_config->one_flow_world_size[b]);
+            MPI_Comm_split(mpi_config->every_one_flow_world[b], neighbours_size[b] ? 1 : MPI_UNDEFINED, mpi_config->rank, &mpi_config->one_flow_world[b]); 
+            if (neighbours_size[b]) MPI_Comm_rank(mpi_config->one_flow_world[b], &mpi_config->one_flow_rank[b]);
+            if (neighbours_size[b]) MPI_Comm_size(mpi_config->one_flow_world[b], &mpi_config->one_flow_world_size[b]);
             if (neighbours_size[b] == 0)  mpi_config->one_flow_world_size[b] = 0; 
         }
+        MPI_Barrier(mpi_config->world);
         // printf("Rank %d created world\n", mpi_config->rank);
+
+
 
         // Send local neighbours size
         auto resize_cell_indexes_fn = [this] (uint64_t *elements, uint64_t ***indexes) { return resize_cell_indexes(elements, indexes); };
@@ -314,7 +317,7 @@ namespace minicombust::particles
             if (neighbours_size[b] != 0)
                 MPI_Testall(2, &scatter_requests[2 * b], &ready, MPI_STATUSES_IGNORE);
 
-            if (ready)
+            if (ready && !processed_block[b])
             {
                 for (uint64_t i = 0; i < neighbours_size[b]; i++)
                 {
@@ -342,7 +345,7 @@ namespace minicombust::particles
         MPI_Barrier(mpi_config->world);
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
-            MPI_Comm_free(&mpi_config->one_flow_world[b]);
+            if (mpi_config->one_flow_world_size[b] != 0) MPI_Comm_free(&mpi_config->one_flow_world[b]);
         }
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
@@ -398,12 +401,12 @@ namespace minicombust::particles
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
 
-                if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
-                    {printf("ERROR SOLVE SPRAY: Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
-                if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
-                    {printf("ERROR SOLVE SPRAY: Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
-                if (node_to_field_address_map[node]->vel.x != mesh->dummy_gas_vel.x) 
-                    {printf("ERROR SOLVE SPRAY: Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
+                // if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
+                //     {printf("ERROR SOLVE SPRAY: Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
+                // if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
+                //     {printf("ERROR SOLVE SPRAY: Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
+                // if (node_to_field_address_map[node]->vel.x != mesh->dummy_gas_vel.x) 
+                //     {printf("ERROR SOLVE SPRAY: Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
                 interp_gas_vel        += weight           * node_to_field_address_map[node]->vel;
                 interp_gas_pre        += weight_magnitude * node_to_field_address_map[node]->pressure;
                 interp_gas_tem        += weight_magnitude * node_to_field_address_map[node]->temp;
