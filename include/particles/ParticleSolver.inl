@@ -66,7 +66,7 @@ namespace minicombust::particles
         {
             cout << "Particle Solver Stats:                         " << endl;
             cout << "\tParticles:                                   " << ((double)logger.num_particles)                                                                   << endl;
-            cout << "\tParticles (per iter):                        " << particle_dist->particles_per_timestep*mpi_config->particle_flow_world_size                       << endl;
+            cout << "\tParticles (per iter):                        " << particle_dist->even_particles_per_timestep*mpi_config->particle_flow_world_size                  << endl;
             cout << "\tEmitted Particles:                           " << logger.emitted_particles                                                                         << endl;
             cout << "\tAvg Particles (per iter):                    " << logger.avg_particles                                                                             << endl;
             cout << endl;
@@ -80,6 +80,7 @@ namespace minicombust::particles
             cout << "\tLost Particles:                              " << ((double)logger.lost_particles      )                                                            << endl;
             cout << endl;
             cout << "\tBoundary Intersections:                      " << ((double)logger.boundary_intersections)                                                          << endl;
+            cout << "\tDecayed Particles:                           " << ((double)logger.decayed_particles)                                                               << endl;
             cout << "\tDecayed Particles:                           " << round(10000.*(((double)logger.decayed_particles) / ((double)logger.num_particles)))/100. << "% " << endl;
             cout << "\tBurnt Particles:                             " << ((double)logger.burnt_particles)                                                                 << endl;
             cout << "\tBreakups:                                    " << ((double)logger.breakups)                                                                        << endl;
@@ -370,7 +371,8 @@ namespace minicombust::particles
 
         // TODO: Reuse decaying particle space
         if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: particle_release.\n");
-        particle_dist->emit_particles(particles, cell_particle_field_map, &logger);
+        particle_dist->emit_particles_evenly(particles, cell_particle_field_map, &logger);
+        // particle_dist->emit_particles_waves(particles, cell_particle_field_map, &logger);
 
         performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_time);
     }

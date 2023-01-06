@@ -85,7 +85,7 @@ int main (int argc, char ** argv)
 
         const uint64_t reserve_particles_size         = 2 * (local_particles_per_timestep + 1) * ntimesteps;
 
-        ParticleDistribution<double> *particle_dist = load_particle_distribution(local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
+        ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
         particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
     }
     else

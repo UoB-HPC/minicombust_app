@@ -149,7 +149,8 @@ namespace minicombust::particles
 
         public:
             // TODO: Change this to particles per unit of time?
-            uint64_t particles_per_timestep;
+            uint64_t wave_particles_per_timestep;
+            uint64_t even_particles_per_timestep;
             uint64_t remainder_particles;
 
             MPI_Config *mpi_config;
@@ -173,9 +174,9 @@ namespace minicombust::particles
             // TODO: Read particle distribution from file
 
             // Generate fixed distribution
-            ParticleDistribution (uint64_t particles_per_timestep, uint64_t remainder_particles, MPI_Config *mpi_config, Mesh<T> *mesh, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
+            ParticleDistribution (uint64_t wave_particles_per_timestep, uint64_t even_particles_per_timestep, uint64_t remainder_particles, MPI_Config *mpi_config, Mesh<T> *mesh, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
                                   vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean, T temp, ProbabilityDistribution dist) :
-                                  particles_per_timestep(particles_per_timestep), remainder_particles(remainder_particles), mpi_config(mpi_config), mesh(mesh)
+                                  wave_particles_per_timestep(wave_particles_per_timestep), even_particles_per_timestep(even_particles_per_timestep), remainder_particles(remainder_particles), mpi_config(mpi_config), mesh(mesh)
             {   
                 // srand (time(NULL) + mpi_config->rank);
                 srand (0 + mpi_config->rank);
@@ -201,7 +202,39 @@ namespace minicombust::particles
                 decay_threshold  = new FixedDistribution<T>(decay_threshold_mean);  
             }
 
-            inline void emit_particles(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, particle_aos<T>>>& cell_particle_field_map, Particle_Logger *logger)
+            inline void emit_particles_waves(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, particle_aos<T>>>& cell_particle_field_map, Particle_Logger *logger)
+            {
+                particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
+                uint64_t start_cell = mesh->mesh_size * 0.49;
+                
+                static int timestep_count = 0;
+                timestep_count++;
+
+                if ( (timestep_count++ % mpi_config->particle_flow_world_size) == mpi_config->particle_flow_rank )
+                {
+                    for (uint64_t p = 0; p < wave_particles_per_timestep; p++)
+                    {
+                        const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), start_cell, logger);
+
+                        if (particle.decayed) 
+                        {
+                            p -= 1;
+                            logger->decayed_particles --;
+                            continue;
+                        }
+
+                        start_cell = particle.cell; 
+                        particles.push_back(particle);
+                        
+                        cell_particle_field_map[mesh->get_block_id(particle.cell)].try_emplace(particle.cell, zero_field);
+                    }
+                }
+
+                logger->num_particles      += wave_particles_per_timestep ;
+                logger->emitted_particles  += wave_particles_per_timestep ;
+            }
+
+            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, particle_aos<T>>>& cell_particle_field_map, Particle_Logger *logger)
             {
                 particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 uint64_t start_cell = mesh->mesh_size * 0.49;
@@ -210,11 +243,13 @@ namespace minicombust::particles
                 timestep_count++;
                 uint64_t remainder = ((mpi_config->particle_flow_rank + timestep_count*remainder_particles) % mpi_config->particle_flow_world_size) < remainder_particles;
 
-                for (uint64_t p = 0; p < particles_per_timestep + remainder; p++)
+                for (uint64_t p = 0; p < even_particles_per_timestep + remainder; p++)
                 {
                     const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), start_cell, logger);
                     if (particle.decayed) 
                     {
+                         p -= 1;
+                        logger->decayed_particles --;
                         continue;
                     }
 
@@ -224,9 +259,8 @@ namespace minicombust::particles
                     cell_particle_field_map[mesh->get_block_id(particle.cell)].try_emplace(particle.cell, zero_field);
                 }
 
-                logger->num_particles      += particles_per_timestep + remainder;
-                logger->emitted_particles  += particles_per_timestep + remainder;
-
+                logger->num_particles      += even_particles_per_timestep + remainder;
+                logger->emitted_particles  += even_particles_per_timestep + remainder;
             }
 
     }; // class ParticleDistribution
