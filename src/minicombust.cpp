@@ -73,6 +73,8 @@ int main (int argc, char ** argv)
     mpi_config.one_flow_world       = (MPI_Comm *)malloc(flow_ranks * sizeof(MPI_Comm));
     mpi_config.every_one_flow_world = (MPI_Comm *)malloc(flow_ranks * sizeof(MPI_Comm));
 
+    MPI_Barrier(mpi_config.world);
+
     //Setup solvers
     ParticleSolver<double> *particle_solver = nullptr;
     FlowSolver<double>     *flow_solver     = nullptr;
@@ -88,7 +90,6 @@ int main (int argc, char ** argv)
     }
     else
     {
-        mpi_config.particle_flow_world_size = 1;
         flow_solver     = new FlowSolver<double>(&mpi_config, mesh);
     }
 

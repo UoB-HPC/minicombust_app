@@ -51,7 +51,8 @@ namespace minicombust::geometry
             // Calculate the centre point in each cell
             // Computed as the average of all vertex positions
             void calculate_cell_centres(void) {
-                for (uint64_t c = 0; c < mesh_size; ++c) {
+                for (uint64_t c = 0; c < local_mesh_size; ++c) 
+                {
                     cell_centres[c] = vec<T>{0.0, 0.0, 0.0};
                     for (uint32_t i = 0; i < cell_size; ++i) {
                         cell_centres[c] += points[cells[c*cell_size + i]];
@@ -67,6 +68,12 @@ namespace minicombust::geometry
             const uint64_t faces_size;          // Number of unique faces in the mesh
             const uint64_t faces_per_cell;      // Number of faces in a cell
 
+            uint64_t local_mesh_size;     // Number of polygons in the mesh that a flow rank owns.
+            uint64_t local_cells_disp;    // Number of polygons in the mesh that a flow rank owns.
+            uint64_t local_points_size;     // Number of points in the mesh that a flow rank owns.
+            uint64_t local_points_disp;     // Number of points in the mesh that a flow rank owns.
+            
+            
             vec<T> cell_size_vector;      // Cell size
             vec<T> *points;               // Mesh points    = {{0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, ...}:
             uint64_t *cells;              // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
@@ -77,6 +84,7 @@ namespace minicombust::geometry
 
             uint64_t     num_blocks;
             uint64_t     *block_element_disp;
+            uint64_t     *block_point_disp;
             vec<uint64_t> flow_block_dim;
  
             uint64_t *particles_per_point; // Number of particles in each cell
@@ -94,128 +102,175 @@ namespace minicombust::geometry
             flow_aos<T> *flow_terms;
             flow_aos<T> *flow_grad_terms;
 
-            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours, uint64_t num_blocks, uint64_t *block_element_disp, vec<uint64_t> flow_block_dim) 
-            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours), num_blocks(num_blocks), block_element_disp(block_element_disp), flow_block_dim(flow_block_dim)
+
+            size_t points_array_size               = 0;
+            size_t cells_array_size                = 0;
+
+            size_t cell_centre_size                = 0;
+            size_t faces_array_size                = 0;
+            size_t particles_per_point_size        = 0;
+
+            size_t cell_neighbours_array_size      = 0;
+            size_t cells_per_point_size            = 0;
+
+            size_t evaporated_fuel_mass_rate_size  = 0;
+            size_t particle_energy_size            = 0;
+            size_t particle_momentum_rate_size     = 0;
+
+            size_t block_disp_size                 = 0;
+
+            size_t flow_term_size                  = 0;
+
+            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours, uint8_t *cells_per_point, uint64_t num_blocks, uint64_t *block_element_disp, uint64_t *block_point_disp, vec<uint64_t> flow_block_dim) 
+            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours), cells_per_point(cells_per_point), num_blocks(num_blocks), block_element_disp(block_element_disp), block_point_disp(block_point_disp), flow_block_dim(flow_block_dim)
             {
+                local_cells_disp  = block_element_disp[mpi_config->particle_flow_rank];
+                local_points_disp = block_point_disp[mpi_config->particle_flow_rank];
+
+                local_mesh_size   = ( mpi_config->solver_type == FLOW ) ? block_element_disp[mpi_config->particle_flow_rank + 1] - local_cells_disp  : mesh_size;
+                local_points_size = ( mpi_config->solver_type == FLOW ) ? block_point_disp[mpi_config->particle_flow_rank + 1]   - local_points_disp : points_size;
+
                 // Allocate space for and calculate cell centre co-ordinates
-                const size_t mesh_cell_centre_size           = mesh_size * sizeof(vec<T>);
-                const size_t particles_per_point_size        = points_size * sizeof(uint64_t);
-                const size_t points_array_size               = points_size*sizeof(vec<double>);
-                const size_t cells_array_size                = mesh_size*cell_size*sizeof(uint64_t);
-                const size_t faces_array_size                = faces_size*sizeof(Face<T>);
-                const size_t cell_neighbours_array_size      = mesh_size*faces_per_cell*sizeof(uint64_t);
-                const size_t cells_per_point_size            = points_size*sizeof(uint8_t);
+                points_array_size               = local_points_size * sizeof(vec<double>);
+                particles_per_point_size        = local_points_size * sizeof(uint64_t);
+                cells_per_point_size            = local_points_size * sizeof(uint8_t);
+
+                cells_array_size                = local_mesh_size * cell_size*sizeof(uint64_t);
+                cell_centre_size                = local_mesh_size * sizeof(vec<T>);
+
+                block_disp_size                 = num_blocks * sizeof(uint64_t);
                 
-                const size_t evaporated_fuel_mass_rate_size  = mesh_size*sizeof(T);
-                const size_t particle_energy_size            = mesh_size*sizeof(T);
-                const size_t particle_momentum_rate_size     = mesh_size*sizeof(vec<T>);
-                
-                
-                const size_t flow_term_size     = mesh_size * sizeof(flow_aos<T>);
                  
                 if (mpi_config->solver_type == FLOW || mpi_config->world_size == 1)
                 {
+                    faces_array_size                = faces_size * sizeof(Face<T>);
+                    
+                    evaporated_fuel_mass_rate_size  = local_mesh_size * sizeof(T);
+                    particle_energy_size            = local_mesh_size * sizeof(T);
+                    particle_momentum_rate_size     = local_mesh_size * sizeof(vec<T>);
+                    
+                    flow_term_size                  = local_mesh_size * sizeof(flow_aos<T>);
+
                     evaporated_fuel_mass_rate                    = (T *)          malloc(evaporated_fuel_mass_rate_size);
                     particle_energy_rate                         = (T *)          malloc(particle_energy_size);
                     particle_momentum_rate                       = (vec<T> *)     malloc(particle_momentum_rate_size);
+
                     flow_terms                                   = (flow_aos<T> *)malloc(flow_term_size);
                     flow_grad_terms                              = (flow_aos<T> *)malloc(flow_term_size);
-
-                    for (uint64_t c = 0; c < mesh_size; c++)
+                    
+                    for (uint64_t c = 0; c < local_mesh_size; c++)
                     {
+
                         flow_terms[c]      = {dummy_gas_vel, dummy_gas_pre, dummy_gas_tem};
                         flow_grad_terms[c] = {{0.0, 0.0, 0.0}, 0.0, 0.0};
                     }
                 }
+                else if (mpi_config->solver_type == PARTICLE || mpi_config->world_size == 1)
+                {
+                    cell_neighbours_array_size      = local_mesh_size * faces_per_cell * sizeof(uint64_t);
+                }
 
                 particles_per_point                          = (uint64_t *)   malloc(particles_per_point_size);
-                cell_centres                                 = (vec<T> *)     malloc(mesh_cell_centre_size);
-                cells_per_point                              = (uint8_t *)    malloc(cells_per_point_size);
-
-
-                memset(cells_per_point, 0, cells_per_point_size);
-                #pragma ivdep
-                for (uint64_t c = 0; c < mesh_size; c++) // TODO: Doesn't work for distributed meshes.
-                {
-                    #pragma ivdep
-                    for (uint64_t n = 0; n < cell_size; n++)
-                    {
-                        const uint64_t point_id = cells[c*cell_size + n];
-                        cells_per_point[point_id]++;
-                    }
-                }
-
-
-                const size_t flow_size = mesh_cell_centre_size + particles_per_point_size + points_array_size + cells_array_size + 
-                                          faces_array_size + cell_neighbours_array_size + cells_per_point_size +
-                                          evaporated_fuel_mass_rate_size + particle_energy_size + particle_momentum_rate_size + 
-                                          2 * flow_term_size;
-
-                const size_t particle_size = mesh_cell_centre_size + particles_per_point_size + points_array_size + cells_array_size + 
-                                          faces_array_size + cell_neighbours_array_size + cells_per_point_size;
-
-                if (mpi_config->rank == 0)
-                {
-                    printf("\nMesh storage requirements (per process):\n");
-                    printf("\tAllocating mesh cell centres                                (%.2f MB)\n",                         (float)(mesh_cell_centre_size)/1000000.0);
-                    printf("\tAllocating array of particles per cell                      (%.2f MB)\n",                         (float)(particles_per_point_size)/1000000.0);
-                    printf("\tAllocating vertexes                                         (%.2f MB) (%" PRIu64 " vertexes)\n",  (float)(points_array_size)/1000000.0, points_size);
-                    printf("\tAllocating cells                                            (%.2f MB) (%" PRIu64 " cells)\n",     (float)(cells_array_size)/1000000.0, mesh_size);
-                    printf("\tAllocating faces                                            (%.2f MB) (%" PRIu64 " faces)\n",     (float)(faces_array_size)/1000000.0, faces_size);
-                    printf("\tAllocating cell neighbour indexes                           (%.2f MB)\n",                         (float)(cell_neighbours_array_size)/1000000.0);
-                    printf("\tAllocating cells_per_point array                            (%.2f MB)\n",                         ((float)cells_per_point_size)/1000000.);
-                    printf("\tAllocating evaporated fuel mass source term                 (%.2f MB)\n",                         (float)(evaporated_fuel_mass_rate_size)/1000000.0);
-                    printf("\tAllocating particle energy source term                      (%.2f MB)\n",                         (float)(particle_energy_size)/1000000.0);
-                    printf("\tAllocating particle_momentum source term                    (%.2f MB)\n",                         (float)(particle_momentum_rate_size)/1000000.0);
-                    printf("\tAllocating flow source term                                 (%.2f MB)\n",                         (float)(flow_term_size)/1000000.0);
-                    printf("\tAllocating flow grad source term                            (%.2f MB)\n",                         (float)(flow_term_size)/1000000.0);
-                    printf("\tAllocated mesh. Flow size                                   (%.2f MB)\n",                         (float)flow_size/1000000.0);
-                    printf("\tAllocated mesh. Particle size                               (%.2f MB)\n",                         (float)particle_size/1000000.0);
-                    printf("\tAllocated mesh. Total size (per world)                      (%.2f MB)\n\n",                       (float)(flow_size * ( mpi_config->world_size - mpi_config->particle_flow_world_size) + particle_size * mpi_config->world_size)/1000000.0);
-                }
+                cell_centres                                 = (vec<T> *)     malloc(cell_centre_size);
 
                 calculate_cell_centres();
                 cell_size_vector = points[cells[H_VERTEX]] - points[cells[A_VERTEX]];
-
-                // DUMMY VALUES 
                 
-                // cell_centres_soa = allocate_vec_soa<T>(mesh_size);
-                // for (uint64_t c = 0; c < mesh_size; c++)
-                // {
-                //     cell_centres_soa.x[c] = cell_centres[c].x;
-                //     cell_centres_soa.y[c] = cell_centres[c].y;
-                //     cell_centres_soa.z[c] = cell_centres[c].z;
-                // }
+                uint64_t memory_usage          = get_memory_usage();
+                uint64_t total_memory_usage    = memory_usage;
+                uint64_t particle_memory_usage = memory_usage;
 
-                // points_soa = allocate_vec_soa<T>(points_size);
-                // for (uint64_t p = 0; p < points_size; p++)
-                // {
-                //     points_soa.x[p] = points[p].x;
-                //     points_soa.y[p] = points[p].y;
-                //     points_soa.z[p] = points[p].z;
-                // }
+                uint64_t total_points_array_size               = points_array_size;
+                uint64_t total_cells_array_size                = cells_array_size;
+                uint64_t total_faces_array_size                = faces_array_size;
+                uint64_t total_cell_centre_size                = cell_centre_size;
+                uint64_t total_cell_neighbours_array_size      = cell_neighbours_array_size;
+                uint64_t total_cells_per_point_size            = cells_per_point_size;
+                uint64_t total_evaporated_fuel_mass_rate_size  = evaporated_fuel_mass_rate_size;
+                uint64_t total_particle_energy_size            = particle_energy_size;
+                uint64_t total_particle_momentum_rate_size     = particle_momentum_rate_size;
+                uint64_t total_block_disp_size                 = 2 * block_disp_size;
+                uint64_t total_flow_term_size                  = 2 * flow_term_size;        
 
-                // gas_velocity_soa = allocate_vec_soa<T>(mesh_size);
-                // for (uint64_t c = 0; c < mesh_size; c++)
-                // {
-                //     gas_velocity_soa.x[c] = gas_velocity[c].x;
-                //     gas_velocity_soa.y[c] = gas_velocity[c].y;
-                //     gas_velocity_soa.z[c] = gas_velocity[c].z;
-                // }
+                if (mpi_config->rank == 0)
+                {
+                    MPI_Reduce(MPI_IN_PLACE, &total_memory_usage,    1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
 
-                // gas_velocity_gradient_soa = allocate_vec_soa<T>(mesh_size);
-                // for (uint64_t c = 0; c < mesh_size; c++)
-                // {
-                //     gas_velocity_gradient_soa.x[c] = gas_velocity_gradient[c].x;
-                //     gas_velocity_gradient_soa.y[c] = gas_velocity_gradient[c].y;
-                //     gas_velocity_gradient_soa.z[c] = gas_velocity_gradient[c].z;
-                // }
+                    MPI_Reduce(MPI_IN_PLACE, &total_points_array_size,               1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_cells_array_size,                1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_faces_array_size,                1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_cell_centre_size,                1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_cell_neighbours_array_size,      1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_cells_per_point_size,            1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_evaporated_fuel_mass_rate_size,  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_particle_energy_size,            1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_particle_momentum_rate_size,     1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_block_disp_size,                 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_flow_term_size,                  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+
+                    if (mpi_config->solver_type == PARTICLE)
+                        MPI_Reduce(MPI_IN_PLACE, &particle_memory_usage, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+
+
+
+                    printf("\nMesh storage requirements (%d processes) : \n", mpi_config->world_size);
+                    printf("\tpoints_array_size                 (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " vertexes)\n"       , (float) total_points_array_size                / 1000000.0, (float) total_points_array_size                / (1000000.0 * mpi_config->world_size), points_size);
+                    printf("\tcells_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " cells)\n"          , (float) total_cells_array_size                 / 1000000.0, (float) total_cells_array_size                 / (1000000.0 * mpi_config->world_size), mesh_size);
+                    printf("\tfaces_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " faces)\n"          , (float) total_faces_array_size                 / 1000000.0, (float) total_faces_array_size                 / (1000000.0 * mpi_config->world_size), faces_size);
+                    printf("\tcell_centre_size                  (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_cell_centre_size                 / 1000000.0, (float) total_cell_centre_size                 / (1000000.0 * mpi_config->world_size));
+                    printf("\tcell_neighbours_array_size        (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_cell_neighbours_array_size       / 1000000.0, (float) total_cell_neighbours_array_size       / (1000000.0 * mpi_config->world_size));
+                    printf("\tcells_per_point_size              (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_cells_per_point_size             / 1000000.0, (float) total_cells_per_point_size             / (1000000.0 * mpi_config->world_size));
+                    printf("\tblock_disp_size                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
+                    printf("\tevaporated_fuel_mass_rate_size    (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_evaporated_fuel_mass_rate_size   / 1000000.0, (float) total_evaporated_fuel_mass_rate_size   / (1000000.0 * mpi_config->world_size));
+                    printf("\tparticle_energy_size              (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_particle_energy_size             / 1000000.0, (float) total_particle_energy_size             / (1000000.0 * mpi_config->world_size));
+                    printf("\tparticle_momentum_rate_size       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_particle_momentum_rate_size      / 1000000.0, (float) total_particle_momentum_rate_size      / (1000000.0 * mpi_config->world_size));
+                    printf("\t2 * block_disp_size               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
+                    printf("\t2 * flow_term_size                (TOTAL %8.2f MB) (AVG %8.2f MB) \n\n"                             , (float) total_flow_term_size                   / 1000000.0, (float) total_flow_term_size                   / (1000000.0 * mpi_config->world_size));
+
+                    printf("\tFlow rank mesh size               (TOTAL %12.2f MB) (AVG %.2f MB) \n"                    , (float)(total_memory_usage - particle_memory_usage)/1000000.0, (float)(total_memory_usage - particle_memory_usage)/(1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\tParticle rank mesh size           (TOTAL %12.2f MB) (AVG %.2f MB) \n"                    , (float)particle_memory_usage/1000000.0,                        (float)particle_memory_usage/(1000000.0 * (mpi_config->world_size - mpi_config->particle_flow_world_size)));
+                    printf("\tTotal mesh size                   (TOTAL %12.2f MB) \n\n"                                , (float)total_memory_usage/1000000.0);
+                }
+                else
+                {
+                    MPI_Reduce(&total_memory_usage, nullptr,    1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+
+                    MPI_Reduce(&total_points_array_size,               nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_cells_array_size,                nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_faces_array_size,                nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_cell_centre_size,                nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_cell_neighbours_array_size,      nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_cells_per_point_size,            nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_evaporated_fuel_mass_rate_size,  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_particle_energy_size,            nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_particle_momentum_rate_size,     nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_block_disp_size,                 nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_flow_term_size,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+
+                    if (mpi_config->solver_type == PARTICLE)
+                        MPI_Reduce(&particle_memory_usage, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                }
             }
 
-            void clear_particles_per_point_array(void)
+            inline uint64_t get_memory_usage ()
             {
-                memset(particles_per_point, 0, points_size * sizeof(uint64_t));
+                return points_array_size 
+                     + cells_array_size 
+                     + faces_array_size 
+                     + cell_centre_size 
+                     + cell_neighbours_array_size 
+                     + cells_per_point_size 
+                     + evaporated_fuel_mass_rate_size 
+                     + particle_energy_size 
+                     + particle_momentum_rate_size 
+                     + 2 * block_disp_size 
+                     + 2 * flow_term_size;
             }
+
+            // void clear_particles_per_point_array(void)
+            // {
+            //     memset(particles_per_point, 0, local_points_size * sizeof(uint64_t));
+            // }
 
             inline uint64_t get_block_id(const uint64_t cell)
             {

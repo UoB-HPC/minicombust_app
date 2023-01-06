@@ -108,8 +108,6 @@ namespace minicombust::particles
             {
                 uint64_t cell = cell_it.first;
 
-                const uint64_t block_id = mesh->get_block_id(cell);
-
                 neighbours_sets[mesh->get_block_id(cell)].insert(cell); 
 
                 // Get 6 immediate neighbours
@@ -197,12 +195,14 @@ namespace minicombust::particles
             }
         }
 
-
         uint64_t elements[mesh->num_blocks];
+        uint64_t block_world_size[mesh->num_blocks];
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
             neighbours_sets[b].erase(MESH_BOUNDARY);
-            elements[b] = neighbours_sets[b].size();
+            elements[b]         = neighbours_sets[b].size();
+            block_world_size[b] = neighbours_sets[b].size() ? 1 : 0;
+            MPI_Iallreduce(MPI_IN_PLACE, &block_world_size[b], 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[b], &scatter_requests[2*b]);
         }
 
         resize_cell_indexes (elements, NULL);
@@ -220,13 +220,6 @@ namespace minicombust::particles
 
         // printf("Rank %d compiled neighbours\n", mpi_config->rank);
         MPI_Barrier(mpi_config->world);
-
-        uint64_t block_world_size[mesh->num_blocks];
-        for (uint64_t b = 0; b < mesh->num_blocks; b++)
-        {
-            block_world_size[b] = neighbours_sets[b].size() ? 1 : 0;
-            MPI_Iallreduce(MPI_IN_PLACE, &block_world_size[b], 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[b], &scatter_requests[2*b]);
-        }
 
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
@@ -734,19 +727,26 @@ namespace minicombust::particles
             uint64_t particles_in_simulation = particles.size();
             uint64_t total_particles_in_simulation;
 
-            double arr_usage = ((double)get_array_memory_usage()) / 1.e9;
-            double stl_usage = ((double)get_stl_memory_usage())   / 1.e9 ;
-            double arr_usage_total, stl_usage_total;
+            double arr_usage  = ((double)get_array_memory_usage())   / 1.e9;
+            double stl_usage  = ((double)get_stl_memory_usage())     / 1.e9 ;
+            double mesh_usage = ((double)mesh->get_memory_usage())   / 1.e9 ;
+            double arr_usage_total, stl_usage_total, mesh_usage_total;
 
 
             MPI_Reduce(&particles_in_simulation, &total_particles_in_simulation, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
             MPI_Reduce(&arr_usage,               &arr_usage_total,               1, MPI_DOUBLE,   MPI_SUM, 0, mpi_config->particle_flow_world);
             MPI_Reduce(&stl_usage,               &stl_usage_total,               1, MPI_DOUBLE,   MPI_SUM, 0, mpi_config->particle_flow_world);
+            MPI_Reduce(&mesh_usage,              &mesh_usage_total,              1, MPI_DOUBLE,   MPI_SUM, 0, mpi_config->particle_flow_world);
 
 
             if ( mpi_config->particle_flow_rank == 0 )
             {
-                printf("Timestep %6d Particle Array mem (GB) %8.3f Array mem total (GB) %8.3f STL mem (GB) %8.3f STL mem total (GB) %8.3f Particles %lu\n", count, arr_usage, arr_usage_total, stl_usage, stl_usage_total, total_particles_in_simulation);
+                // printf("Timestep %6d Particle array mem (TOTAL %8.3f GB) (AVG %8.3f GB) STL mem (TOTAL %8.3f GB) (AVG %8.3f GB) Particles (TOTAL %lu) (AVG %lu) \n", count, arr_usage_total,               arr_usage_total               / mpi_config->particle_flow_world_size, 
+                //                                                                                                                                                             stl_usage_total,               stl_usage_total               / mpi_config->particle_flow_world_size, 
+                //                                                                                                                                                             total_particles_in_simulation, total_particles_in_simulation / mpi_config->particle_flow_world_size);
+                printf("Timestep %6d Particle mem (TOTAL %8.3f GB) (AVG %8.3f GB) Particles (TOTAL %lu) (AVG %lu) \n", count, (arr_usage_total + stl_usage_total + mesh_usage_total), (arr_usage_total + stl_usage_total + mesh_usage_total) / mpi_config->particle_flow_world_size, 
+                                                                                                                              total_particles_in_simulation,                           total_particles_in_simulation                         / mpi_config->particle_flow_world_size);
+
             }
         }
 

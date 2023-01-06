@@ -64,9 +64,6 @@ namespace minicombust::particles
                 
             }
 
-            
-
-
 
         public:
             vec<T> x1 = 0.0;             // coordinates at next timestep

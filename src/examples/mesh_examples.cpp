@@ -280,8 +280,11 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
 
 
     uint64_t *block_element_disp = (uint64_t *)malloc( (flow_ranks+1) * sizeof(uint64_t) ); 
-    uint64_t displacement = 0; 
-    block_element_disp[0] = displacement;
+    uint64_t *block_point_disps  = (uint64_t *)malloc( (flow_ranks+1) * sizeof(uint64_t) ); 
+    uint64_t cell_displacement  = 0; 
+    uint64_t point_displacement = 0; 
+    block_element_disp[0] = cell_displacement;
+    block_point_disps[0]   = point_displacement;
     for (uint64_t bz = 0; bz < block_dim[2]; bz++) // Iterate along z blocks
     {
         for (uint64_t by = 0; by < block_dim[1]; by++) // Iterate along y blocks
@@ -290,16 +293,23 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
             {
                 // Increment elements by element block size, ready for next block
                 vec<uint64_t> block_position = { bx, by, bz};
-                displacement += flow_block_element_sizes[0][bx] * flow_block_element_sizes[1][by] * flow_block_element_sizes[2][bz];
-                block_element_disp[get_block_id(block_position, block_dim) + 1] = displacement;
+                cell_displacement  += flow_block_element_sizes[0][bx] * flow_block_element_sizes[1][by] * flow_block_element_sizes[2][bz];
+                point_displacement += (flow_block_element_sizes[0][bx] + 1) * (flow_block_element_sizes[1][by] + 1) * (flow_block_element_sizes[2][bz] + 1);
+                block_element_disp[get_block_id(block_position, block_dim) + 1] = cell_displacement;
+                block_point_disps[get_block_id(block_position, block_dim) + 1]  = point_displacement;
             }
         }
     }
 
     // Create array of cube cells, and points
-    vec<double> *points       = (vec<double> *)malloc(num_points * sizeof(vec<double>));
-    uint64_t *cubes           = (uint64_t *)malloc(num_cubes * cell_size      * sizeof(uint64_t));
-    uint64_t *cell_neighbours = (uint64_t *)malloc(num_cubes * faces_per_cell * sizeof(uint64_t)); 
+    const uint64_t local_num_cubes  = ( mpi_config->solver_type == FLOW ) ? block_element_disp[mpi_config->particle_flow_rank + 1] -  block_element_disp[mpi_config->particle_flow_rank] : num_cubes;
+    const uint64_t local_num_points = ( mpi_config->solver_type == FLOW ) ? block_point_disps[mpi_config->particle_flow_rank + 1]  -  block_point_disps[mpi_config->particle_flow_rank]  : num_points;
+
+    vec<double> *points          = (vec<double> *)malloc(local_num_points              * sizeof(vec<double>));
+    uint64_t    *cubes           = (uint64_t *)   malloc(local_num_cubes * cell_size   * sizeof(uint64_t));
+    uint64_t    *cell_neighbours = ( mpi_config->solver_type == FLOW ) ? nullptr : (uint64_t *)malloc(num_cubes * faces_per_cell * sizeof(uint64_t)); 
+    uint8_t    *cells_per_point = (uint8_t *) malloc(local_num_points * sizeof(uint8_t));
+
 
     // Create array of cubes, BLOCK ORDER.
     uint64_t block_point_disp   = 0; 
@@ -310,6 +320,14 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
         {
             for (uint64_t bx = 0; bx < block_dim[0]; bx++) // Iterate along x blocks
             {
+                vec<uint64_t> block_position = { bx, by, bz};
+                bool write_block = ( (mpi_config->solver_type == PARTICLE) || (get_block_id(block_position, block_dim) == mpi_config->particle_flow_rank) ); 
+
+
+                // printf("Rank %d local_num_cubes %lu local_num_points %lu block %d write_block %d \n", mpi_config->rank, local_num_cubes, local_num_points, get_block_id(block_position, block_dim), write_block);
+                // MPI_Barrier(mpi_config->world);
+
+
                 uint64_t point_index= 0.0, cube_index = 0.0;
 
                 // Set inner block position to beginning of block
@@ -326,31 +344,46 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                     {
                         for (uint64_t x = 0; x < flow_block_element_sizes[0][bx]; x++) // Iterate along x axis within block (bx, by, bz)
                         {
-                            vec<uint64_t> block_position = { bx, by, bz};
                             vec<uint64_t> local_position = { x, y, z };
                             vec<uint64_t> local_dim      = { flow_block_element_sizes[0][bx], flow_block_element_sizes[1][by], flow_block_element_sizes[2][bz] };
 
+                            // TODO: 
+
                             // Set indexes
                             // index         = z * points_per_dim.x * points_per_dim.y + y * points_per_dim.x + x;
-                            cube_index    = block_element_disp[get_block_id(block_position, block_dim)] + z *  local_dim.x      *  local_dim.y      + y *  local_dim.x      + x;
-                            point_index   = block_point_disp                                            + z * (local_dim.x + 1) * (local_dim.y + 1) + y * (local_dim.x + 1) + x;
+                            cube_index    = (( mpi_config->solver_type == FLOW ) ? 0 : block_element_disp[get_block_id(block_position, block_dim)] ) + z *  local_dim.x      *  local_dim.y      + y *  local_dim.x      + x;
+                            point_index   = (( mpi_config->solver_type == FLOW ) ? 0 : block_point_disp )                                            + z * (local_dim.x + 1) * (local_dim.y + 1) + y * (local_dim.x + 1) + x;
 
+                            // uint64_t cube_index_actual    = block_element_disp[get_block_id(block_position, block_dim)] + z *  local_dim.x      *  local_dim.y      + y *  local_dim.x      + x;
+                            
                             // Create cube
-                            cubes[cube_index*cell_size + A_VERTEX] = point_index;
-                            cubes[cube_index*cell_size + B_VERTEX] = point_index + 1;
-                            cubes[cube_index*cell_size + C_VERTEX] = point_index + (local_dim.x + 1);
-                            cubes[cube_index*cell_size + D_VERTEX] = point_index + (local_dim.x + 1) + 1;
-                            cubes[cube_index*cell_size + E_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1);
-                            cubes[cube_index*cell_size + F_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + 1;
-                            cubes[cube_index*cell_size + G_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + (local_dim.x + 1);
-                            cubes[cube_index*cell_size + H_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + (local_dim.x + 1)+1;
+                            if (write_block)
+                            {
+                                cubes[cube_index*cell_size + A_VERTEX] = point_index;
+                                cubes[cube_index*cell_size + B_VERTEX] = point_index + 1;
+                                cubes[cube_index*cell_size + C_VERTEX] = point_index + (local_dim.x + 1);
+                                cubes[cube_index*cell_size + D_VERTEX] = point_index + (local_dim.x + 1) + 1;
+                                cubes[cube_index*cell_size + E_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1);
+                                cubes[cube_index*cell_size + F_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + 1;
+                                cubes[cube_index*cell_size + G_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + (local_dim.x + 1);
+                                cubes[cube_index*cell_size + H_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + (local_dim.x + 1)+1;
+                                
+                                // if (mpi_config->rank == 0) cout << "{ A" << cubes[cube_index*cell_size + A_VERTEX] << " B" << cubes[cube_index*cell_size + B_VERTEX] << " C" << cubes[cube_index*cell_size + C_VERTEX] << " D" << cubes[cube_index*cell_size + D_VERTEX] << " E" << cubes[cube_index*cell_size + E_VERTEX] << " F" << cubes[cube_index*cell_size + F_VERTEX] << " G" << cubes[cube_index*cell_size + G_VERTEX] << " H" << cubes[cube_index*cell_size + H_VERTEX] << "} " ; 
 
-                            // if (mpi_config->rank == 0) cout << "{ A" << cubes[cube_index*cell_size + A_VERTEX] << " B" << cubes[cube_index*cell_size + B_VERTEX] << " C" << cubes[cube_index*cell_size + C_VERTEX] << " D" << cubes[cube_index*cell_size + D_VERTEX] << " E" << cubes[cube_index*cell_size + E_VERTEX] << " F" << cubes[cube_index*cell_size + F_VERTEX] << " G" << cubes[cube_index*cell_size + G_VERTEX] << " H" << cubes[cube_index*cell_size + H_VERTEX] << "} " ; 
-
-                            fill_neighbours(cube_index, local_position, local_dim, block_position, block_dim, &cell_neighbours, flow_block_element_sizes, block_element_disp, mpi_config);
-
-                            // Create point
-                            points[point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
+                                if (mpi_config->solver_type == PARTICLE)  fill_neighbours(cube_index, local_position, local_dim, block_position, block_dim, &cell_neighbours, flow_block_element_sizes, block_element_disp, mpi_config);
+                                // Create point
+                                points[point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
+                            
+                                const int first_dims         = ((bx == 0 && x == 0)) + ((by == 0 && y == 0)) + (bz == 0 && z == 0);
+                                const int last_dims          = ((bx == block_dim[0] && x == flow_block_element_sizes[0][bx])) + 
+                                                            ((by == block_dim[1] && y == flow_block_element_sizes[1][by])) + 
+                                                            ((bz == block_dim[2] && z == flow_block_element_sizes[2][bz]));
+                                cells_per_point[point_index] = (uint8_t)pow(2, 3 - first_dims - last_dims);
+                                
+                                // cout << "Cube " << cube_index_actual << " Point " << point_index << " Rank " << mpi_config->rank << " { A" << cubes[cube_index*cell_size + A_VERTEX] << " B" << cubes[cube_index*cell_size + B_VERTEX] << " C" << cubes[cube_index*cell_size + C_VERTEX] << " D" << cubes[cube_index*cell_size + D_VERTEX] << " E" << cubes[cube_index*cell_size + E_VERTEX] << " F" << cubes[cube_index*cell_size + F_VERTEX] << " G" << cubes[cube_index*cell_size + G_VERTEX] << " H" << cubes[cube_index*cell_size + H_VERTEX] << "} " << endl ; 
+                            }
+                            // MPI_Barrier(mpi_config->world);
+                            
 
                             // Increment inner x displacement
                             block_inner_real_disp.x += element_dim.x;
@@ -361,8 +394,18 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                         }
 
                         // Add last x point.
-                        points[++point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
-                        
+                        if (write_block)  
+                        {
+                            // cout << " Pointx " << point_index + 1 << " Rank " << mpi_config->rank << endl ; 
+                            points[++point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
+                            const int first_dims         = 0 + ((by == 0 && y == 0)) + (bz == 0 && z == 0);
+                            const int last_dims          = 1 + 
+                                                           ((by == block_dim[1] && y == flow_block_element_sizes[1][by])) + 
+                                                           ((bz == block_dim[2] && z == flow_block_element_sizes[2][bz]));
+                            cells_per_point[point_index] = (uint8_t)pow(2, 3 - first_dims - last_dims);
+
+                        }
+                    
                         // Increment inner y displacement, reset inner x displacement to block's
                         block_inner_real_disp.x  = block_real_disp.x;
                         block_inner_real_disp.y += element_dim.y;
@@ -375,7 +418,20 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                     // Add last y points.
                     for ( uint64_t x = 0; x < flow_block_element_sizes[0][bx] + 1; x++ )
                     {
-                        points[++point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
+                        if (write_block)  
+                        {
+                            // cout << " Pointxy " << point_index + 1 << " Rank " << mpi_config->rank << endl ; 
+                            points[++point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
+                            const int first_dims          = ((bx == 0 && x == 0)) + 0 + (bz == 0 && z == 0);
+                            const int last_dims           = ((bx == block_dim[0] && x == flow_block_element_sizes[0][bx])) + 
+                                                            1 + 
+                                                            ((bz == block_dim[2] && z == flow_block_element_sizes[2][bz]));
+                            cells_per_point[point_index] = (uint8_t)pow(2, 3 - first_dims - last_dims);
+
+
+                        }
+                        // MPI_Barrier(mpi_config->world);
+
                         block_inner_real_disp.x += element_dim.x;
 
                         // if (mpi_config->rank == 0)  cout << point_index << " ";
@@ -395,8 +451,20 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                 {
                     for ( uint64_t x = 0; x < flow_block_element_sizes[0][bx] + 1; x++ )
                     {
-                        points[++point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
-                        block_inner_real_disp.x += element_dim.x;
+                        if (write_block)  
+                        {
+                            // cout << " Pointxyz " << point_index + 1 << " Rank " << mpi_config->rank << endl ; 
+                            points[++point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
+                            block_inner_real_disp.x += element_dim.x;
+
+                            const int first_dims          = ((bx == 0 && x == 0)) + ((by == 0 && y == 0)) + 0;
+                            const int last_dims           = ((bx == block_dim[0] && x == flow_block_element_sizes[0][bx])) + 
+                                                            ((by == block_dim[1] && y == flow_block_element_sizes[1][by])) + 
+                                                            1;
+                            cells_per_point[point_index] = (uint8_t)pow(2, 3 - first_dims - last_dims);
+
+                        }
+                        // MPI_Barrier(mpi_config->world);
 
                         // if (mpi_config->rank == 0)  cout << point_index << " ";
                         // if (mpi_config->rank == 0)  cout << print_vec(points[point_index]) << endl;
@@ -440,7 +508,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     const uint64_t faces_size = 0;
     Face<double>  *faces      = nullptr;                               
 
-    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, cubes, faces, cell_neighbours, num_blocks, block_element_disp, block_dim);
+    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, cubes, faces, cell_neighbours, cells_per_point, num_blocks, block_element_disp, block_point_disps, block_dim);
 
     return mesh;
 }

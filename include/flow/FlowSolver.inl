@@ -20,7 +20,10 @@ namespace minicombust::flow
         #pragma ivdep
         for (uint64_t i = 0; i < neighbour_size; i++)
         {
-            const uint64_t c = neighbour_indexes[i];
+            const uint64_t block_cell_disp  = mesh->local_cells_disp;
+            const uint64_t block_point_disp = mesh->local_points_disp;
+            const uint64_t c = neighbour_indexes[i] - block_cell_disp;
+
 
             const uint64_t *cell             = mesh->cells + c*cell_size;
             const vec<T> cell_centre         = mesh->cell_centres[c];
@@ -42,16 +45,17 @@ namespace minicombust::flow
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
             {
-                const uint64_t node_id = cell[n];
-                const vec<T> direction             = mesh->points[node_id] - cell_centre;
+                const uint64_t node_id      = cell[n];
+                const uint64_t real_node_id = cell[n] + block_point_disp;
+                const vec<T> direction      = mesh->points[node_id] - cell_centre;
 
-                if (node_to_position_map.contains(node_id))
+                if (node_to_position_map.contains(real_node_id))
                 {
-                    interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
-                    interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-                    interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[real_node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[real_node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[real_node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
 
-                    // if (node_id == 16)
+                    // if (real_node_id == 16)
                     //     printf("rank %d node cell %d flow size %f temp %f\n", mpi_config->rank, c, interp_node_flow_fields[node_to_position_map[16]].temp , flow_term.temp);
                 }
                 else
@@ -63,19 +67,19 @@ namespace minicombust::flow
                     temp_term.pressure = ((mesh->dummy_gas_pre * boundary_neighbours) + flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
                     temp_term.temp     = ((mesh->dummy_gas_tem * boundary_neighbours) + flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
                     
-                    interp_node_indexes[node_to_position_map.size()]     = node_id;
+                    interp_node_indexes[node_to_position_map.size()]     = real_node_id;
                     interp_node_flow_fields[node_to_position_map.size()] = temp_term; // TODO: Overlap getting flow fields?
                     
-                    node_to_position_map[node_id] = node_to_position_map.size();
+                    node_to_position_map[real_node_id] = node_to_position_map.size();
 
-                    // if (node_id == 16)
+                    // if (real_node_id == 16)
                     //     printf("rank %d node cell %d flow size %f boundary_neighbours %f temp %f\n", mpi_config->rank, c, interp_node_flow_fields[node_to_position_map[16]].temp , boundary_neighbours, temp_term.temp);
                 }
             }
         }
 
         // Useful for checking errors and comms
-        for (auto& node_it: node_to_position_map)
+        for (auto& node_it: node_to_position_map) // TODO Can uncomment this with properly implemented halo exchange
         {
             // if (interp_node_flow_fields[node_it.second].temp     != mesh->dummy_gas_tem)              
             //     {printf("ERROR UPDATE FLOW: Wrong temp value %f at %lu\n", interp_node_flow_fields[node_it.second].temp,           interp_node_indexes[node_it.second]); exit(1);}
@@ -84,9 +88,9 @@ namespace minicombust::flow
             // if (interp_node_flow_fields[node_it.second].vel.x != mesh->dummy_gas_vel.x) 
             //     {printf("ERROR UPDATE FLOW: Wrong velo value {%.10f y z} at %lu\n", interp_node_flow_fields[node_it.second].vel.x, interp_node_indexes[node_it.second]); exit(1);}
 
-            interp_node_flow_fields[node_it.second].temp = mesh->dummy_gas_tem;
+            interp_node_flow_fields[node_it.second].temp     = mesh->dummy_gas_tem;
             interp_node_flow_fields[node_it.second].pressure = mesh->dummy_gas_pre;
-            interp_node_flow_fields[node_it.second].vel = mesh->dummy_gas_vel;
+            interp_node_flow_fields[node_it.second].vel      = mesh->dummy_gas_vel;
         }
     }
     
@@ -100,17 +104,17 @@ namespace minicombust::flow
         cell_particle_field_map[0].clear();
         unordered_neighbours_set[0].clear();
         node_to_position_map.clear();
+        
+        uint64_t block_world_size = 1;
+        MPI_Request requests;
+        MPI_Iallreduce(MPI_IN_PLACE, &block_world_size, 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests);
+        mpi_config->one_flow_world_size[mpi_config->particle_flow_rank] = block_world_size;
 
         MPI_Barrier(mpi_config->world);
         performance_logger.my_papi_start();
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
-
-        uint64_t block_world_size = 1;
-        MPI_Request requests;
-        MPI_Iallreduce(MPI_IN_PLACE, &block_world_size, 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests);
-        mpi_config->one_flow_world_size[mpi_config->particle_flow_rank] = block_world_size;
 
         
         MPI_Wait(&requests, MPI_STATUS_IGNORE);
@@ -121,9 +125,7 @@ namespace minicombust::flow
             MPI_Comm_size(mpi_config->one_flow_world[mpi_config->particle_flow_rank], &mpi_config->one_flow_world_size[mpi_config->particle_flow_rank]);
         }
 
-
         MPI_Barrier(mpi_config->world);
-
 
         // printf("Flow rank %d world size %d\n", mpi_config->rank, mpi_config->one_flow_world_size[mpi_config->particle_flow_rank]);
 
@@ -308,15 +310,21 @@ namespace minicombust::flow
 
         if ((count % 100) == 0)
         {
-            double arr_usage = ((double)get_array_memory_usage()) / 1.e9;
-            double stl_usage = ((double)get_stl_memory_usage())   / 1.e9 ;
-            double arr_usage_total = arr_usage;
-            double stl_usage_total = stl_usage;
+            double arr_usage = ((double)get_array_memory_usage())  / 1.e9;
+            double stl_usage = ((double)get_stl_memory_usage())    / 1.e9 ;
+            double mesh_usage = ((double)mesh->get_memory_usage()) / 1.e9 ;
+            double arr_usage_total, stl_usage_total, mesh_usage_total;
 
+            MPI_Reduce(&arr_usage,  &arr_usage_total,  1, MPI_DOUBLE, MPI_SUM, 0, mpi_config->particle_flow_world);
+            MPI_Reduce(&stl_usage,  &stl_usage_total,  1, MPI_DOUBLE, MPI_SUM, 0, mpi_config->particle_flow_world);
+            MPI_Reduce(&mesh_usage, &mesh_usage_total, 1, MPI_DOUBLE, MPI_SUM, 0, mpi_config->particle_flow_world);
 
-            if ( unordered_neighbours_set[0].size() != 0 )
+            if ( mpi_config->particle_flow_rank == 0 )
             {
-                printf("                Flow     Array mem (GB) %8.3f Array mem total (GB) %8.3f STL mem (GB) %8.3f STL mem total (GB) %8.3f\n", arr_usage, arr_usage_total, stl_usage, stl_usage_total);
+                // printf("                Flow     array mem (TOTAL %8.3f GB) (AVG %8.3f GB) STL mem (TOTAL %8.3f GB) (AVG %8.3f GB) \n", arr_usage_total, arr_usage_total / mpi_config->particle_flow_world_size, 
+                //                                                                                                                         stl_usage_total, stl_usage_total / mpi_config->particle_flow_world_size);
+                printf("                Flow     mem (TOTAL %8.3f GB) (AVG %8.3f GB) \n", (arr_usage_total + stl_usage_total + mesh_usage_total), (arr_usage_total + stl_usage_total + mesh_usage_total) / mpi_config->particle_flow_world_size);
+
             }
         }
 
