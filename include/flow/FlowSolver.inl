@@ -8,28 +8,129 @@ using namespace std;
 
 namespace minicombust::flow 
 {
+    template<typename T> bool FlowSolver<T>::is_halo ( uint64_t cell )
+    {
+        return ( cell < mesh->block_element_disp[mpi_config->particle_flow_rank] || cell >= mesh->block_element_disp[mpi_config->particle_flow_rank + 1] );
+    }
+
+    template<typename T> void FlowSolver<T>::get_neighbour_cells ()
+    {
+        for (auto& cell_it: cell_particle_field_map[0])
+        {
+            uint64_t cell = cell_it.first;
+
+            unordered_neighbours_set[0].insert(cell); 
+
+            const uint64_t block_cell_disp  = mesh->local_cells_disp;
+
+            // Get 6 immediate neighbours
+            const uint64_t below_neighbour                = mesh->cell_neighbours[ (cell - block_cell_disp) * mesh->faces_per_cell + DOWN_FACE];
+            const uint64_t above_neighbour                = mesh->cell_neighbours[ (cell - block_cell_disp) * mesh->faces_per_cell + UP_FACE];
+            const uint64_t around_left_neighbour          = mesh->cell_neighbours[ (cell - block_cell_disp) * mesh->faces_per_cell + LEFT_FACE];
+            const uint64_t around_right_neighbour         = mesh->cell_neighbours[ (cell - block_cell_disp) * mesh->faces_per_cell + RIGHT_FACE];
+            const uint64_t around_front_neighbour         = mesh->cell_neighbours[ (cell - block_cell_disp) * mesh->faces_per_cell + FRONT_FACE];
+            const uint64_t around_back_neighbour          = mesh->cell_neighbours[ (cell - block_cell_disp) * mesh->faces_per_cell + BACK_FACE];
+
+            unordered_neighbours_set[0].insert(below_neighbour);             // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(above_neighbour);             // Immediate neighbour cell indexes are correct  
+            unordered_neighbours_set[0].insert(around_left_neighbour);       // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(around_right_neighbour);      // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(around_front_neighbour);      // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(around_back_neighbour);       // Immediate neighbour cell indexes are correct   
+
+            // Get 8 cells neighbours around
+            if ( around_left_neighbour != MESH_BOUNDARY && !is_halo(around_left_neighbour)  )   // If neighbour isn't edge of mesh and isn't a halo cell
+            {
+                const uint64_t around_left_front_neighbour    = mesh->cell_neighbours[ (around_left_neighbour - block_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                const uint64_t around_left_back_neighbour     = mesh->cell_neighbours[ (around_left_neighbour - block_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                unordered_neighbours_set[0].insert(around_left_front_neighbour);    
+                unordered_neighbours_set[0].insert(around_left_back_neighbour);     
+            }
+            if ( around_right_neighbour != MESH_BOUNDARY && !is_halo(around_right_neighbour) )
+            {
+                const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[ (around_right_neighbour - block_cell_disp) * mesh->faces_per_cell + FRONT_FACE] ;
+                const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[ (around_right_neighbour - block_cell_disp) * mesh->faces_per_cell + BACK_FACE]  ;
+                unordered_neighbours_set[0].insert(around_right_front_neighbour);   
+                unordered_neighbours_set[0].insert(around_right_back_neighbour); 
+            }
+            if ( below_neighbour != MESH_BOUNDARY && !is_halo(below_neighbour) )
+            {
+                // Get 8 cells around below cell
+                const uint64_t below_left_neighbour           = mesh->cell_neighbours[ (below_neighbour - block_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
+                const uint64_t below_right_neighbour          = mesh->cell_neighbours[ (below_neighbour - block_cell_disp) * mesh->faces_per_cell        + RIGHT_FACE] ;
+                const uint64_t below_front_neighbour          = mesh->cell_neighbours[ (below_neighbour - block_cell_disp) * mesh->faces_per_cell        + FRONT_FACE] ;
+                const uint64_t below_back_neighbour           = mesh->cell_neighbours[ (below_neighbour - block_cell_disp) * mesh->faces_per_cell        + BACK_FACE]  ;
+                unordered_neighbours_set[0].insert(below_left_neighbour);           
+                unordered_neighbours_set[0].insert(below_right_neighbour);          
+                unordered_neighbours_set[0].insert(below_front_neighbour);          
+                unordered_neighbours_set[0].insert(below_back_neighbour);           
+                if ( below_left_neighbour != MESH_BOUNDARY && !is_halo(below_left_neighbour) )
+                {
+                    const uint64_t below_left_front_neighbour     = mesh->cell_neighbours[ (below_left_neighbour - block_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
+                    const uint64_t below_left_back_neighbour      = mesh->cell_neighbours[ (below_left_neighbour - block_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
+                    unordered_neighbours_set[0].insert(below_left_front_neighbour);     
+                    unordered_neighbours_set[0].insert(below_left_back_neighbour);      
+                }
+                if ( below_right_neighbour != MESH_BOUNDARY && !is_halo(below_right_neighbour) )
+                {
+                    const uint64_t below_right_front_neighbour    = mesh->cell_neighbours[ (below_right_neighbour - block_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                    const uint64_t below_right_back_neighbour     = mesh->cell_neighbours[ (below_right_neighbour - block_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                    unordered_neighbours_set[0].insert(below_right_front_neighbour);    
+                    unordered_neighbours_set[0].insert(below_right_back_neighbour); 
+                }
+            }
+            if ( above_neighbour != MESH_BOUNDARY && !is_halo(above_neighbour) )
+            {
+                // Get 8 cells neighbours above
+                const uint64_t above_left_neighbour           = mesh->cell_neighbours[ (above_neighbour - block_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
+                const uint64_t above_right_neighbour          = mesh->cell_neighbours[ (above_neighbour - block_cell_disp) * mesh->faces_per_cell        + RIGHT_FACE] ;
+                const uint64_t above_front_neighbour          = mesh->cell_neighbours[ (above_neighbour - block_cell_disp) * mesh->faces_per_cell        + FRONT_FACE] ;
+                const uint64_t above_back_neighbour           = mesh->cell_neighbours[ (above_neighbour - block_cell_disp) * mesh->faces_per_cell        + BACK_FACE]  ;
+                unordered_neighbours_set[0].insert(above_left_neighbour);           
+                unordered_neighbours_set[0].insert(above_right_neighbour);          
+                unordered_neighbours_set[0].insert(above_front_neighbour);          
+                unordered_neighbours_set[0].insert(above_back_neighbour);           
+                if ( above_left_neighbour != MESH_BOUNDARY && !is_halo(above_left_neighbour) )
+                {
+                    const uint64_t above_left_front_neighbour     = mesh->cell_neighbours[ (above_left_neighbour - block_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
+                    const uint64_t above_left_back_neighbour      = mesh->cell_neighbours[ (above_left_neighbour - block_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
+                    unordered_neighbours_set[0].insert(above_left_front_neighbour);     
+                    unordered_neighbours_set[0].insert(above_left_back_neighbour);      
+                }
+                if ( above_right_neighbour != MESH_BOUNDARY && !is_halo(above_right_neighbour) )
+                {
+                    const uint64_t above_right_front_neighbour    = mesh->cell_neighbours[ (above_right_neighbour - block_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                    const uint64_t above_right_back_neighbour     = mesh->cell_neighbours[ (above_right_neighbour - block_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                    unordered_neighbours_set[0].insert(above_right_front_neighbour);    
+                    unordered_neighbours_set[0].insert(above_right_back_neighbour);     
+                }
+            }
+        }
+
+        unordered_neighbours_set[0].erase(MESH_BOUNDARY);
+    }
 
     template<typename T> void FlowSolver<T>::interpolate_to_nodes ()
     {
         const uint64_t cell_size = mesh->cell_size;
         double node_neighbours   = 8;
 
-        uint64_t neighbour_size = unordered_neighbours_set[0].size();
-
         // Process the allocation of cell fields (NOTE: Imperfect solution near edges. Fix by doing interpolation on flow side.)
-        #pragma ivdep
-        for (uint64_t i = 0; i < neighbour_size; i++)
+        // #pragma ivdep
+        for ( auto& cell_it : unordered_neighbours_set[0] )
         {
             const uint64_t block_cell_disp  = mesh->local_cells_disp;
             const uint64_t block_point_disp = mesh->local_points_disp;
-            const uint64_t c = neighbour_indexes[i] - block_cell_disp;
+            const uint64_t c                = cell_it - block_cell_disp;
+
+            if (is_halo(cell_it)) continue;
 
 
             const uint64_t *cell             = mesh->cells + c*cell_size;
             const vec<T> cell_centre         = mesh->cell_centres[c];
 
-            const flow_aos<T> flow_term      = mesh->flow_terms[i];      
-            const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[i]; 
+            const flow_aos<T> flow_term      = mesh->flow_terms[c];      
+            const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
 
             // USEFUL ERROR CHECKING!
             // if (flow_term.temp     != mesh->dummy_gas_tem) {printf("INTERP NODAL ERROR: Wrong temp value\n"); exit(1);}
@@ -79,7 +180,9 @@ namespace minicombust::flow
         }
 
         // Useful for checking errors and comms
-        for (auto& node_it: node_to_position_map) // TODO Can uncomment this with properly implemented halo exchange
+
+        // TODO: Can comment this with properly implemented halo exchange. Need cell neighbours for halo and nodes!
+        for (auto& node_it: node_to_position_map) 
         {
             // if (interp_node_flow_fields[node_it.second].temp     != mesh->dummy_gas_tem)              
             //     {printf("ERROR UPDATE FLOW: Wrong temp value %f at %lu\n", interp_node_flow_fields[node_it.second].temp,           interp_node_indexes[node_it.second]); exit(1);}
@@ -93,6 +196,7 @@ namespace minicombust::flow
             interp_node_flow_fields[node_it.second].vel      = mesh->dummy_gas_vel;
         }
     }
+
     
     template<typename T> void FlowSolver<T>::update_flow_field(bool receive_particle_fields)
     {
@@ -135,19 +239,22 @@ namespace minicombust::flow
 
         // Gather and reduce each rank's neighbour indexes into unordered_neighbours_set and neighbour_indexes.
         uint64_t elements;
-        auto resize_cell_indexes_fn = [this] (uint64_t *elements, uint64_t ***indexes) { return resize_cell_indexes(elements, indexes); };
-        MPI_GatherSet ( mpi_config, mesh->num_blocks, unordered_neighbours_set, &neighbour_indexes, &elements, resize_cell_indexes_fn );
+        // auto resize_cell_indexes_fn = [this] (uint64_t *elements, uint64_t ***indexes) { return resize_cell_indexes(elements, indexes); };
+        // MPI_GatherSet ( mpi_config, mesh->num_blocks, unordered_neighbours_set, &neighbour_indexes, &elements, resize_cell_indexes_fn );
 
+        function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
+        MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, &neighbour_indexes, &cell_particle_aos, &elements, resize_cell_particles_fn);
 
         // printf("Flow Rank %d elements %lu \n", mpi_config->rank, unordered_neighbours_set[0].size());
-        
-        unordered_neighbours_set[0].erase(MESH_BOUNDARY);
 
         MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //3
+
+        get_neighbour_cells ();
         
         interpolate_to_nodes ();
+
         // Send size of reduced neighbours of cells back to ranks.
         uint64_t neighbour_size       = unordered_neighbours_set[0].size();
         uint64_t neighbour_point_size = node_to_position_map.size();
@@ -159,29 +266,9 @@ namespace minicombust::flow
         if (neighbour_point_size != 0)  MPI_Bcast(&neighbour_point_size, 1, MPI_UINT64_T, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
 
         MPI_Barrier(mpi_config->particle_flow_world);
+
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //4
-
-        // Get size of sizes and displacements
-        // int neighbour_disp = 0;
-        // for (uint64_t rank = 0; rank < (uint64_t)mpi_config->one_flow_world_size; rank++)
-        // {
-        //     neighbour_sizes[rank] = neighbour_size / (mpi_config->one_flow_world_size - mpi_config->particle_flow_world_size);
-
-        //     if (rank < (neighbour_size % (uint64_t)(mpi_config->one_flow_world_size - mpi_config->particle_flow_world_size)))
-        //         neighbour_sizes[rank]++;
-
-        //     int last_disp         = neighbour_disp;
-        //     neighbour_disps[rank] = neighbour_disp;
-        //     neighbour_disp       += neighbour_sizes[rank];
-
-        //     if ((neighbour_disp < last_disp) || (neighbour_sizes[rank] < 0)) {
-        //         printf("OVERFLOW!!!!!");
-        //         exit(1);
-        //     }
-
-        // }
-        // neighbour_sizes[mpi_config->one_flow_rank] = 0;
 
         // Send neighbours of cells back to ranks.
         MPI_Request scatter_requests[2];
@@ -193,33 +280,14 @@ namespace minicombust::flow
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); // 5
 
-        // resize_cell_flow(neighbour_size);
-        // for (uint64_t i = 0; i < neighbour_size; i++)
-        // {
-        //     neighbour_flow_aos_buffer[i]      = mesh->flow_terms[neighbour_indexes[i]];
-        // }
-
-        // MPI_Wait(&scatter_requests[0], MPI_STATUS_IGNORE);
-        // MPI_Iscatterv(neighbour_flow_aos_buffer,      neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank, mpi_config->one_flow_world, &scatter_requests[0]);
         if (neighbour_point_size != 0) MPI_Ibcast(interp_node_flow_fields, neighbour_point_size, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &scatter_requests[1]);
 
-        // for (uint64_t i = 0; i < neighbour_size; i++)
-        // {
-        //     neighbour_flow_grad_aos_buffer[i] = mesh->flow_grad_terms[neighbour_indexes[i]];
-        // }
-
-        // MPI_Iscatterv(neighbour_flow_grad_aos_buffer, neighbour_sizes, neighbour_disps, mpi_config->MPI_FLOW_STRUCTURE, NULL, 0, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank, mpi_config->one_flow_world, &scatter_requests[1]);
         if (neighbour_point_size != 0) MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
 
         MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //6
 
-        if (receive_particle_fields)
-        {
-            function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
-            MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, &neighbour_indexes, &cell_particle_aos, &elements, resize_cell_particles_fn);
-        }
         
         MPI_Barrier(mpi_config->world);
         MPI_Barrier(mpi_config->particle_flow_world);

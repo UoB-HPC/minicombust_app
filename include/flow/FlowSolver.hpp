@@ -17,9 +17,9 @@ namespace minicombust::flow
             T combustion_field;
             T flow_field;
 
-            vector<unordered_set<uint64_t>>                  unordered_neighbours_set;
-            vector<unordered_map<uint64_t, particle_aos<T>>> cell_particle_field_map;
-            unordered_map<uint64_t, uint64_t>                node_to_position_map;
+            vector<unordered_set<uint64_t>>                unordered_neighbours_set;
+            vector<unordered_map<uint64_t, uint64_t>>      cell_particle_field_map;
+            unordered_map<uint64_t, uint64_t>              node_to_position_map;
 
             uint64_t    *interp_node_indexes;
             flow_aos<T> *interp_node_flow_fields;
@@ -60,7 +60,7 @@ namespace minicombust::flow
                 interp_node_flow_fields  = (flow_aos<T> * ) malloc(node_flow_array_size);
 
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
-                cell_particle_field_map.push_back(unordered_map<uint64_t, particle_aos<T>>());
+                cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
 
 
                 // Array sizes
@@ -71,7 +71,7 @@ namespace minicombust::flow
 
                 // STL sizes
                 uint64_t total_unordered_neighbours_set_size   = unordered_neighbours_set[0].size() * sizeof(uint64_t) ;
-                uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()  * sizeof(particle_aos<T>);
+                uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()  * sizeof(uint64_t);
                 uint64_t total_node_to_position_map_size       = node_to_position_map.size()        * sizeof(uint64_t);
 
                 uint64_t total_memory_usage = get_array_memory_usage() + get_stl_memory_usage();
@@ -187,14 +187,17 @@ namespace minicombust::flow
             size_t get_stl_memory_usage ()
             {
                 uint64_t total_unordered_neighbours_set_size   = unordered_neighbours_set[0].size() * sizeof(uint64_t) ;
-                uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()  * sizeof(particle_aos<T>);
+                uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()  * sizeof(uint64_t);
                 uint64_t total_node_to_position_map_size       = node_to_position_map.size()        * sizeof(uint64_t);
 
                 return total_unordered_neighbours_set_size + total_cell_particle_field_map_size + total_node_to_position_map_size;
             }
 
-
+            bool is_halo( uint64_t cell );
+            
+            void get_neighbour_cells();
             void interpolate_to_nodes();
+
             void update_flow_field(bool receive_particle);  // Synchronize point with flow solver
             
             void solve_combustion_equations();

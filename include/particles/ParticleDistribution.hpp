@@ -202,7 +202,7 @@ namespace minicombust::particles
                 decay_threshold  = new FixedDistribution<T>(decay_threshold_mean);  
             }
 
-            inline void emit_particles_waves(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, particle_aos<T>>>& cell_particle_field_map, Particle_Logger *logger)
+            inline void emit_particles_waves(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, Particle_Logger *logger)
             {
                 particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 uint64_t start_cell = mesh->mesh_size * 0.49;
@@ -226,7 +226,14 @@ namespace minicombust::particles
                         start_cell = particle.cell; 
                         particles.push_back(particle);
                         
-                        cell_particle_field_map[mesh->get_block_id(particle.cell)].try_emplace(particle.cell, zero_field);
+                        const uint64_t block_id = mesh->get_block_id(particle.cell);
+                        const uint64_t index    = cell_particle_field_map[block_id].size();
+
+                        indexes[block_id][index]        = particle.cell;
+                        indexed_fields[block_id][index] = zero_field;
+
+
+                        cell_particle_field_map[block_id][particle.cell] = index;
                     }
                 }
 
@@ -234,7 +241,7 @@ namespace minicombust::particles
                 logger->emitted_particles  += wave_particles_per_timestep ;
             }
 
-            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, particle_aos<T>>>& cell_particle_field_map, Particle_Logger *logger)
+            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, Particle_Logger *logger)
             {
                 particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 uint64_t start_cell = mesh->mesh_size * 0.49;
@@ -256,7 +263,14 @@ namespace minicombust::particles
                     start_cell = particle.cell; 
                     particles.push_back(particle);
                     
-                    cell_particle_field_map[mesh->get_block_id(particle.cell)].try_emplace(particle.cell, zero_field);
+                    const uint64_t block_id = mesh->get_block_id(particle.cell);
+                    const uint64_t index    = cell_particle_field_map[block_id].size();
+
+                    indexes[block_id][index]        = particle.cell;
+                    indexed_fields[block_id][index] = zero_field;
+
+
+                    cell_particle_field_map[block_id][particle.cell] = index;
                 }
 
                 logger->num_particles      += even_particles_per_timestep + remainder;

@@ -305,10 +305,10 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     const uint64_t local_num_cubes  = ( mpi_config->solver_type == FLOW ) ? block_element_disp[mpi_config->particle_flow_rank + 1] -  block_element_disp[mpi_config->particle_flow_rank] : num_cubes;
     const uint64_t local_num_points = ( mpi_config->solver_type == FLOW ) ? block_point_disps[mpi_config->particle_flow_rank + 1]  -  block_point_disps[mpi_config->particle_flow_rank]  : num_points;
 
-    vec<double> *points          = (vec<double> *)malloc(local_num_points              * sizeof(vec<double>));
-    uint64_t    *cubes           = (uint64_t *)   malloc(local_num_cubes * cell_size   * sizeof(uint64_t));
-    uint64_t    *cell_neighbours = ( mpi_config->solver_type == FLOW ) ? nullptr : (uint64_t *)malloc(num_cubes * faces_per_cell * sizeof(uint64_t)); 
-    uint8_t    *cells_per_point = (uint8_t *) malloc(local_num_points * sizeof(uint8_t));
+    vec<double> *points          = (vec<double> *)malloc(local_num_points                  * sizeof(vec<double>));
+    uint64_t    *cubes           = (uint64_t *)   malloc(local_num_cubes  * cell_size      * sizeof(uint64_t));
+    uint64_t    *cell_neighbours = (uint64_t *)   malloc(local_num_cubes  * faces_per_cell * sizeof(uint64_t)); 
+    uint8_t     *cells_per_point = (uint8_t *)    malloc(local_num_points                  * sizeof(uint8_t));
 
 
     // Create array of cubes, BLOCK ORDER.
@@ -370,7 +370,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                                 
                                 // if (mpi_config->rank == 0) cout << "{ A" << cubes[cube_index*cell_size + A_VERTEX] << " B" << cubes[cube_index*cell_size + B_VERTEX] << " C" << cubes[cube_index*cell_size + C_VERTEX] << " D" << cubes[cube_index*cell_size + D_VERTEX] << " E" << cubes[cube_index*cell_size + E_VERTEX] << " F" << cubes[cube_index*cell_size + F_VERTEX] << " G" << cubes[cube_index*cell_size + G_VERTEX] << " H" << cubes[cube_index*cell_size + H_VERTEX] << "} " ; 
 
-                                if (mpi_config->solver_type == PARTICLE)  fill_neighbours(cube_index, local_position, local_dim, block_position, block_dim, &cell_neighbours, flow_block_element_sizes, block_element_disp, mpi_config);
+                                fill_neighbours(cube_index, local_position, local_dim, block_position, block_dim, &cell_neighbours, flow_block_element_sizes, block_element_disp, mpi_config);
                                 // Create point
                                 points[point_index] = vec<double> { block_inner_real_disp.x, block_inner_real_disp.y, block_inner_real_disp.z };
                             

@@ -538,7 +538,7 @@ namespace minicombust::utils
     }
 
     template<typename T>
-    inline void MPI_GatherMap (MPI_Config *mpi_config, const uint64_t num_blocks, vector<unordered_map<uint64_t, particle_aos<T>>>& cell_particle_maps, uint64_t **indexes, particle_aos<T> **indexed_fields, uint64_t *elements, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn)
+    inline void MPI_GatherMap (MPI_Config *mpi_config, const uint64_t num_blocks, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_maps, uint64_t **indexes, particle_aos<T> **indexed_fields, uint64_t *elements, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn)
     {
         const int *world_sizes = mpi_config->one_flow_world_size;
         int       *ranks       = mpi_config->one_flow_rank;
@@ -645,17 +645,22 @@ namespace minicombust::utils
                             // printf("LEVEL %d | Block %lu | Rank %d (AR %d) recv processing %lu elements \n", level, b, mpi_config->rank, alias_rank[b], send_counts[b]);
                             for (uint64_t i = 0; i < send_counts[b]; i++)
                             {
-                                if ( cell_particle_maps[flow_block_index].contains(recv_indexes[b][i]) )
+                                const uint64_t cell = recv_indexes[b][i];
+                                if ( cell_particle_maps[flow_block_index].contains(cell) )
                                 {
-                                    cell_particle_maps[flow_block_index][recv_indexes[b][i]].momentum  += recv_indexed_fields[b][i].momentum;
-                                    cell_particle_maps[flow_block_index][recv_indexes[b][i]].energy    += recv_indexed_fields[b][i].energy;
-                                    cell_particle_maps[flow_block_index][recv_indexes[b][i]].fuel      += recv_indexed_fields[b][i].fuel;
+                                    const uint64_t index = cell_particle_maps[flow_block_index][cell];
+
+                                    curr_indexed_fields[flow_block_index][index].momentum  += recv_indexed_fields[b][i].momentum;
+                                    curr_indexed_fields[flow_block_index][index].energy    += recv_indexed_fields[b][i].energy;
+                                    curr_indexed_fields[flow_block_index][index].fuel      += recv_indexed_fields[b][i].fuel;
                                 }
                                 else
                                 {
-                                    curr_indexes[flow_block_index][cell_particle_maps[flow_block_index].size()]        = recv_indexes[b][i];
-                                    curr_indexed_fields[flow_block_index][cell_particle_maps[flow_block_index].size()] = recv_indexed_fields[b][i];
-                                    cell_particle_maps[flow_block_index][recv_indexes[b][i]]                           = recv_indexed_fields[b][i];
+                                    const uint64_t index = cell_particle_maps[flow_block_index].size();
+
+                                    curr_indexes[flow_block_index][index]           = cell;
+                                    curr_indexed_fields[flow_block_index][index]    = recv_indexed_fields[b][i];
+                                    cell_particle_maps[flow_block_index][cell]      = index;
                                 }
                             }
                             processed_block[b] = true;

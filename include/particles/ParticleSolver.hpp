@@ -26,11 +26,11 @@ namespace minicombust::particles
             const uint64_t num_timesteps;
             const uint64_t reserve_particles_size;
            
-            vector<Particle<T>>                               particles;
-            vector<unordered_map<uint64_t, particle_aos<T>>>  cell_particle_field_map;
-            unordered_map<uint64_t, flow_aos<T> *>            node_to_field_address_map;
-            vector<unordered_set<uint64_t>>                   neighbours_sets;
-            ParticleDistribution<T>                          *particle_dist;
+            vector<Particle<T>>                          particles;
+            vector<unordered_map<uint64_t, uint64_t>>    cell_particle_field_map;
+            unordered_map<uint64_t, flow_aos<T> *>       node_to_field_address_map;
+            vector<unordered_set<uint64_t>>              neighbours_sets;
+            ParticleDistribution<T>                     *particle_dist;
 
             Mesh<T> *mesh;
             
@@ -128,7 +128,7 @@ namespace minicombust::particles
                     cell_particle_aos[b]                 = (particle_aos<T> *)malloc(cell_particle_array_sizes[b]);
 
                     neighbours_sets.push_back(unordered_set<uint64_t>());
-                    cell_particle_field_map.push_back(unordered_map<uint64_t, particle_aos<T>>());
+                    cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
                 }
 
                 // TODO: Play with these for performance
@@ -164,7 +164,7 @@ namespace minicombust::particles
                     total_cell_particle_array_size       += cell_particle_array_sizes[b];
 
                     total_neighbours_sets_size            += neighbours_sets[b].size() * sizeof(uint64_t);
-                    total_cell_particle_field_map_size    += cell_particle_field_map[b].size() * sizeof(particle_aos<T>);
+                    total_cell_particle_field_map_size    += cell_particle_field_map[b].size() * sizeof(uint64_t);
                 }
 
                 if (mpi_config->particle_flow_rank == 0)
@@ -342,7 +342,7 @@ namespace minicombust::particles
                 for (uint64_t b = 0; b < mesh->num_blocks; b++)  
                 {
                     total_neighbours_sets_size            += neighbours_sets[b].size() * sizeof(uint64_t);
-                    total_cell_particle_field_map_size    += cell_particle_field_map[b].size() * sizeof(particle_aos<T>);
+                    total_cell_particle_field_map_size    += cell_particle_field_map[b].size() * sizeof(uint64_t);
                 }
 
                 // if (mpi_config->particle_flow_rank == 0)
