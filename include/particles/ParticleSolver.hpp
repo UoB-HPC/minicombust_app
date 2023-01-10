@@ -48,7 +48,6 @@ namespace minicombust::particles
 
             uint64_t *neighbours_size;
             uint64_t  rank_neighbours_size;
-            uint64_t **cell_indexes;
             uint64_t **cell_particle_indexes;
 
             
@@ -56,7 +55,6 @@ namespace minicombust::particles
             flow_aos<T> **all_interp_node_flow_fields;
 
 
-            size_t  *cell_index_array_sizes;
             size_t  *node_index_array_sizes;
             size_t  *node_flow_array_sizes;
 
@@ -65,7 +63,13 @@ namespace minicombust::particles
 
             double time_stats[6] = {0.0};
 
-            MPI_Request *scatter_requests;
+            bool *async_locks;
+
+            MPI_Request *requests;
+
+            uint64_t         *send_counts;         
+            uint64_t        **recv_indexes;        
+            particle_aos<T> **recv_indexed_fields; 
 
         public:
             MPI_Config *mpi_config;
@@ -77,8 +81,6 @@ namespace minicombust::particles
                            delta(delta), num_timesteps(ntimesteps), reserve_particles_size(reserve_particles_size), particle_dist(particle_dist), mesh(mesh), mpi_config(mpi_config)
             {
                 // Allocate space for the size of each block array size
-                cell_index_array_sizes           = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
-
                 node_index_array_sizes           = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
                 node_flow_array_sizes           = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
                 
@@ -88,17 +90,21 @@ namespace minicombust::particles
 
                 // Allocate each blocks cell arrays
                 neighbours_size             = (uint64_t *)     malloc(mesh->num_blocks * sizeof(uint64_t));
-                cell_indexes                = (uint64_t **)    malloc(mesh->num_blocks * sizeof(uint64_t *));
                 all_interp_node_indexes     = (uint64_t **)    malloc(mesh->num_blocks * sizeof(uint64_t *));
                 all_interp_node_flow_fields = (flow_aos<T> **) malloc(mesh->num_blocks * sizeof(flow_aos<T> *));
 
                 cell_particle_indexes = (uint64_t **)         malloc(mesh->num_blocks * sizeof(uint64_t *));
                 cell_particle_aos     = (particle_aos<T>  **) malloc(mesh->num_blocks * sizeof(particle_aos<T>  *));
 
+                async_locks    = (bool*)malloc(4 * mesh->num_blocks * sizeof(bool));
+
+                send_counts    =              (uint64_t*) malloc(mesh->num_blocks * sizeof(uint64_t));
+                recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
+                recv_indexed_fields = (particle_aos<T>**) malloc(mesh->num_blocks * sizeof(particle_aos<T>*));
+
 
                 // Allocate MPI requests
-                scatter_requests = (MPI_Request *)malloc(mesh->num_blocks * 2 * sizeof(MPI_Request));
-
+                requests = (MPI_Request *)malloc(mesh->num_blocks * 2 * sizeof(MPI_Request));
 
                 // For each block, allocate a fraction of their local mesh size
                 for ( uint64_t b = 0; b < mesh->num_blocks; b++ )
@@ -111,8 +117,6 @@ namespace minicombust::particles
                     const uint64_t cell_storage = fraction * block_cell_size;
                     const uint64_t node_storage = fraction * block_point_size;
 
-                    cell_index_array_sizes[b]   = cell_storage  * sizeof(uint64_t);
-
                     node_index_array_sizes[b]   = node_storage * sizeof(uint64_t); 
                     node_flow_array_sizes[b]    = node_storage * sizeof(flow_aos<T>); 
 
@@ -120,7 +124,6 @@ namespace minicombust::particles
                     cell_particle_array_sizes[b]       = cell_storage * sizeof(particle_aos<T>); 
 
                     // Allocate each block array
-                    cell_indexes[b]                 = (uint64_t *)   malloc(cell_index_array_sizes[b]);
                     all_interp_node_indexes[b]      = (uint64_t *)   malloc(node_index_array_sizes[b]);
                     all_interp_node_flow_fields[b]  = (flow_aos<T> *)malloc(node_flow_array_sizes[b]);
 
@@ -138,7 +141,6 @@ namespace minicombust::particles
                 memset(&logger,           0, sizeof(Particle_Logger));
 
                 // Array sizes
-                uint64_t total_cell_index_array_size           = 0;
                 uint64_t total_node_index_array_size           = 0;
                 uint64_t total_node_flow_array_size            = 0;
                 uint64_t total_cell_particle_index_array_size  = 0;
@@ -155,7 +157,6 @@ namespace minicombust::particles
 
                 for (uint64_t b = 0; b < mesh->num_blocks; b++)
                 {
-                    total_cell_index_array_size  += cell_index_array_sizes[b];
 
                     total_node_index_array_size  += node_index_array_sizes[b];
                     total_node_flow_array_size   += node_flow_array_sizes[b];
@@ -171,7 +172,6 @@ namespace minicombust::particles
                 {
                     MPI_Reduce(MPI_IN_PLACE, &total_memory_usage,                                 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
-                    MPI_Reduce(MPI_IN_PLACE, &total_cell_index_array_size,                        1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_node_index_array_size,                        1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_node_flow_array_size,                         1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_cell_particle_index_array_size,               1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
@@ -184,7 +184,6 @@ namespace minicombust::particles
 
                     // TODO: UPDATE MEMORY REQUIREMENTS!!!!
                     printf("Particle solver storage requirements (%d processes) : \n", mpi_config->particle_flow_world_size);
-                    printf("\ttotal_cell_index_array_size                           (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_index_array_size           / 1000000.0, (float) total_cell_index_array_size          / (1000000.0 * mpi_config->world_size));
                     printf("\ttotal_node_index_array_size                           (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_node_index_array_size           / 1000000.0, (float) total_node_index_array_size          / (1000000.0 * mpi_config->world_size));
                     printf("\ttotal_node_flow_array_size                            (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_node_flow_array_size            / 1000000.0, (float) total_node_flow_array_size           / (1000000.0 * mpi_config->world_size));
                     printf("\ttotal_cell_particle_index_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_particle_index_array_size  / 1000000.0, (float) total_cell_particle_index_array_size / (1000000.0 * mpi_config->world_size));
@@ -200,7 +199,6 @@ namespace minicombust::particles
                 {
                     MPI_Reduce(&total_memory_usage,                   nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
-                    MPI_Reduce(&total_cell_index_array_size,          nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_node_index_array_size ,         nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_node_flow_array_size ,          nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_cell_particle_index_array_size, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
@@ -221,25 +219,25 @@ namespace minicombust::particles
 
             }
 
-            void resize_cell_indexes (uint64_t *elements, uint64_t ***new_cell_indexes)
-            {
-                for ( uint64_t b = 0; b < mesh->num_blocks; b++)
-                {
-                    while ( cell_index_array_sizes[b] < ((size_t) elements[b] * sizeof(uint64_t)) )
-                    {
-                        cell_index_array_sizes[b] *= 2;
+            // void resize_cell_indexes (uint64_t *elements, uint64_t ***new_cell_indexes)
+            // {
+            //     for ( uint64_t b = 0; b < mesh->num_blocks; b++)
+            //     {
+            //         while ( cell_index_array_sizes[b] < ((size_t) elements[b] * sizeof(uint64_t)) )
+            //         {
+            //             cell_index_array_sizes[b] *= 2;
 
-                        cell_indexes[b] = (uint64_t*)realloc(cell_indexes[b], cell_index_array_sizes[b]);
-                        if (cell_indexes[b] == NULL)
-                        {
-                            printf("REALLOC FAILED\n");
-                        }
-                    }
+            //             cell_indexes[b] = (uint64_t*)realloc(cell_indexes[b], cell_index_array_sizes[b]);
+            //             if (cell_indexes[b] == NULL)
+            //             {
+            //                 printf("REALLOC FAILED\n");
+            //             }
+            //         }
                     
-                    if (new_cell_indexes != NULL)  (*new_cell_indexes)[b] = cell_indexes[b];
-                }
+            //         if (new_cell_indexes != NULL)  (*new_cell_indexes)[b] = cell_indexes[b];
+            //     }
 
-            }
+            // }
 
             void resize_cell_particle_indexes (uint64_t *elements, uint64_t ***new_cell_indexes)
             {
@@ -301,7 +299,6 @@ namespace minicombust::particles
 
             size_t get_array_memory_usage ()
             {
-                uint64_t total_cell_index_array_size          = 0;
                 uint64_t total_node_index_array_size          = 0;
                 uint64_t total_node_flow_array_size           = 0;
                 uint64_t total_cell_particle_index_array_size = 0;
@@ -309,8 +306,6 @@ namespace minicombust::particles
 
                 for (uint64_t b = 0; b < mesh->num_blocks; b++)  
                 {
-                    total_cell_index_array_size  += cell_index_array_sizes[b];
-
                     total_node_index_array_size  += node_index_array_sizes[b];
                     total_node_flow_array_size   += node_flow_array_sizes[b];
 
@@ -320,15 +315,14 @@ namespace minicombust::particles
 
                 // if (mpi_config->particle_flow_rank == 0)
                 // {
-                //     printf("total_cell_index_array_size %.2f\n",          total_cell_index_array_size           / 1.e9);
                 //     printf("total_node_index_array_size  %.2f\n",         total_node_index_array_size           / 1.e9);
                 //     printf("total_node_flow_array_size  %.2f\n",          total_node_flow_array_size            / 1.e9);
                 //     printf("total_cell_particle_index_array_size %.2f\n", total_cell_particle_index_array_size  / 1.e9);
                 //     printf("total_cell_particle_array_size %.2f\n",       total_cell_particle_array_size        / 1.e9);
 
                 // }
+                return  total_node_index_array_size  + total_node_flow_array_size  + total_cell_particle_index_array_size + total_cell_particle_array_size ;
 
-                return total_cell_index_array_size + total_node_index_array_size  + total_node_flow_array_size  + total_cell_particle_index_array_size + total_cell_particle_array_size ;
             }
 
             size_t get_stl_memory_usage ()

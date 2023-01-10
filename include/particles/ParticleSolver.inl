@@ -109,7 +109,7 @@ namespace minicombust::particles
             cell_particle_field_map[b].erase(MESH_BOUNDARY);
             elements[b]         = cell_particle_field_map[b].size();
             block_world_size[b] = cell_particle_field_map[b].size() ? 1 : 0;
-            MPI_Iallreduce(MPI_IN_PLACE, &block_world_size[b], 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[b], &scatter_requests[2*b]);
+            MPI_Iallreduce(MPI_IN_PLACE, &block_world_size[b], 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[b], &requests[2*b]);
         }
 
         MPI_Barrier(mpi_config->world);
@@ -117,7 +117,7 @@ namespace minicombust::particles
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
             neighbours_size[b] = cell_particle_field_map[b].size();
-            MPI_Wait(&scatter_requests[2*b], MPI_STATUS_IGNORE);
+            MPI_Wait(&requests[2*b], MPI_STATUS_IGNORE);
 
             if ( block_world_size[b] > 1 )
             {
@@ -139,7 +139,7 @@ namespace minicombust::particles
         MPI_Barrier(mpi_config->world);        
 
         function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
-        MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, elements, resize_cell_particles_fn);
+        MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, elements, async_locks, send_counts, recv_indexes, recv_indexed_fields, requests, resize_cell_particles_fn);
 
         // Get reduced neighbours size
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
@@ -153,8 +153,8 @@ namespace minicombust::particles
         {
             if (neighbours_size[b] != 0)  
             {
-                MPI_Ibcast(all_interp_node_indexes[b],     neighbours_size[b], MPI_UINT64_T,                   mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &scatter_requests[2 * b + 0]);
-                MPI_Ibcast(all_interp_node_flow_fields[b], neighbours_size[b], mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &scatter_requests[2 * b + 1]);
+                MPI_Ibcast(all_interp_node_indexes[b],     neighbours_size[b], MPI_UINT64_T,                   mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &requests[2 * b + 0]);
+                MPI_Ibcast(all_interp_node_flow_fields[b], neighbours_size[b], mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &requests[2 * b + 1]);
             }
         }
 
@@ -172,11 +172,12 @@ namespace minicombust::particles
         bool all_true = true;
         bool processed_block[mesh->num_blocks] = {false};
         for (uint64_t bi = 0; bi < mesh->num_blocks; bi++)  all_true &= processed_block[bi];
-        while (!all_true)
+
+        while (!all_true) // TODO: If we know block data is here, we can start operating on particles within that block. Potentially even store particles in blocks? 
         {
             int ready = 1;
             if (neighbours_size[b] != 0)
-                MPI_Testall(2, &scatter_requests[2 * b], &ready, MPI_STATUSES_IGNORE);
+                MPI_Testall(2, &requests[2 * b], &ready, MPI_STATUSES_IGNORE);
 
             if (ready && !processed_block[b])
             {

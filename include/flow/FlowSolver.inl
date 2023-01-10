@@ -182,7 +182,10 @@ namespace minicombust::flow
         // Useful for checking errors and comms
 
         // TODO: Can comment this with properly implemented halo exchange. Need cell neighbours for halo and nodes!
-        for (auto& node_it: node_to_position_map) 
+        uint64_t const nsize = node_to_position_map.size();
+
+        #pragma ivdep
+        for ( uint64_t i = 0;  i < nsize; i++ ) 
         {
             // if (interp_node_flow_fields[node_it.second].temp     != mesh->dummy_gas_tem)              
             //     {printf("ERROR UPDATE FLOW: Wrong temp value %f at %lu\n", interp_node_flow_fields[node_it.second].temp,           interp_node_indexes[node_it.second]); exit(1);}
@@ -191,9 +194,9 @@ namespace minicombust::flow
             // if (interp_node_flow_fields[node_it.second].vel.x != mesh->dummy_gas_vel.x) 
             //     {printf("ERROR UPDATE FLOW: Wrong velo value {%.10f y z} at %lu\n", interp_node_flow_fields[node_it.second].vel.x, interp_node_indexes[node_it.second]); exit(1);}
 
-            interp_node_flow_fields[node_it.second].temp     = mesh->dummy_gas_tem;
-            interp_node_flow_fields[node_it.second].pressure = mesh->dummy_gas_pre;
-            interp_node_flow_fields[node_it.second].vel      = mesh->dummy_gas_vel;
+            interp_node_flow_fields[i].temp     = mesh->dummy_gas_tem;
+            interp_node_flow_fields[i].pressure = mesh->dummy_gas_pre;
+            interp_node_flow_fields[i].vel      = mesh->dummy_gas_vel;
         }
     }
 
@@ -210,8 +213,7 @@ namespace minicombust::flow
         node_to_position_map.clear();
         
         uint64_t block_world_size = 1;
-        MPI_Request requests;
-        MPI_Iallreduce(MPI_IN_PLACE, &block_world_size, 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests);
+        MPI_Iallreduce(MPI_IN_PLACE, &block_world_size, 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
         mpi_config->one_flow_world_size[mpi_config->particle_flow_rank] = block_world_size;
 
         MPI_Barrier(mpi_config->world);
@@ -221,7 +223,7 @@ namespace minicombust::flow
         time_stats[time_count]   -= MPI_Wtime(); //1
 
         
-        MPI_Wait(&requests, MPI_STATUS_IGNORE);
+        MPI_Wait(&requests[0], MPI_STATUS_IGNORE);
         if (block_world_size > 1) 
         {
             MPI_Comm_split(mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], 1, mpi_config->rank, &mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
@@ -239,11 +241,11 @@ namespace minicombust::flow
 
         // Gather and reduce each rank's neighbour indexes into unordered_neighbours_set and neighbour_indexes.
         uint64_t elements;
-        // auto resize_cell_indexes_fn = [this] (uint64_t *elements, uint64_t ***indexes) { return resize_cell_indexes(elements, indexes); };
+        // auto resize_cell_indexes _fn = [this] (uint64_t *elements, uint64_t ***indexes) { return resize_cell_indexes(elements, indexes); };
         // MPI_GatherSet ( mpi_config, mesh->num_blocks, unordered_neighbours_set, &neighbour_indexes, &elements, resize_cell_indexes_fn );
 
         function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
-        MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, &neighbour_indexes, &cell_particle_aos, &elements, resize_cell_particles_fn);
+        MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, &neighbour_indexes, &cell_particle_aos, &elements, async_locks, send_counts, recv_indexes, recv_indexed_fields, requests, resize_cell_particles_fn);
 
         // printf("Flow Rank %d elements %lu \n", mpi_config->rank, unordered_neighbours_set[0].size());
 
@@ -252,8 +254,16 @@ namespace minicombust::flow
         time_stats[time_count]   -= MPI_Wtime(); //3
 
         get_neighbour_cells ();
+
+        MPI_Barrier(mpi_config->particle_flow_world);
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //4
         
         interpolate_to_nodes ();
+
+        MPI_Barrier(mpi_config->particle_flow_world);
+        time_stats[time_count++] += MPI_Wtime();
+        time_stats[time_count]   -= MPI_Wtime(); //5
 
         // Send size of reduced neighbours of cells back to ranks.
         uint64_t neighbour_size       = unordered_neighbours_set[0].size();
@@ -262,27 +272,13 @@ namespace minicombust::flow
         static uint64_t neighbour_avg = 0;
         neighbour_avg += neighbour_size;
 
-        // MPI_Bcast(&neighbour_size, 1, MPI_UINT64_T, mpi_config->one_flow_rank, mpi_config->one_flow_world);
         if (neighbour_point_size != 0)  MPI_Bcast(&neighbour_point_size, 1, MPI_UINT64_T, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
 
-        MPI_Barrier(mpi_config->particle_flow_world);
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //4
-
         // Send neighbours of cells back to ranks.
-        MPI_Request scatter_requests[2];
-        // MPI_Iscatterv(neighbour_indexes, neighbour_sizes, neighbour_disps, MPI_UINT64_T, NULL, 0, MPI_UINT64_T, mpi_config->one_flow_rank, mpi_config->one_flow_world, &scatter_requests[0]);
-        if (neighbour_point_size != 0) MPI_Ibcast(interp_node_indexes, neighbour_point_size, MPI_UINT64_T, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &scatter_requests[0]);
+        if (neighbour_point_size != 0)  MPI_Ibcast(interp_node_indexes,     neighbour_point_size, MPI_UINT64_T,                   mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
+        if (neighbour_point_size != 0)  MPI_Ibcast(interp_node_flow_fields, neighbour_point_size, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &requests[1]);
 
-
-        MPI_Barrier(mpi_config->particle_flow_world);
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); // 5
-
-        if (neighbour_point_size != 0) MPI_Ibcast(interp_node_flow_fields, neighbour_point_size, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &scatter_requests[1]);
-
-        if (neighbour_point_size != 0) MPI_Waitall(2, scatter_requests, MPI_STATUSES_IGNORE);
+        if (neighbour_point_size != 0)  MPI_Waitall(2, requests, MPI_STATUSES_IGNORE);
 
         MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
@@ -290,7 +286,6 @@ namespace minicombust::flow
 
         
         MPI_Barrier(mpi_config->world);
-        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //7
 

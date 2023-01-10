@@ -26,6 +26,15 @@ namespace minicombust::flow
 
             particle_aos<T> *cell_particle_aos;
 
+            bool *async_locks;
+            
+            uint64_t         *send_counts;         
+            uint64_t        **recv_indexes;        
+            particle_aos<T> **recv_indexed_fields; 
+
+            MPI_Request *requests;
+
+
         public:
             MPI_Config *mpi_config;
             PerformanceLogger<T> performance_logger;
@@ -52,6 +61,12 @@ namespace minicombust::flow
                 node_index_array_size   = max_node_storage * sizeof(uint64_t);
                 node_flow_array_size    = max_node_storage * sizeof(flow_aos<T>);
 
+                async_locks = (bool*)malloc(4 * mesh->num_blocks * sizeof(bool));
+                
+                send_counts    =              (uint64_t*) malloc(mesh->num_blocks * sizeof(uint64_t));
+                recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
+                recv_indexed_fields = (particle_aos<T>**) malloc(mesh->num_blocks * sizeof(particle_aos<T>*));
+
                 // Allocate arrays
                 neighbour_indexes        = (uint64_t*)malloc(cell_index_array_size);
                 cell_particle_aos        = (particle_aos<T> * )malloc(cell_particle_array_size);
@@ -61,6 +76,8 @@ namespace minicombust::flow
 
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
+
+                requests = (MPI_Request *)malloc(mesh->num_blocks * 2 * sizeof(MPI_Request));
 
 
                 // Array sizes

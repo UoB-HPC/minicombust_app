@@ -60,12 +60,11 @@ namespace minicombust::performance
                 #endif
                 myfile << endl;
 
-
-                myfile << "interpolate_nodal_data," << interpolation_time;
-                #ifdef PAPI
-                for (int e = 0; e < num_events; e++)    myfile << "," << interpolation_kernel_event_counts[e];
-                #endif
-                myfile << endl;
+                // myfile << "interpolate_nodal_data," << interpolation_time;
+                // #ifdef PAPI
+                // for (int e = 0; e < num_events; e++)    myfile << "," << interpolation_kernel_event_counts[e];
+                // #endif
+                // myfile << endl;
 
                 myfile << "particle_interpolation_data," << particle_interpolation_time;
                 #ifdef PAPI

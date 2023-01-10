@@ -372,6 +372,8 @@ namespace minicombust::utils
         int      *one_flow_world_size;
         MPI_Comm *one_flow_world;
         MPI_Comm *every_one_flow_world;
+
+        int      *alias_rank;
         
         int solver_type;
         
@@ -538,13 +540,11 @@ namespace minicombust::utils
     }
 
     template<typename T>
-    inline void MPI_GatherMap (MPI_Config *mpi_config, const uint64_t num_blocks, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_maps, uint64_t **indexes, particle_aos<T> **indexed_fields, uint64_t *elements, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn)
+    inline void MPI_GatherMap (MPI_Config *mpi_config, const uint64_t num_blocks, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_maps, uint64_t **indexes, particle_aos<T> **indexed_fields, uint64_t *elements, bool *async_locks, uint64_t *send_counts, uint64_t **recv_indexes, particle_aos<T> **recv_indexed_fields, MPI_Request *requests, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn)
     {
         const int *world_sizes = mpi_config->one_flow_world_size;
         int       *ranks       = mpi_config->one_flow_rank;
-        int        alias_rank[num_blocks];
-        for ( uint64_t b = 0; b < num_blocks; b++ )
-            alias_rank[b] = (ranks[b] + 1) % world_sizes[b];
+        int       *alias_rank  = mpi_config->alias_rank;
 
         int max_rounded_world_size = (mpi_config->solver_type == FLOW) ?  (int)pow(2., ceil(log((double)world_sizes[mpi_config->particle_flow_rank])/log(2.))) : 1;
         MPI_Allreduce( MPI_IN_PLACE, &max_rounded_world_size, 1, MPI_INT, MPI_MAX, mpi_config->world);
@@ -552,7 +552,10 @@ namespace minicombust::utils
         
         if ( (world_sizes[mpi_config->particle_flow_rank] == 1) && (mpi_config->solver_type == FLOW) )  return;
         
-        bool have_data[num_blocks]   = {true};
+        bool *have_data        = async_locks + 0 * num_blocks;
+        bool *posted_count     = async_locks + 1 * num_blocks;
+        bool *recieved_indexes = async_locks + 2 * num_blocks;
+        bool *processed_block  = async_locks + 3 * num_blocks;
         for ( uint64_t b = 0; b < num_blocks; b++ )
         {
             alias_rank[b]          = (ranks[b] + 1) % world_sizes[b];
@@ -560,17 +563,6 @@ namespace minicombust::utils
         }
         uint64_t **curr_indexes               = indexes; 
         particle_aos<T> **curr_indexed_fields = indexed_fields; 
-
-        uint64_t         send_counts[num_blocks];
-        uint64_t        *recv_indexes[num_blocks];
-        particle_aos<T> *recv_indexed_fields[num_blocks];
-        MPI_Request      requests[num_blocks * 2];
-
-        bool posted_count[num_blocks];
-        bool recieved_indexes[num_blocks];
-        bool processed_block[num_blocks];
-
-               
 
         for ( int level = 2; level <= max_rounded_world_size ; level *= 2)
         {
@@ -665,7 +657,6 @@ namespace minicombust::utils
                             }
                             processed_block[b] = true;
                         }
-                        
                     }
                     else 
                     {
