@@ -373,7 +373,14 @@ namespace minicombust::utils
         MPI_Comm *one_flow_world;
         MPI_Comm *every_one_flow_world;
 
-        int      *alias_rank;
+        int node_rank;
+        int node_world_size;
+        MPI_Comm node_world;
+
+        MPI_Win win_cells;
+        MPI_Win win_cell_centres;
+
+        int *alias_rank;
         
         int solver_type;
         
@@ -549,7 +556,6 @@ namespace minicombust::utils
         int max_rounded_world_size = (mpi_config->solver_type == FLOW) ?  (int)pow(2., ceil(log((double)world_sizes[mpi_config->particle_flow_rank])/log(2.))) : 1;
         MPI_Allreduce( MPI_IN_PLACE, &max_rounded_world_size, 1, MPI_INT, MPI_MAX, mpi_config->world);
         
-        
         if ( (world_sizes[mpi_config->particle_flow_rank] == 1) && (mpi_config->solver_type == FLOW) )  return;
         
         bool *have_data        = async_locks + 0 * num_blocks;
@@ -608,12 +614,13 @@ namespace minicombust::utils
                         if (!posted_count[b])  
                         {
                             // printf("LEVEL %d | Block %lu | Rank %d (AR %d) recv from %d \n", level, b, mpi_config->rank, alias_rank[b], alias_send_rank);
-                            MPI_Irecv (&send_counts[b], 1, MPI_UINT64_T, send_rank, level, mpi_config->one_flow_world[b], &requests[2 * b]);
+                            MPI_Irecv (&send_counts[b], 1, MPI_UINT64_T, send_rank, level, mpi_config->one_flow_world[b], &requests[3 * b]);
                             posted_count[b] = true;
+                            continue;
                         }
 
                         int count_done;
-                        MPI_Test(&requests[2 * b], &count_done, MPI_STATUSES_IGNORE);
+                        MPI_Test(&requests[3 * b], &count_done, MPI_STATUSES_IGNORE);
 
                         if (count_done && !recieved_indexes[b])
                         {
@@ -623,14 +630,15 @@ namespace minicombust::utils
                             
                             recv_indexes[b]        = curr_indexes[flow_block_index]        + cell_particle_maps[flow_block_index].size();
                             recv_indexed_fields[b] = curr_indexed_fields[flow_block_index] + cell_particle_maps[flow_block_index].size();
-                            MPI_Irecv (recv_indexes[b],        send_counts[b], MPI_UINT64_T,                       send_rank, level, mpi_config->one_flow_world[b], &requests[2 * b + 0]);
-                            MPI_Irecv (recv_indexed_fields[b], send_counts[b], mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->one_flow_world[b], &requests[2 * b + 1]);
+                            MPI_Irecv (recv_indexes[b],        send_counts[b], MPI_UINT64_T,                       send_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 0]);
+                            MPI_Irecv (recv_indexed_fields[b], send_counts[b], mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 1]);
 
                             recieved_indexes[b] = true;
+                            continue;
                         }
 
                         int index_done;
-                        if (recieved_indexes[b])  MPI_Testall(2, &requests[2 * b], &index_done, MPI_STATUSES_IGNORE);
+                        if (recieved_indexes[b])  MPI_Testall(2, &requests[3 * b], &index_done, MPI_STATUSES_IGNORE);
 
                         if (index_done &&  recieved_indexes[b] && !processed_block[b])
                         {
@@ -663,45 +671,29 @@ namespace minicombust::utils
                         send_counts[b] = cell_particle_maps[b].size();
                         int recv_rank = (alias_recv_rank + world_sizes[b] - 1) % world_sizes[b];
 
+                        
                         if (!posted_count[b])  
                         {
-                            // printf("LEVEL %d | Block %lu | Rank %d (AR %d) send to %d send_count %lu\n", level, b, mpi_config->rank, alias_rank[b], alias_recv_rank, send_counts[b]);
-                            MPI_Isend (&send_counts[b], 1, MPI_UINT64_T, recv_rank, level, mpi_config->one_flow_world[b], &requests[2 * b]);
+                            MPI_Isend (&send_counts[b],                     1, MPI_UINT64_T,                       recv_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 0]);
+                            MPI_Isend (curr_indexes[b],        send_counts[b], MPI_UINT64_T,                       recv_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 1]);
+                            MPI_Isend (curr_indexed_fields[b], send_counts[b], mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 2]);
                             posted_count[b] = true;
                         }
-                        
-                        int count_done;
-                        MPI_Test(&requests[2 * b], &count_done, MPI_STATUSES_IGNORE);
 
-                        if (count_done && !recieved_indexes[b])
+                        int sends_done;
+                        MPI_Testall(3, &requests[3 * b], &sends_done, MPI_STATUSES_IGNORE);
+
+                        if (sends_done)
                         {
-                            send_counts[b] = cell_particle_maps[b].size();
-                            int recv_rank = (alias_recv_rank + world_sizes[b] - 1) % world_sizes[b];
-                            // printf("LEVEL %d | Block %lu | Rank %d (AR %d) async send indexes to %d send_count %lu\n", level, b, mpi_config->rank, alias_rank[b], alias_recv_rank, send_counts[b]);
-
-                            MPI_Isend (curr_indexes[b],        send_counts[b], MPI_UINT64_T,                       recv_rank, level, mpi_config->one_flow_world[b], &requests[2 * b + 0]);
-                            MPI_Isend (curr_indexed_fields[b], send_counts[b], mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, mpi_config->one_flow_world[b], &requests[2 * b + 1]);
-
-                            recieved_indexes[b] = true;
-                        }
-                        int index_done;
-                        if (recieved_indexes[b])  MPI_Testall(2, &requests[2 * b], &index_done, MPI_STATUSES_IGNORE);
-
-                        if (index_done && recieved_indexes[b] && !processed_block[b])
-                        {
-                            // printf("LEVEL %d | Block %lu | Rank %d (AR %d) send done \n", level, b, mpi_config->rank, alias_rank[b]);
                             have_data[b] = false;
                             processed_block[b] = true;
-
                         }
                     }
-
                 }
                 all_processed = true;
                 for (uint64_t bii = 0; bii < num_blocks; bii++)  all_processed &= processed_block[bii];
             }
 
-            // MPI_Barrier(mpi_config->world);     
         }
     }
 

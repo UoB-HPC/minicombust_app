@@ -26,7 +26,7 @@ namespace minicombust::visit
 
             void write_mesh(string filename)
             {
-                                // Print VTK Header
+                // Print VTK Header
                 ofstream vtk_file;
                 vtk_file.open ("out/" + filename + "_mesh.vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;

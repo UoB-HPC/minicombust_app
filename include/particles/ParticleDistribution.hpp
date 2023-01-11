@@ -241,7 +241,7 @@ namespace minicombust::particles
                 logger->emitted_particles  += wave_particles_per_timestep ;
             }
 
-            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, Particle_Logger *logger)
+            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn, Particle_Logger *logger)
             {
                 particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 uint64_t start_cell = mesh->mesh_size * 0.49;
@@ -250,28 +250,45 @@ namespace minicombust::particles
                 timestep_count++;
                 uint64_t remainder = ((mpi_config->particle_flow_rank + timestep_count*remainder_particles) % mpi_config->particle_flow_world_size) < remainder_particles;
 
+
+                uint64_t elements [mesh->num_blocks] = {0};
+
                 for (uint64_t p = 0; p < even_particles_per_timestep + remainder; p++)
                 {
                     const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), start_cell, logger);
+
                     if (particle.decayed) 
                     {
-                         p -= 1;
-                        logger->decayed_particles --;
+                        p -= 1;
+                        logger->decayed_particles--;
                         continue;
                     }
 
                     start_cell = particle.cell; 
                     particles.push_back(particle);
                     
+
                     const uint64_t block_id = mesh->get_block_id(particle.cell);
                     const uint64_t index    = cell_particle_field_map[block_id].size();
 
+                    cell_particle_field_map[block_id][particle.cell] = index;
+                    elements[block_id] = cell_particle_field_map[block_id].size() + 1;
+
+                    // printf("Rank %d store new particle in block %lu index %lu\n", mpi_config->rank, block_id, index);
+                    // MPI_Barrier(mpi_config->particle_flow_world);
+
+                    resize_fn(elements, &indexes, &indexed_fields);
+                    // MPI_Barrier(mpi_config->particle_flow_world);
+                    // printf("Rank %d Resized returned %lu block %lu inserting index %lu\n", mpi_config->rank, p, block_id, index);
+
                     indexes[block_id][index]        = particle.cell;
+                    // printf("Indexes %d %lu block %lu afterindex %lu\n", mpi_config->rank, p, block_id, index);
+                    // MPI_Barrier(mpi_config->particle_flow_world);
                     indexed_fields[block_id][index] = zero_field;
 
-
-                    cell_particle_field_map[block_id][particle.cell] = index;
                 }
+                
+
 
                 logger->num_particles      += even_particles_per_timestep + remainder;
                 logger->emitted_particles  += even_particles_per_timestep + remainder;

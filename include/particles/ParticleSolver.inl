@@ -96,7 +96,7 @@ namespace minicombust::particles
 
 
     template<class T> 
-    void ParticleSolver<T>::update_flow_field(bool send_particle)
+    void ParticleSolver<T>::update_flow_field()
     {
         performance_logger.my_papi_start();
 
@@ -109,7 +109,7 @@ namespace minicombust::particles
             cell_particle_field_map[b].erase(MESH_BOUNDARY);
             elements[b]         = cell_particle_field_map[b].size();
             block_world_size[b] = cell_particle_field_map[b].size() ? 1 : 0;
-            MPI_Iallreduce(MPI_IN_PLACE, &block_world_size[b], 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[b], &requests[2*b]);
+            MPI_Iallreduce(MPI_IN_PLACE, &block_world_size[b], 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[b], &requests[3 * b]);
         }
 
         MPI_Barrier(mpi_config->world);
@@ -117,7 +117,7 @@ namespace minicombust::particles
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
             neighbours_size[b] = cell_particle_field_map[b].size();
-            MPI_Wait(&requests[2*b], MPI_STATUS_IGNORE);
+            MPI_Wait(&requests[3 * b], MPI_STATUS_IGNORE);
 
             if ( block_world_size[b] > 1 )
             {
@@ -141,6 +141,8 @@ namespace minicombust::particles
         function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
         MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, elements, async_locks, send_counts, recv_indexes, recv_indexed_fields, requests, resize_cell_particles_fn);
 
+        MPI_Barrier(mpi_config->world);     
+
         // Get reduced neighbours size
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
@@ -151,10 +153,10 @@ namespace minicombust::particles
         resize_nodes_arrays(neighbours_size); 
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
-            if (neighbours_size[b] != 0)  
+            if ( neighbours_size[b] != 0 )  
             {
-                MPI_Ibcast(all_interp_node_indexes[b],     neighbours_size[b], MPI_UINT64_T,                   mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &requests[2 * b + 0]);
-                MPI_Ibcast(all_interp_node_flow_fields[b], neighbours_size[b], mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &requests[2 * b + 1]);
+                MPI_Ibcast(all_interp_node_indexes[b],     neighbours_size[b], MPI_UINT64_T,                   mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &requests[3 * b + 0]);
+                MPI_Ibcast(all_interp_node_flow_fields[b], neighbours_size[b], mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b], &requests[3 * b + 1]);
             }
         }
 
@@ -169,17 +171,18 @@ namespace minicombust::particles
 
 
         uint64_t b = 0;
-        bool all_true = true;
-        bool processed_block[mesh->num_blocks] = {false};
-        for (uint64_t bi = 0; bi < mesh->num_blocks; bi++)  all_true &= processed_block[bi];
+        bool all_true = false;
+        bool *processed_block = async_locks;
+        for (uint64_t bi = 0; bi < mesh->num_blocks; bi++)  
+            processed_block[bi] = (neighbours_size[bi] == 0);
 
         while (!all_true) // TODO: If we know block data is here, we can start operating on particles within that block. Potentially even store particles in blocks? 
         {
             int ready = 1;
             if (neighbours_size[b] != 0)
-                MPI_Testall(2, &requests[2 * b], &ready, MPI_STATUSES_IGNORE);
+                MPI_Testall(2, &requests[3 * b], &ready, MPI_STATUSES_IGNORE);
 
-            if (ready && !processed_block[b])
+            if ( ready && !processed_block[b] )
             {
                 for (uint64_t i = 0; i < neighbours_size[b]; i++)
                 {
@@ -189,7 +192,8 @@ namespace minicombust::particles
             }
 
             all_true = true;
-            for (uint64_t bi = 0; bi < mesh->num_blocks; bi++)  all_true &= processed_block[bi];
+            for (uint64_t bi = 0; bi < mesh->num_blocks; bi++)  
+                all_true &= processed_block[bi];
             b = (b + 1) % mesh->num_blocks;
         }
 
@@ -219,7 +223,9 @@ namespace minicombust::particles
 
         // TODO: Reuse decaying particle space
         if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: particle_release.\n");
-        particle_dist->emit_particles_evenly(particles, cell_particle_field_map, cell_particle_indexes, cell_particle_aos,  &logger);
+        function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
+
+        particle_dist->emit_particles_evenly(particles, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, resize_cell_particles_fn, &logger);
         // particle_dist->emit_particles_waves(particles, cell_particle_field_map, cell_particle_indexes, cell_particle_aos,  &logger);
 
         performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_time);
@@ -252,8 +258,8 @@ namespace minicombust::particles
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
             {
-                const uint64_t node           = mesh->cells[particles[p].cell*cell_size + n]; 
-                const vec<T> node_to_particle = particles[p].x1 - mesh->points[mesh->cells[particles[p].cell*cell_size + n]];
+                const uint64_t node           = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n]; 
+                const vec<T> node_to_particle = particles[p].x1 - mesh->points[mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n]];
 
                 // REMOVE_TEST_num_points.insert(node);
 
@@ -263,12 +269,13 @@ namespace minicombust::particles
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
 
-                // if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
-                //     {printf("ERROR SOLVE SPRAY: Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
-                // if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
-                //     {printf("ERROR SOLVE SPRAY: Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
-                // if (node_to_field_address_map[node]->vel.x != mesh->dummy_gas_vel.x) 
-                //     {printf("ERROR SOLVE SPRAY: Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
+                if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
+                    {printf("ERROR SOLVE SPRAY: Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
+                if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
+                    {printf("ERROR SOLVE SPRAY: Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
+                if (node_to_field_address_map[node]->vel.x != mesh->dummy_gas_vel.x) 
+                    {printf("ERROR SOLVE SPRAY: Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
+
                 interp_gas_vel        += weight           * node_to_field_address_map[node]->vel;
                 interp_gas_pre        += weight_magnitude * node_to_field_address_map[node]->pressure;
                 interp_gas_tem        += weight_magnitude * node_to_field_address_map[node]->temp;
@@ -417,6 +424,7 @@ namespace minicombust::particles
 
             if ( mpi_config->particle_flow_rank == 0 )
             {
+                // printf("Decayed particles %d %lu\n", count, logger.decayed_particles);
                 // printf("Timestep %6d Particle array mem (TOTAL %8.3f GB) (AVG %8.3f GB) STL mem (TOTAL %8.3f GB) (AVG %8.3f GB) Particles (TOTAL %lu) (AVG %lu) \n", count, arr_usage_total,               arr_usage_total               / mpi_config->particle_flow_world_size, 
                 //                                                                                                                                                             stl_usage_total,               stl_usage_total               / mpi_config->particle_flow_world_size, 
                 //                                                                                                                                                             total_particles_in_simulation, total_particles_in_simulation / mpi_config->particle_flow_world_size);
@@ -426,18 +434,26 @@ namespace minicombust::particles
             }
         }
 
+        // if (mpi_config->rank == 0) printf("Decayed particles particle_release %lu\n", logger.decayed_particles);
+
+
         particle_release();
+        // if (mpi_config->rank == 0) printf("Decayed particles update_flow_field %lu\n", logger.decayed_particles);
         if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
         {
-            update_flow_field(count > 0);
+            update_flow_field();
             // interpolate_nodal_data(); 
         }
         else if (mpi_config->world_size == 1)
         {
             // interpolate_nodal_data(); 
         }
+        
+        // if (mpi_config->rank == 0) printf("Decayed particles solve_spray_equations %lu\n", logger.decayed_particles);
         solve_spray_equations();
+        // if (mpi_config->rank == 0) printf("Decayed particles update_particle_positions %lu\n", logger.decayed_particles);
         update_particle_positions();
+        // if (mpi_config->rank == 0) printf("Decayed particles end %lu\n", logger.decayed_particles);
 
         logger.avg_particles += (double)particles.size() / (double)num_timesteps;
 

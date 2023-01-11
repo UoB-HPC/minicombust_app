@@ -121,16 +121,17 @@ namespace minicombust::flow
         {
             const uint64_t block_cell_disp  = mesh->local_cells_disp;
             const uint64_t block_point_disp = mesh->local_points_disp;
-            const uint64_t c                = cell_it - block_cell_disp;
+            const uint64_t c                = cell_it;
+            const uint64_t displaced_c      = cell_it - block_cell_disp;
 
             if (is_halo(cell_it)) continue;
 
 
-            const uint64_t *cell             = mesh->cells + c*cell_size;
-            const vec<T> cell_centre         = mesh->cell_centres[c];
+            // const uint64_t *cell             = mesh->cells + (c - mesh->shmem_cell_disp)*cell_size;
+            const vec<T> cell_centre         = mesh->cell_centres[c - mesh->shmem_cell_disp];
 
-            const flow_aos<T> flow_term      = mesh->flow_terms[c];      
-            const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[c]; 
+            const flow_aos<T> flow_term      = mesh->flow_terms[displaced_c];      
+            const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[displaced_c]; 
 
             // USEFUL ERROR CHECKING!
             // if (flow_term.temp     != mesh->dummy_gas_tem) {printf("INTERP NODAL ERROR: Wrong temp value\n"); exit(1);}
@@ -146,8 +147,9 @@ namespace minicombust::flow
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
             {
-                const uint64_t node_id      = cell[n];
-                const uint64_t real_node_id = cell[n] + block_point_disp;
+                const uint64_t node_id      = mesh->cells[(c - mesh->shmem_cell_disp)*mesh->cell_size + n] - block_point_disp;
+                // const uint64_t real_node_id = mesh->cells[(c - mesh->shmem_cell_disp)*mesh->cell_size + n] + block_point_disp;
+                const uint64_t real_node_id = mesh->cells[(c - mesh->shmem_cell_disp)*mesh->cell_size + n];
                 const vec<T> direction      = mesh->points[node_id] - cell_centre;
 
                 if (node_to_position_map.contains(real_node_id))
@@ -201,7 +203,7 @@ namespace minicombust::flow
     }
 
     
-    template<typename T> void FlowSolver<T>::update_flow_field(bool receive_particle_fields)
+    template<typename T> void FlowSolver<T>::update_flow_field()
     {
         if (FLOW_DEBUG) printf("\tRunning function update_flow_field.\n");
         
@@ -211,6 +213,7 @@ namespace minicombust::flow
         cell_particle_field_map[0].clear();
         unordered_neighbours_set[0].clear();
         node_to_position_map.clear();
+
         
         uint64_t block_world_size = 1;
         MPI_Iallreduce(MPI_IN_PLACE, &block_world_size, 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
@@ -222,7 +225,6 @@ namespace minicombust::flow
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
 
-        
         MPI_Wait(&requests[0], MPI_STATUS_IGNORE);
         if (block_world_size > 1) 
         {
@@ -232,7 +234,6 @@ namespace minicombust::flow
         }
 
         MPI_Barrier(mpi_config->world);
-
         // printf("Flow rank %d world size %d\n", mpi_config->rank, mpi_config->one_flow_world_size[mpi_config->particle_flow_rank]);
 
         MPI_Barrier(mpi_config->particle_flow_world);
@@ -247,6 +248,8 @@ namespace minicombust::flow
         function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
         MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, &neighbour_indexes, &cell_particle_aos, &elements, async_locks, send_counts, recv_indexes, recv_indexed_fields, requests, resize_cell_particles_fn);
 
+        MPI_Barrier(mpi_config->world);     
+
         // printf("Flow Rank %d elements %lu \n", mpi_config->rank, unordered_neighbours_set[0].size());
 
         MPI_Barrier(mpi_config->particle_flow_world);
@@ -254,7 +257,7 @@ namespace minicombust::flow
         time_stats[time_count]   -= MPI_Wtime(); //3
 
         get_neighbour_cells ();
-
+        
         MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //4
@@ -369,7 +372,7 @@ namespace minicombust::flow
         if (FLOW_DEBUG) printf("Start flow timestep\n");
         static int count = 0;
         int comms_timestep = 1;
-        if ((count % comms_timestep) == 0)  update_flow_field(count > 0);
+        if ((count % comms_timestep) == 0)  update_flow_field();
 
         if ((count % 100) == 0)
         {

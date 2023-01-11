@@ -68,6 +68,7 @@ int main (int argc, char ** argv)
     // Perform setup and benchmark cases
     MPI_Barrier(mpi_config.world); setup_time  -= MPI_Wtime(); 
     Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks);
+    // exit(1)
     mpi_config.one_flow_rank        = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.one_flow_world_size  = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.one_flow_world       = (MPI_Comm *)malloc(flow_ranks * sizeof(MPI_Comm));
@@ -103,7 +104,6 @@ int main (int argc, char ** argv)
     {
         VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
         if (output_iteration != -1) vtk_writer->write_mesh("minicombust");
-         
     }
     output_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
 
@@ -111,6 +111,8 @@ int main (int argc, char ** argv)
     if (mpi_config.rank == 0)  printf("Starting simulation..\n");
     MPI_Barrier(mpi_config.world);
     program_time -= MPI_Wtime();
+
+
     for(uint64_t t = 0; t < ntimesteps; t++)
     {
         if (mpi_config.solver_type == PARTICLE) 

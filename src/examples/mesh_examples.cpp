@@ -305,10 +305,30 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     const uint64_t local_num_cubes  = ( mpi_config->solver_type == FLOW ) ? block_element_disp[mpi_config->particle_flow_rank + 1] -  block_element_disp[mpi_config->particle_flow_rank] : num_cubes;
     const uint64_t local_num_points = ( mpi_config->solver_type == FLOW ) ? block_point_disps[mpi_config->particle_flow_rank + 1]  -  block_point_disps[mpi_config->particle_flow_rank]  : num_points;
 
-    vec<double> *points          = (vec<double> *)malloc(local_num_points                  * sizeof(vec<double>));
-    uint64_t    *cubes           = (uint64_t *)   malloc(local_num_cubes  * cell_size      * sizeof(uint64_t));
-    uint64_t    *cell_neighbours = (uint64_t *)   malloc(local_num_cubes  * faces_per_cell * sizeof(uint64_t)); 
-    uint8_t     *cells_per_point = (uint8_t *)    malloc(local_num_points                  * sizeof(uint8_t));
+    MPI_Comm_split_type ( mpi_config->world, MPI_COMM_TYPE_SHARED, mpi_config->rank, MPI_INFO_NULL, &mpi_config->node_world );
+    MPI_Comm_rank (mpi_config->node_world,  &mpi_config->node_rank);
+    MPI_Comm_size (mpi_config->node_world,  &mpi_config->node_world_size);
+
+    uint64_t *shmem_cell_disps = (uint64_t*)malloc((mpi_config->node_world_size + 1) * sizeof(uint64_t));
+    uint64_t shmem_cell_size      = num_cubes / mpi_config->node_world_size;
+    int      shmem_cell_remainder = num_cubes % mpi_config->node_world_size;
+    uint64_t shmem_disp = 0;
+
+    for ( int r = 0; r < mpi_config->node_world_size + 1; r++ )
+    {
+        shmem_cell_disps[r]  = shmem_disp;
+        shmem_disp          += shmem_cell_size + ( mpi_config->node_rank < shmem_cell_remainder );
+    }
+    printf("Rank %d, node rank %d node size %d cell disp %lu\n", mpi_config->rank, mpi_config->node_rank, mpi_config->node_world_size, shmem_cell_disps[mpi_config->node_rank]);
+
+    uint64_t *shmem_cells;
+    MPI_Aint shmem_cell_winsize = (shmem_cell_disps[mpi_config->node_rank+1] - shmem_cell_disps[mpi_config->node_rank]) * cell_size * sizeof(uint64_t);
+    MPI_Win_allocate_shared ( shmem_cell_winsize, sizeof(uint64_t), MPI_INFO_NULL, mpi_config->node_world, &shmem_cells, &mpi_config->win_cells );
+
+    vec<double> *points          = (vec<double> *) malloc(local_num_points                  * sizeof(vec<double>));
+    uint64_t    *cubes           = (uint64_t *)    malloc(local_num_cubes  * cell_size      * sizeof(uint64_t));
+    uint64_t    *cell_neighbours = (uint64_t *)    malloc(local_num_cubes  * faces_per_cell * sizeof(uint64_t)); 
+    uint8_t     *cells_per_point = (uint8_t *)     malloc(local_num_points                  * sizeof(uint8_t));
 
 
     // Create array of cubes, BLOCK ORDER.
@@ -327,8 +347,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                 // printf("Rank %d local_num_cubes %lu local_num_points %lu block %d write_block %d \n", mpi_config->rank, local_num_cubes, local_num_points, get_block_id(block_position, block_dim), write_block);
                 // MPI_Barrier(mpi_config->world);
 
-
-                uint64_t point_index= 0.0, cube_index = 0.0;
+                uint64_t point_index= 0, cube_index = 0;
 
                 // Set inner block position to beginning of block
                 vec<double> block_inner_real_disp = vec<double> { block_real_disp.x, block_real_disp.y, block_real_disp.z }; 
@@ -347,7 +366,26 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                             vec<uint64_t> local_position = { x, y, z };
                             vec<uint64_t> local_dim      = { flow_block_element_sizes[0][bx], flow_block_element_sizes[1][by], flow_block_element_sizes[2][bz] };
 
-                            // TODO: 
+                            cube_index      = block_element_disp[get_block_id(block_position, block_dim)] + z * local_dim.x       * local_dim.y + y       * local_dim.x + x;
+                            point_index     = block_point_disp                                            + z * (local_dim.x + 1) * (local_dim.y + 1) + y * (local_dim.x + 1) + x;
+                            bool write_cell = ( (cube_index >= shmem_cell_disps[mpi_config->node_rank]) && (cube_index < shmem_cell_disps[mpi_config->node_rank+1]) );
+                            MPI_Barrier(mpi_config->world);
+
+                            if (write_cell)
+                            {
+                                // printf("Rank %d cube %lu index %lu\n", mpi_config->rank, cube_index, cube_index - shmem_cell_disps[mpi_config->node_rank]);
+                                cube_index -= shmem_cell_disps[mpi_config->node_rank];
+                                
+                                shmem_cells[cube_index*cell_size + A_VERTEX] = point_index;
+                                shmem_cells[cube_index*cell_size + H_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + (local_dim.x + 1)+1;
+                                shmem_cells[cube_index*cell_size + B_VERTEX] = point_index + 1;
+                                shmem_cells[cube_index*cell_size + C_VERTEX] = point_index + (local_dim.x + 1);
+                                shmem_cells[cube_index*cell_size + D_VERTEX] = point_index + (local_dim.x + 1) + 1;
+                                shmem_cells[cube_index*cell_size + E_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1);
+                                shmem_cells[cube_index*cell_size + F_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + 1;
+                                shmem_cells[cube_index*cell_size + G_VERTEX] = point_index + (local_dim.x + 1)*(local_dim.y + 1) + (local_dim.x + 1);
+                                // printf("Rank %d cube %lu index end %lu\n", mpi_config->rank, cube_index + shmem_cell_disps[mpi_config->node_rank], cube_index );
+                            }
 
                             // Set indexes
                             // index         = z * points_per_dim.x * points_per_dim.y + y * points_per_dim.x + x;
@@ -494,6 +532,10 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
         block_real_disp.z += flow_block_element_sizes[2][bz] * element_dim.z;
     }
 
+    printf("Rank %d written mesh \n", mpi_config->rank);
+    
+
+    MPI_Barrier(mpi_config->world);
 
     // for (uint64_t cube_index = 0; cube_index < num_cubes; cube_index++)
     // {
@@ -508,7 +550,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     const uint64_t faces_size = 0;
     Face<double>  *faces      = nullptr;                               
 
-    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, cubes, faces, cell_neighbours, cells_per_point, num_blocks, block_element_disp, block_point_disps, block_dim);
+    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, points, shmem_cells, faces, cell_neighbours, cells_per_point, num_blocks, shmem_cell_disps, block_element_disp, block_point_disps, block_dim);
 
     return mesh;
 }

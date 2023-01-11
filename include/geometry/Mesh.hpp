@@ -51,14 +51,19 @@ namespace minicombust::geometry
             // Calculate the centre point in each cell
             // Computed as the average of all vertex positions
             void calculate_cell_centres(void) {
-                for (uint64_t c = 0; c < local_mesh_size; ++c) 
+
+                for (uint64_t c = 0; c < mesh_size; ++c) 
                 {
+                    // printf("Rank %d calculating cell %lu local_points_disp %lu local_points_size %lu\n", mpi_config->rank, c, local_points_disp, local_points_size);
                     cell_centres[c] = vec<T>{0.0, 0.0, 0.0};
-                    for (uint32_t i = 0; i < cell_size; ++i) {
-                        cell_centres[c] += points[cells[c*cell_size + i]];
+                    for (uint64_t i = 0; i < cell_size; ++i) 
+                    {
+                        // printf("Rank %d %lu point index %lu point index real %lu\n", mpi_config->rank, i, cells[c*cell_size + i] - local_points_disp, cells[c*cell_size + i] );
+                        cell_centres[c] += points[cells[c*cell_size + i] - local_points_disp];
                     }
                     cell_centres[c] /= static_cast<T>(cell_size);
                 }
+                
             }
  
         public:
@@ -67,6 +72,9 @@ namespace minicombust::geometry
             const uint64_t cell_size;           // Number of points in the cell
             const uint64_t faces_size;          // Number of unique faces in the mesh
             const uint64_t faces_per_cell;      // Number of faces in a cell
+
+            uint64_t shmem_mesh_size;    // Number of polygons in the mesh stored in shmem window
+            uint64_t shmem_cell_disp;    // Number of polygons in the mesh that a flow rank owns.
 
             uint64_t local_mesh_size;     // Number of polygons in the mesh that a flow rank owns.
             uint64_t local_cells_disp;    // Number of polygons in the mesh that a flow rank owns.
@@ -82,10 +90,13 @@ namespace minicombust::geometry
             uint64_t *cell_neighbours;    // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}}
             uint8_t *cells_per_point;     // Number of neighbouring cells for each point
 
+
             uint64_t     num_blocks;
             uint64_t     *block_element_disp;
             uint64_t     *block_point_disp;
             vec<uint64_t> flow_block_dim;
+            
+            uint64_t *shmem_cell_disps;
  
             uint64_t *particles_per_point; // Number of particles in each cell
 
@@ -101,7 +112,6 @@ namespace minicombust::geometry
 
             flow_aos<T> *flow_terms;
             flow_aos<T> *flow_grad_terms;
-
 
             size_t points_array_size               = 0;
             size_t cells_array_size                = 0;
@@ -121,12 +131,16 @@ namespace minicombust::geometry
 
             size_t flow_term_size                  = 0;
 
-            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours, uint8_t *cells_per_point, uint64_t num_blocks, uint64_t *block_element_disp, uint64_t *block_point_disp, vec<uint64_t> flow_block_dim) 
-            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours), cells_per_point(cells_per_point), num_blocks(num_blocks), block_element_disp(block_element_disp), block_point_disp(block_point_disp), flow_block_dim(flow_block_dim)
+            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours, uint8_t *cells_per_point, uint64_t num_blocks, uint64_t *shmem_cell_disps, uint64_t *block_element_disp, uint64_t *block_point_disp, vec<uint64_t> flow_block_dim) 
+            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours), cells_per_point(cells_per_point), num_blocks(num_blocks), shmem_cell_disps(shmem_cell_disps), block_element_disp(block_element_disp), block_point_disp(block_point_disp), flow_block_dim(flow_block_dim)
             {
-                local_cells_disp  = block_element_disp[mpi_config->particle_flow_rank];
-                local_points_disp = block_point_disp[mpi_config->particle_flow_rank];
+                
+                shmem_cell_disp   = shmem_cell_disps[mpi_config->node_rank];
+                local_cells_disp  = ( mpi_config->solver_type == FLOW ) ? block_element_disp[mpi_config->particle_flow_rank]  : 0;
+                local_points_disp = ( mpi_config->solver_type == FLOW ) ? block_point_disp[mpi_config->particle_flow_rank]    : 0;
 
+
+                shmem_mesh_size   = shmem_cell_disps[mpi_config->node_rank + 1] - shmem_cell_disp;
                 local_mesh_size   = ( mpi_config->solver_type == FLOW ) ? block_element_disp[mpi_config->particle_flow_rank + 1] - local_cells_disp  : mesh_size;
                 local_points_size = ( mpi_config->solver_type == FLOW ) ? block_point_disp[mpi_config->particle_flow_rank + 1]   - local_points_disp : points_size;
 
@@ -135,11 +149,10 @@ namespace minicombust::geometry
                 particles_per_point_size        = local_points_size * sizeof(uint64_t);
                 cells_per_point_size            = local_points_size * sizeof(uint8_t);
 
-                cells_array_size                = local_mesh_size * cell_size*sizeof(uint64_t);
-                cell_centre_size                = local_mesh_size * sizeof(vec<T>);
+                cells_array_size                = shmem_mesh_size * cell_size * sizeof(uint64_t);
+                cell_centre_size                = shmem_mesh_size * sizeof(vec<T>);
 
                 block_disp_size                 = num_blocks * sizeof(uint64_t);
-                
                  
                 if (mpi_config->solver_type == FLOW || mpi_config->world_size == 1)
                 {
@@ -160,7 +173,6 @@ namespace minicombust::geometry
                     
                     for (uint64_t c = 0; c < local_mesh_size; c++)
                     {
-
                         flow_terms[c]      = {dummy_gas_vel, dummy_gas_pre, dummy_gas_tem};
                         flow_grad_terms[c] = {{0.0, 0.0, 0.0}, 0.0, 0.0};
                     }
@@ -168,13 +180,19 @@ namespace minicombust::geometry
                 else if (mpi_config->solver_type == PARTICLE || mpi_config->world_size == 1)
                 {
                     cell_neighbours_array_size      = local_mesh_size * faces_per_cell * sizeof(uint64_t);
+                    cell_size_vector = points[cells[H_VERTEX]] - points[cells[A_VERTEX]];
+
                 }
 
-                particles_per_point                          = (uint64_t *)   malloc(particles_per_point_size);
-                cell_centres                                 = (vec<T> *)     malloc(cell_centre_size);
+                particles_per_point = (uint64_t *) malloc(particles_per_point_size);
+                // cell_centres        = (vec<T> *)   malloc(cell_centre_size);
 
-                calculate_cell_centres();
-                cell_size_vector = points[cells[H_VERTEX]] - points[cells[A_VERTEX]];
+                MPI_Aint shmem_cell_winsize = cell_centre_size;
+                MPI_Win_allocate_shared ( shmem_cell_winsize, sizeof(vec<double>), MPI_INFO_NULL, mpi_config->node_world, &cell_centres, &mpi_config->win_cell_centres );
+
+                if (mpi_config->rank == 0) calculate_cell_centres();
+                MPI_Barrier(mpi_config->world);
+
                 
                 uint64_t memory_usage          = get_memory_usage();
                 uint64_t total_memory_usage    = memory_usage;

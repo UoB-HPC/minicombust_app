@@ -77,7 +77,7 @@ namespace minicombust::flow
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
 
-                requests = (MPI_Request *)malloc(mesh->num_blocks * 2 * sizeof(MPI_Request));
+                requests = (MPI_Request *)malloc(mesh->num_blocks * 3 * sizeof(MPI_Request));
 
 
                 // Array sizes
@@ -215,7 +215,7 @@ namespace minicombust::flow
             void get_neighbour_cells();
             void interpolate_to_nodes();
 
-            void update_flow_field(bool receive_particle);  // Synchronize point with flow solver
+            void update_flow_field();  // Synchronize point with flow solver
             
             void solve_combustion_equations();
             void update_combustion_fields();
