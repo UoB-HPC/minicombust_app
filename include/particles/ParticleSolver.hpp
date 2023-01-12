@@ -114,8 +114,8 @@ namespace minicombust::particles
                     const uint64_t block_cell_size  = max(mesh->block_element_disp[b + 1] - mesh->block_element_disp[b], 1UL);
                     const uint64_t block_point_size = max(mesh->block_point_disp[b + 1]   - mesh->block_point_disp[b]  , 1UL);
 
-                    const uint64_t cell_storage = max(fraction * block_cell_size,  1.);
-                    const uint64_t node_storage = max(fraction * block_point_size, 1.);
+                    const uint64_t cell_storage = min(max(fraction * block_cell_size,  1.), 1. + (double)((100 * particle_dist->even_particles_per_timestep) / mpi_config->particle_flow_world_size)) ;
+                    const uint64_t node_storage = min(max(fraction * block_point_size, 1.), 1. + (double)((100 * particle_dist->even_particles_per_timestep) / mpi_config->particle_flow_world_size));
 
                     node_index_array_sizes[b]   = node_storage * sizeof(uint64_t); 
                     node_flow_array_sizes[b]    = node_storage * sizeof(flow_aos<T>); 
@@ -248,7 +248,7 @@ namespace minicombust::particles
                 {
                     while ( cell_particle_index_array_sizes[b] < ((size_t) elements[b] * sizeof(uint64_t)) )
                     {
-                        printf("Rank %d Resizing index block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_index_array_sizes[b] / sizeof(uint64_t), 2* cell_particle_index_array_sizes[b] / sizeof(uint64_t) );
+                        // printf("Rank %d Resizing index block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_index_array_sizes[b] / sizeof(uint64_t), 2* cell_particle_index_array_sizes[b] / sizeof(uint64_t) );
                         cell_particle_index_array_sizes[b] *= 2;
 
                         cell_particle_indexes[b] = (uint64_t*)realloc(cell_particle_indexes[b], cell_particle_index_array_sizes[b]);
@@ -267,7 +267,7 @@ namespace minicombust::particles
 
                     while ( cell_particle_array_sizes[b] < ((size_t) elements[b] * sizeof(particle_aos<T>)) )
                     {
-                        printf("Rank %d Resizing field block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_array_sizes[b] / sizeof(particle_aos<T>), 2 * cell_particle_array_sizes[b] / sizeof(particle_aos<T>) );
+                        // printf("Rank %d Resizing field block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_array_sizes[b] / sizeof(particle_aos<T>), 2 * cell_particle_array_sizes[b] / sizeof(particle_aos<T>) );
 
                         cell_particle_array_sizes[b] *= 2;
 
@@ -285,6 +285,9 @@ namespace minicombust::particles
                     // bool resized = false;
                     while ( node_index_array_sizes[b] < ((size_t) elements[b] * sizeof(uint64_t)) )
                     {
+                        // printf("Rank %d Resizing node index block %lu: size %lu to %lu\n", mpi_config->rank, b, node_index_array_sizes[b]      / sizeof(uint64_t),    2 * node_index_array_sizes[b]      / sizeof(uint64_t) );
+                        // printf("Rank %d Resizing node field block %lu: size %lu to %lu\n", mpi_config->rank, b, node_flow_array_sizes[b] / sizeof(flow_aos<T>), 2 * node_flow_array_sizes[b] / sizeof(flow_aos<T>) );
+
                         // resized = true;
 
                         node_index_array_sizes[b] *= 2;

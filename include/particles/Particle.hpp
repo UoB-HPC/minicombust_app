@@ -46,14 +46,14 @@ namespace minicombust::particles
             inline bool check_cell(uint64_t current_cell, Mesh<T> *mesh)
             {
                 // TODO: Currently is solely a cube partial volume algorithm. Tetra partial volume algorithm;
-                vec<T> box_size = mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + H_VERTEX]] - mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX]];
+                vec<T> box_size = mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + H_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
                 double total_volume  = abs(box_size.x * box_size.y * box_size.z);
 
                 double partial_volumes = 0.0;
                 #pragma ivdep
                 for (uint64_t i=0; i < mesh->cell_size; i++)
                 {
-                    vec<T> partial_box_size = mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + i]] - x1;
+                    vec<T> partial_box_size = mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + i] - mesh->shmem_point_disp] - x1;
                     partial_volumes += abs(partial_box_size.x * partial_box_size.y * partial_box_size.z);
                 }
 
@@ -124,9 +124,9 @@ namespace minicombust::particles
                     
                     uint64_t face_mask = POSSIBLE; // Prevents double interceptions     
 
-                    vec<T> z_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + E_VERTEX]] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX]];
-                    vec<T> x_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + B_VERTEX]] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX]];
-                    vec<T> y_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + C_VERTEX]] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX]];
+                    vec<T> z_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + E_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
+                    vec<T> x_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + B_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
+                    vec<T> y_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + C_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
 
                     vec<T> x_delta   = x1 - artificial_A;
                     
@@ -151,10 +151,10 @@ namespace minicombust::particles
                             if (PARTICLE_DEBUG) cout << "\t\t\tMoving from cell " << cell << " with pos " << print_vec(*A) << " to " << print_vec (*B) << endl; 
 
                             // Check whether particle - moving from A to B - intercepts face CDEF. If LHS == RHS, particle intercepts this face.
-                            vec<T> *C = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][0]]];
-                            vec<T> *D = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][1]]];
-                            vec<T> *E = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][2]]];
-                            vec<T> *F = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][3]]];
+                            vec<T> *C = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][0]] - mesh->shmem_point_disp];
+                            vec<T> *D = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][1]] - mesh->shmem_point_disp];
+                            vec<T> *E = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][2]] - mesh->shmem_point_disp];
+                            vec<T> *F = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][3]] - mesh->shmem_point_disp];
 
                             const double LHS = tetrahedral_volume(A, C, D, B)
                                              + tetrahedral_volume(A, D, F, B)
@@ -209,7 +209,7 @@ namespace minicombust::particles
                         num_tries = 0;
 
                         // Test neighbour cell
-                        cell = mesh->cell_neighbours[cell*mesh->faces_per_cell + intercepted_face_id];
+                        cell = mesh->cell_neighbours[(cell - mesh->shmem_cell_disp)*mesh->faces_per_cell + intercepted_face_id];
                         artificial_A = mesh->cell_centres[cell - mesh->shmem_cell_disp];
 
                         if (PARTICLE_DEBUG)  cout << "\t\tMoving to cell " << cell << " " << mesh->get_face_string(intercepted_face_id) << " direction" << endl;  

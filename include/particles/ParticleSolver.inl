@@ -144,7 +144,7 @@ namespace minicombust::particles
         MPI_Barrier(mpi_config->world);     
 
         // Get reduced neighbours size
-        for (uint64_t b = 0; b < mesh->num_blocks; b++)
+        for (uint64_t b = 0; b < mesh->num_blocks; b++) // TODO: Wait async
         {
             if (neighbours_size[b] != 0) MPI_Bcast(&neighbours_size[b], 1, MPI_UINT64_T, mpi_config->one_flow_world_size[b] - 1, mpi_config->one_flow_world[b]);
             // printf("Rank %d block %lu bcast size %lu\n", mpi_config->rank, b, neighbours_size[b]);
@@ -187,6 +187,7 @@ namespace minicombust::particles
                 for (uint64_t i = 0; i < neighbours_size[b]; i++)
                 {
                     node_to_field_address_map[all_interp_node_indexes[b][i]] = &all_interp_node_flow_fields[b][i];
+                    // printf("Rank %d block %lu node %lu data is at %p\n", mpi_config->rank, b, all_interp_node_indexes[b][i], &all_interp_node_flow_fields[b][i]);
                 }
                 processed_block[b] = true;
             }
@@ -199,6 +200,8 @@ namespace minicombust::particles
 
         // for (auto& node_it: node_to_field_address_map)
         // {
+        //     if ((int)node_it.first < 0 || (int)node_it.first >= mesh->points_size)
+        //         {printf("ERROR UPDATE FLOW: Wrong node index %lu\n", node_it.first); exit(1);}
         //     if (node_it.second->temp     != mesh->dummy_gas_tem)              
         //         {printf("ERROR UPDATE FLOW: Wrong temp value %f at %lu\n", node_it.second->temp,           node_it.first); exit(1);}
         //     if (node_it.second->pressure != mesh->dummy_gas_pre)              
@@ -236,6 +239,9 @@ namespace minicombust::particles
     {
         if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: solve_spray_equations.\n");
 
+        // printf("Rank %d particles size %lu\n", mpi_config->rank, particles.size());
+
+
         const uint64_t cell_size       = mesh->cell_size; 
 
         const uint64_t particles_size  = particles.size(); 
@@ -255,12 +261,17 @@ namespace minicombust::particles
             T interp_gas_pre      = 0.0;
             T interp_gas_tem      = 0.0;
             
+            // printf("Rank %d accessing cell index %d shmem_index %d shmem cell disp %d\n", mpi_config->rank, particles[p].cell, particles[p].cell - mesh->shmem_cell_disp, mesh->shmem_cell_disp);
+            // MPI_Barrier(mpi_config->particle_flow_world);
+
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
             {
-                const uint64_t node           = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n]; 
-                const vec<T> node_to_particle = particles[p].x1 - mesh->points[mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n]];
+                const int64_t node = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n];
 
+                // printf("Rank %d accessing node index %d shmem_index %d shmem point disp %d\n", mpi_config->rank, node, node - mesh->shmem_point_disp, mesh->shmem_point_disp);
+                
+                const vec<T> node_to_particle = particles[p].x1 - mesh->points[node - mesh->shmem_point_disp];
                 // REMOVE_TEST_num_points.insert(node);
 
                 vec<T> weight      = 1.0 / (node_to_particle * node_to_particle);
@@ -268,25 +279,37 @@ namespace minicombust::particles
 
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
+                
+                // printf("Rank %d loaded node position %lu\n", mpi_config->rank, node);
+                // MPI_Barrier(mpi_config->particle_flow_world);
 
-                if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
-                    {printf("ERROR SOLVE SPRAY: Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
-                if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
-                    {printf("ERROR SOLVE SPRAY: Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
-                if (node_to_field_address_map[node]->vel.x != mesh->dummy_gas_vel.x) 
-                    {printf("ERROR SOLVE SPRAY: Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
+                // if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
+                //     {printf("ERROR SOLVE SPRAY: Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
+                // if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
+                //     {printf("ERROR SOLVE SPRAY: Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
+                // if (node_to_field_address_map[node]->vel.x != mesh->dummy_gas_vel.x) 
+                //     {printf("ERROR SOLVE SPRAY: Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
 
+                // printf("Rank %d node %lu rying position %p\n", mpi_config->rank, node, node_to_field_address_map[node]);
+                // MPI_Barrier(mpi_config->particle_flow_world);
                 interp_gas_vel        += weight           * node_to_field_address_map[node]->vel;
+                // printf("Rank %d loaded vel %lu (%f) at %p\n", mpi_config->rank, node, node_to_field_address_map[node]->vel.x, node_to_field_address_map[node]);
+                // MPI_Barrier(mpi_config->particle_flow_world);
                 interp_gas_pre        += weight_magnitude * node_to_field_address_map[node]->pressure;
+                // printf("Rank %d loaded pressure %lu\n", mpi_config->rank, node);
+                // MPI_Barrier(mpi_config->particle_flow_world);
                 interp_gas_tem        += weight_magnitude * node_to_field_address_map[node]->temp;
-            }
+                // printf("Rank %d loaded temp %lu\n", mpi_config->rank, node);
+                // MPI_Barrier(mpi_config->particle_flow_world);
 
+
+            }
 
             particles[p].gas_vel           = interp_gas_vel / total_vector_weight;
             particles[p].gas_pressure      = interp_gas_pre / total_scalar_weight;
             particles[p].gas_temperature   = interp_gas_tem / total_scalar_weight;
-        }
 
+        }
 
         // static uint64_t node_avg = 0;
         static uint64_t timestep_counter = 0;

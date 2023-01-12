@@ -368,6 +368,7 @@ namespace minicombust::utils
         MPI_Comm world;
         MPI_Comm particle_flow_world;
 
+        int      *alias_rank;
         int      *one_flow_rank;
         int      *one_flow_world_size;
         MPI_Comm *one_flow_world;
@@ -379,8 +380,10 @@ namespace minicombust::utils
 
         MPI_Win win_cells;
         MPI_Win win_cell_centres;
+        MPI_Win win_cell_neighbours;
+        MPI_Win win_points;
+        MPI_Win win_cells_per_point;
 
-        int *alias_rank;
         
         int solver_type;
         
@@ -549,14 +552,19 @@ namespace minicombust::utils
     template<typename T>
     inline void MPI_GatherMap (MPI_Config *mpi_config, const uint64_t num_blocks, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_maps, uint64_t **indexes, particle_aos<T> **indexed_fields, uint64_t *elements, bool *async_locks, uint64_t *send_counts, uint64_t **recv_indexes, particle_aos<T> **recv_indexed_fields, MPI_Request *requests, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn)
     {
-        const int *world_sizes = mpi_config->one_flow_world_size;
-        int       *ranks       = mpi_config->one_flow_rank;
-        int       *alias_rank  = mpi_config->alias_rank;
+        int      *const world_sizes = mpi_config->one_flow_world_size;
+        int      *const ranks       = mpi_config->one_flow_rank;
+        int      *const alias_rank  = mpi_config->alias_rank;
+        MPI_Comm *const worlds      = mpi_config->one_flow_world;
 
-        int max_rounded_world_size = (mpi_config->solver_type == FLOW) ?  (int)pow(2., ceil(log((double)world_sizes[mpi_config->particle_flow_rank])/log(2.))) : 1;
+        int max_rounded_world_size = 1;
+        if (mpi_config->solver_type == FLOW) // Note causes valgrind invalid read. IGNORE.
+            max_rounded_world_size = (int)pow(2., ceil(log((double)world_sizes[mpi_config->particle_flow_rank])/log(2.)));
+
         MPI_Allreduce( MPI_IN_PLACE, &max_rounded_world_size, 1, MPI_INT, MPI_MAX, mpi_config->world);
         
         if ( (world_sizes[mpi_config->particle_flow_rank] == 1) && (mpi_config->solver_type == FLOW) )  return;
+
         
         bool *have_data        = async_locks + 0 * num_blocks;
         bool *posted_count     = async_locks + 1 * num_blocks;
@@ -583,7 +591,6 @@ namespace minicombust::utils
 
                 // printf("LEVEL %d | Rank %d started have_data[%d] = %d\n", level, mpi_config->rank, bii, have_data[bii]);
             }
-
 
             while (!all_processed)
             {
@@ -613,8 +620,8 @@ namespace minicombust::utils
                 
                         if (!posted_count[b])  
                         {
-                            // printf("LEVEL %d | Block %lu | Rank %d (AR %d) recv from %d \n", level, b, mpi_config->rank, alias_rank[b], alias_send_rank);
-                            MPI_Irecv (&send_counts[b], 1, MPI_UINT64_T, send_rank, level, mpi_config->one_flow_world[b], &requests[3 * b]);
+                            // printf("LEVEL %d | Block %lu | Rank %d (AR %d) recv from %d \n", level, b, mpi_config->rank, alias_rank[b], send_rank);
+                            MPI_Irecv (&send_counts[b], 1, MPI_UINT64_T, send_rank, level, worlds[b], &requests[3 * b]);
                             posted_count[b] = true;
                             continue;
                         }
@@ -630,15 +637,15 @@ namespace minicombust::utils
                             
                             recv_indexes[b]        = curr_indexes[flow_block_index]        + cell_particle_maps[flow_block_index].size();
                             recv_indexed_fields[b] = curr_indexed_fields[flow_block_index] + cell_particle_maps[flow_block_index].size();
-                            MPI_Irecv (recv_indexes[b],        send_counts[b], MPI_UINT64_T,                       send_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 0]);
-                            MPI_Irecv (recv_indexed_fields[b], send_counts[b], mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 1]);
+                            MPI_Irecv (recv_indexes[b],        send_counts[b], MPI_UINT64_T,                       send_rank, level, worlds[b], &requests[3 * b + 1]);
+                            MPI_Irecv (recv_indexed_fields[b], send_counts[b], mpi_config->MPI_PARTICLE_STRUCTURE, send_rank, level, worlds[b], &requests[3 * b + 2]);
 
                             recieved_indexes[b] = true;
                             continue;
                         }
 
                         int index_done;
-                        if (recieved_indexes[b])  MPI_Testall(2, &requests[3 * b], &index_done, MPI_STATUSES_IGNORE);
+                        if (recieved_indexes[b])  MPI_Testall(2, &requests[3 * b + 1], &index_done, MPI_STATUSES_IGNORE);
 
                         if (index_done &&  recieved_indexes[b] && !processed_block[b])
                         {
@@ -674,9 +681,11 @@ namespace minicombust::utils
                         
                         if (!posted_count[b])  
                         {
-                            MPI_Isend (&send_counts[b],                     1, MPI_UINT64_T,                       recv_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 0]);
-                            MPI_Isend (curr_indexes[b],        send_counts[b], MPI_UINT64_T,                       recv_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 1]);
-                            MPI_Isend (curr_indexed_fields[b], send_counts[b], mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, mpi_config->one_flow_world[b], &requests[3 * b + 2]);
+                            // printf("LEVEL %d | Block %lu | Rank %d (AR %d) send to   %d \n", level, b, mpi_config->rank, alias_rank[b], recv_rank);
+
+                            MPI_Isend (&send_counts[b],                     1, MPI_UINT64_T,                       recv_rank, level, worlds[b], &requests[3 * b + 0]);
+                            MPI_Isend (curr_indexes[b],        send_counts[b], MPI_UINT64_T,                       recv_rank, level, worlds[b], &requests[3 * b + 1]);
+                            MPI_Isend (curr_indexed_fields[b], send_counts[b], mpi_config->MPI_PARTICLE_STRUCTURE, recv_rank, level, worlds[b], &requests[3 * b + 2]);
                             posted_count[b] = true;
                         }
 
@@ -695,6 +704,7 @@ namespace minicombust::utils
             }
 
         }
+
     }
 
 

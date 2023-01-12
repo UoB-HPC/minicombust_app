@@ -210,6 +210,9 @@ namespace minicombust::particles
                 static int timestep_count = 0;
                 timestep_count++;
 
+                uint64_t elements [mesh->num_blocks] = {0};
+
+
                 if ( (timestep_count++ % mpi_config->particle_flow_world_size) == mpi_config->particle_flow_rank )
                 {
                     for (uint64_t p = 0; p < wave_particles_per_timestep; p++)
@@ -229,11 +232,17 @@ namespace minicombust::particles
                         const uint64_t block_id = mesh->get_block_id(particle.cell);
                         const uint64_t index    = cell_particle_field_map[block_id].size();
 
-                        indexes[block_id][index]        = particle.cell;
-                        indexed_fields[block_id][index] = zero_field;
+                        elements[block_id] = cell_particle_field_map[block_id].size() + 1;
 
+                        if ( !cell_particle_field_map[block_id].contains(particle.cell) )
+                        {
+                            cell_particle_field_map[block_id][particle.cell] = index;
 
-                        cell_particle_field_map[block_id][particle.cell] = index;
+                            resize_fn(elements, &indexes, &indexed_fields);
+                            
+                            indexes[block_id][index]                 = particle.cell;
+                            indexed_fields[block_id][index]          = zero_field;
+                        }
                     }
                 }
 
@@ -255,7 +264,9 @@ namespace minicombust::particles
 
                 for (uint64_t p = 0; p < even_particles_per_timestep + remainder; p++)
                 {
+                    // printf("Rank %d trying new particle %lu\n", mpi_config->rank, p);
                     const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), start_cell, logger);
+                    // printf("Rank %d trying new particle %lu decayed %d\n", mpi_config->rank, p, particle.decayed);
 
                     if (particle.decayed) 
                     {
@@ -269,23 +280,22 @@ namespace minicombust::particles
                     
 
                     const uint64_t block_id = mesh->get_block_id(particle.cell);
-                    const uint64_t index    = cell_particle_field_map[block_id].size();
 
-                    cell_particle_field_map[block_id][particle.cell] = index;
                     elements[block_id] = cell_particle_field_map[block_id].size() + 1;
 
-                    // printf("Rank %d store new particle in block %lu index %lu\n", mpi_config->rank, block_id, index);
-                    // MPI_Barrier(mpi_config->particle_flow_world);
+                    if ( !cell_particle_field_map[block_id].contains(particle.cell) )
+                    {
+                        const uint64_t index    = cell_particle_field_map[block_id].size();
 
-                    resize_fn(elements, &indexes, &indexed_fields);
-                    // MPI_Barrier(mpi_config->particle_flow_world);
-                    // printf("Rank %d Resized returned %lu block %lu inserting index %lu\n", mpi_config->rank, p, block_id, index);
+                        resize_fn(elements, &indexes, &indexed_fields);
+                        
+                        // printf("Rank %d block %lu particle is in cell %lu\n", mpi_config->rank, block_id, particle.cell);
+                        
+                        indexes[block_id][index]                 = particle.cell;
+                        indexed_fields[block_id][index]          = zero_field;
 
-                    indexes[block_id][index]        = particle.cell;
-                    // printf("Indexes %d %lu block %lu afterindex %lu\n", mpi_config->rank, p, block_id, index);
-                    // MPI_Barrier(mpi_config->particle_flow_world);
-                    indexed_fields[block_id][index] = zero_field;
-
+                        cell_particle_field_map[block_id][particle.cell] = index;
+                    }
                 }
                 
 

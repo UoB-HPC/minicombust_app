@@ -73,7 +73,7 @@ int main (int argc, char ** argv)
     mpi_config.one_flow_world_size  = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.one_flow_world       = (MPI_Comm *)malloc(flow_ranks * sizeof(MPI_Comm));
     mpi_config.every_one_flow_world = (MPI_Comm *)malloc(flow_ranks * sizeof(MPI_Comm));
-    mpi_config.alias_rank           = (int *)     malloc(mesh->num_blocks * sizeof(int));
+    mpi_config.alias_rank           = (int *)     malloc(flow_ranks * sizeof(int));
 
     MPI_Barrier(mpi_config.world);
 
@@ -111,7 +111,6 @@ int main (int argc, char ** argv)
     if (mpi_config.rank == 0)  printf("Starting simulation..\n");
     MPI_Barrier(mpi_config.world);
     program_time -= MPI_Wtime();
-
 
     for(uint64_t t = 0; t < ntimesteps; t++)
     {
