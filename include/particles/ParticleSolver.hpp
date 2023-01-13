@@ -111,17 +111,15 @@ namespace minicombust::particles
                 {
                     // Compute sizes for each block
                     const double fraction = 0.1;
-                    const uint64_t block_cell_size  = max(mesh->block_element_disp[b + 1] - mesh->block_element_disp[b], 1UL);
-                    const uint64_t block_point_size = max(mesh->block_point_disp[b + 1]   - mesh->block_point_disp[b]  , 1UL);
+                    const uint64_t block_size  = max(mesh->block_element_disp[b + 1] - mesh->block_element_disp[b], 1UL);
 
-                    const uint64_t cell_storage = min(max(fraction * block_cell_size,  1.), 1. + (double)((100 * particle_dist->even_particles_per_timestep) / mpi_config->particle_flow_world_size)) ;
-                    const uint64_t node_storage = min(max(fraction * block_point_size, 1.), 1. + (double)((100 * particle_dist->even_particles_per_timestep) / mpi_config->particle_flow_world_size));
+                    const uint64_t storage = min(max(fraction * block_size,  1.), 1. + (double)((100 * particle_dist->even_particles_per_timestep) / mpi_config->particle_flow_world_size)) ;
 
-                    node_index_array_sizes[b]   = node_storage * sizeof(uint64_t); 
-                    node_flow_array_sizes[b]    = node_storage * sizeof(flow_aos<T>); 
+                    node_index_array_sizes[b]   = storage * sizeof(uint64_t); 
+                    node_flow_array_sizes[b]    = storage * sizeof(flow_aos<T>); 
 
-                    cell_particle_index_array_sizes[b] = cell_storage * sizeof(uint64_t); 
-                    cell_particle_array_sizes[b]       = cell_storage * sizeof(particle_aos<T>); 
+                    cell_particle_index_array_sizes[b] = storage * sizeof(uint64_t); 
+                    cell_particle_array_sizes[b]       = storage * sizeof(particle_aos<T>); 
 
                     // Allocate each block array
                     all_interp_node_indexes[b]      = (uint64_t *)   malloc(node_index_array_sizes[b]);
@@ -168,6 +166,8 @@ namespace minicombust::particles
                     total_neighbours_sets_size            += neighbours_sets[b].size() * sizeof(uint64_t);
                     total_cell_particle_field_map_size    += cell_particle_field_map[b].size() * sizeof(uint64_t);
                 }
+
+                MPI_Barrier(mpi_config->world);
 
                 if (mpi_config->particle_flow_rank == 0)
                 {

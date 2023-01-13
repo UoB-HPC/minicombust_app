@@ -63,12 +63,15 @@ int main (int argc, char ** argv)
     }
 
     // Performance
-    double setup_time = 0., program_time = 0., output_time = 0.;
+    double mesh_time = 0., setup_time = 0., program_time = 0., output_time = 0.;
 
     // Perform setup and benchmark cases
-    MPI_Barrier(mpi_config.world); setup_time  -= MPI_Wtime(); 
+    MPI_Barrier(mpi_config.world); setup_time  -= MPI_Wtime(); mesh_time  -= MPI_Wtime(); 
     Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks);
-    // exit(1)
+    MPI_Barrier(mpi_config.world); mesh_time   += MPI_Wtime();
+
+
+
     mpi_config.one_flow_rank        = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.one_flow_world_size  = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.one_flow_world       = (MPI_Comm *)malloc(flow_ranks * sizeof(MPI_Comm));
@@ -97,6 +100,9 @@ int main (int argc, char ** argv)
 
     if (mpi_config.rank == 0)   cout << endl;
     setup_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
+
+    if (mpi_config.rank == 0)  printf("Mesh built in %6.2fs!\n\n", mesh_time);
+
 
     // Output mesh 
     MPI_Barrier(mpi_config.world); output_time -= MPI_Wtime(); 

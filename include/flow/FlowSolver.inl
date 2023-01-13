@@ -15,13 +15,43 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::get_neighbour_cells ()
     {
+        double node_neighbours   = 8;
+        const uint64_t cell_size = mesh->cell_size;
+
         for (auto& cell_it: cell_particle_field_map[0])
         {
             uint64_t cell = cell_it.first;
 
+            // if (cell == 515168)
+            //     printf("Rank %d has cell %lu\n", mpi_config->rank, cell);
+
+            resize_nodes_arrays(node_to_position_map.size() + cell_size );
+
+            #pragma ivdep
+            for (uint64_t n = 0; n < cell_size; n++)
+            {
+                const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
+                if (!node_to_position_map.contains(node_id))
+                {
+                    const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id - mesh->shmem_point_disp];
+
+                    flow_aos<T> temp_term;
+                    temp_term.vel      = mesh->dummy_gas_vel * (boundary_neighbours / node_neighbours);
+                    temp_term.pressure = mesh->dummy_gas_pre * (boundary_neighbours / node_neighbours);
+                    temp_term.temp     = mesh->dummy_gas_tem * (boundary_neighbours / node_neighbours);
+
+                    const uint64_t position = node_to_position_map.size();
+                    interp_node_indexes[position]     = node_id;
+                    interp_node_flow_fields[position] = temp_term; 
+                    node_to_position_map[node_id]     = position;
+
+                    // if (node_id == 540968 && mpi_config->rank == 56 )
+                    //     printf("Rank %d cell %lu adds temp value %f (total %f) to new node %lu slot (boundary_neighbours %f) \n", mpi_config->rank, cell, mesh->dummy_gas_tem * (boundary_neighbours / node_neighbours), interp_node_flow_fields[node_to_position_map[node_id]].temp, node_id, boundary_neighbours);
+                }
+            }
+
             unordered_neighbours_set[0].insert(cell); 
 
-            const uint64_t block_cell_disp  = mesh->local_cells_disp;
 
             // Get 6 immediate neighbours
             const uint64_t below_neighbour                = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + DOWN_FACE];
@@ -39,21 +69,21 @@ namespace minicombust::flow
             unordered_neighbours_set[0].insert(around_back_neighbour);       // Immediate neighbour cell indexes are correct   
 
             // Get 8 cells neighbours around
-            if ( around_left_neighbour != MESH_BOUNDARY && !is_halo(around_left_neighbour)  )   // If neighbour isn't edge of mesh and isn't a halo cell
+            if ( around_left_neighbour != MESH_BOUNDARY  )   // If neighbour isn't edge of mesh and isn't a halo cell
             {
                 const uint64_t around_left_front_neighbour    = mesh->cell_neighbours[ (around_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
                 const uint64_t around_left_back_neighbour     = mesh->cell_neighbours[ (around_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
                 unordered_neighbours_set[0].insert(around_left_front_neighbour);    
                 unordered_neighbours_set[0].insert(around_left_back_neighbour);     
             }
-            if ( around_right_neighbour != MESH_BOUNDARY && !is_halo(around_right_neighbour) )
+            if ( around_right_neighbour != MESH_BOUNDARY )
             {
                 const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[ (around_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell + FRONT_FACE] ;
                 const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[ (around_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell + BACK_FACE]  ;
                 unordered_neighbours_set[0].insert(around_right_front_neighbour);   
                 unordered_neighbours_set[0].insert(around_right_back_neighbour); 
             }
-            if ( below_neighbour != MESH_BOUNDARY && !is_halo(below_neighbour) )
+            if ( below_neighbour != MESH_BOUNDARY )
             {
                 // Get 8 cells around below cell
                 const uint64_t below_left_neighbour           = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
@@ -64,14 +94,14 @@ namespace minicombust::flow
                 unordered_neighbours_set[0].insert(below_right_neighbour);          
                 unordered_neighbours_set[0].insert(below_front_neighbour);          
                 unordered_neighbours_set[0].insert(below_back_neighbour);           
-                if ( below_left_neighbour != MESH_BOUNDARY && !is_halo(below_left_neighbour) )
+                if ( below_left_neighbour != MESH_BOUNDARY )
                 {
                     const uint64_t below_left_front_neighbour     = mesh->cell_neighbours[ (below_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
                     const uint64_t below_left_back_neighbour      = mesh->cell_neighbours[ (below_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
                     unordered_neighbours_set[0].insert(below_left_front_neighbour);     
                     unordered_neighbours_set[0].insert(below_left_back_neighbour);      
                 }
-                if ( below_right_neighbour != MESH_BOUNDARY && !is_halo(below_right_neighbour) )
+                if ( below_right_neighbour != MESH_BOUNDARY )
                 {
                     const uint64_t below_right_front_neighbour    = mesh->cell_neighbours[ (below_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
                     const uint64_t below_right_back_neighbour     = mesh->cell_neighbours[ (below_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
@@ -79,7 +109,7 @@ namespace minicombust::flow
                     unordered_neighbours_set[0].insert(below_right_back_neighbour); 
                 }
             }
-            if ( above_neighbour != MESH_BOUNDARY && !is_halo(above_neighbour) )
+            if ( above_neighbour != MESH_BOUNDARY )
             {
                 // Get 8 cells neighbours above
                 const uint64_t above_left_neighbour           = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
@@ -90,14 +120,14 @@ namespace minicombust::flow
                 unordered_neighbours_set[0].insert(above_right_neighbour);          
                 unordered_neighbours_set[0].insert(above_front_neighbour);          
                 unordered_neighbours_set[0].insert(above_back_neighbour);           
-                if ( above_left_neighbour != MESH_BOUNDARY && !is_halo(above_left_neighbour) )
+                if ( above_left_neighbour != MESH_BOUNDARY )
                 {
                     const uint64_t above_left_front_neighbour     = mesh->cell_neighbours[ (above_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
                     const uint64_t above_left_back_neighbour      = mesh->cell_neighbours[ (above_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
                     unordered_neighbours_set[0].insert(above_left_front_neighbour);     
                     unordered_neighbours_set[0].insert(above_left_back_neighbour);      
                 }
-                if ( above_right_neighbour != MESH_BOUNDARY && !is_halo(above_right_neighbour) )
+                if ( above_right_neighbour != MESH_BOUNDARY )
                 {
                     const uint64_t above_right_front_neighbour    = mesh->cell_neighbours[ (above_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
                     const uint64_t above_right_back_neighbour     = mesh->cell_neighbours[ (above_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
@@ -120,63 +150,55 @@ namespace minicombust::flow
         for ( auto& cell_it : unordered_neighbours_set[0] )
         {
             const uint64_t block_cell_disp  = mesh->local_cells_disp;
-            const uint64_t block_point_disp = mesh->local_points_disp;
             const uint64_t c                = cell_it;
             const uint64_t displaced_c      = cell_it - block_cell_disp;
 
-            if (is_halo(cell_it)) continue;
+            flow_aos<T> flow_term;      
+            flow_aos<T> flow_grad_term; 
 
+            if (is_halo(cell_it)) 
+            {
+                flow_term.temp          = mesh->dummy_gas_tem;      
+                flow_grad_term.temp     = 0.0;  
 
-            // const uint64_t *cell             = mesh->cells + (c - mesh->shmem_cell_disp)*cell_size;
+                flow_term.pressure      = mesh->dummy_gas_pre;      
+                flow_grad_term.pressure = 0.0; 
+                
+                flow_term.vel           = mesh->dummy_gas_vel; 
+                flow_grad_term.vel      = {0.0, 0.0, 0.0}; 
+            }
+            else
+            {
+                flow_term      = mesh->flow_terms[displaced_c];      
+                flow_grad_term = mesh->flow_grad_terms[displaced_c]; 
+            }
+
             const vec<T> cell_centre         = mesh->cell_centres[c - mesh->shmem_cell_disp];
 
-            const flow_aos<T> flow_term      = mesh->flow_terms[displaced_c];      
-            const flow_aos<T> flow_grad_term = mesh->flow_grad_terms[displaced_c]; 
-
             // USEFUL ERROR CHECKING!
-            // if (flow_term.temp     != mesh->dummy_gas_tem) {printf("INTERP NODAL ERROR: Wrong temp value\n"); exit(1);}
-            // if (flow_term.pressure != mesh->dummy_gas_pre) {printf("INTERP NODAL ERROR: Wrong pres value\n"); exit(1);}
-            // if (flow_term.vel.x    != mesh->dummy_gas_vel.x) {printf("INTERP NODAL ERROR: Wrong velo value\n"); exit(1);}
+            // if (flow_term.temp     != mesh->dummy_gas_tem)   {printf("INTERP NODAL ERROR: Wrong temp value at %d max(%lu) \n", (int)displaced_c, mesh->block_element_disp[mpi_config->particle_flow_rank + 1]); exit(1);}
+            // if (flow_term.pressure != mesh->dummy_gas_pre)   {printf("INTERP NODAL ERROR: Wrong pres value at %d max(%lu) \n", (int)displaced_c, mesh->block_element_disp[mpi_config->particle_flow_rank + 1]); exit(1);}
+            // if (flow_term.vel.x    != mesh->dummy_gas_vel.x) {printf("INTERP NODAL ERROR: Wrong velo value at %d max(%lu) \n", (int)displaced_c, mesh->block_element_disp[mpi_config->particle_flow_rank + 1]); exit(1);}
 
             // if (flow_grad_term.temp     != 0.)                 {printf("INTERP NODAL ERROR: Wrong temp grad value\n"); exit(1);}
             // if (flow_grad_term.pressure != 0.)                 {printf("INTERP NODAL ERROR: Wrong pres grad value\n"); exit(1);}
             // if (flow_grad_term.vel.x    != 0.)                 {printf("INTERP NODAL ERROR: Wrong velo grad value\n"); exit(1);}
 
-            resize_nodes_arrays(node_to_position_map.size() + cell_size );
-
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
             {
-                const uint64_t node_id      = mesh->cells[(c - mesh->shmem_cell_disp)*mesh->cell_size + n];
-                // const uint64_t real_node_id = mesh->cells[(c - mesh->shmem_cell_disp)*mesh->cell_size + n] + block_point_disp;
-                // const uint64_t real_node_id = mesh->cells[(c - mesh->shmem_cell_disp)*mesh->cell_size + n];
-                const vec<T> direction      = mesh->points[node_id - mesh->shmem_point_disp] - cell_centre;
+                const uint64_t node_id = mesh->cells[(c - mesh->shmem_cell_disp)*mesh->cell_size + n];
 
                 if (node_to_position_map.contains(node_id))
                 {
-                    interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
-                    interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
+                    const vec<T> direction      = mesh->points[node_id - mesh->shmem_point_disp] - cell_centre;
+
                     interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
 
-                    // if (node_id == 16)
-                    //     printf("rank %d node cell %d flow size %f temp %f\n", mpi_config->rank, c, interp_node_flow_fields[node_to_position_map[16]].temp , flow_term.temp);
-                }
-                else
-                {
-                    const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id - mesh->shmem_point_disp];
-
-                    flow_aos<T> temp_term;
-                    temp_term.vel      = ((mesh->dummy_gas_vel * boundary_neighbours) + flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
-                    temp_term.pressure = ((mesh->dummy_gas_pre * boundary_neighbours) + flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-                    temp_term.temp     = ((mesh->dummy_gas_tem * boundary_neighbours) + flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
-                    
-                    interp_node_indexes[node_to_position_map.size()]     = node_id;
-                    interp_node_flow_fields[node_to_position_map.size()] = temp_term; // TODO: Overlap getting flow fields?
-                    
-                    node_to_position_map[node_id] = node_to_position_map.size();
-
-                    // if (node_id == 16)
-                    //     printf("rank %d node cell %d flow size %f boundary_neighbours %f temp %f\n", mpi_config->rank, c, interp_node_flow_fields[node_to_position_map[16]].temp , boundary_neighbours, temp_term.temp);
+                    // if (node_id == 540968 && mpi_config->rank == 56)
+                    //     printf("Rank %d cell %lu adds temp value %f (total %f) to existing node %lu (position %lu) slot\n", mpi_config->rank, c, (flow_term.temp + dot_product(flow_grad_term.temp, direction)) / node_neighbours, interp_node_flow_fields[node_to_position_map[node_id]].temp, node_id, node_to_position_map[node_id]);
                 }
             }
         }
@@ -184,22 +206,22 @@ namespace minicombust::flow
         // Useful for checking errors and comms
 
         // TODO: Can comment this with properly implemented halo exchange. Need cell neighbours for halo and nodes!
-        uint64_t const nsize = node_to_position_map.size();
+        // uint64_t const nsize = node_to_position_map.size();
 
-        #pragma ivdep
-        for ( uint64_t i = 0;  i < nsize; i++ ) 
-        {
-            // if (interp_node_flow_fields[node_it.second].temp     != mesh->dummy_gas_tem)              
-            //     {printf("ERROR UPDATE FLOW: Wrong temp value %f at %lu\n", interp_node_flow_fields[node_it.second].temp,           interp_node_indexes[node_it.second]); exit(1);}
-            // if (interp_node_flow_fields[node_it.second].pressure != mesh->dummy_gas_pre)              
-            //     {printf("ERROR UPDATE FLOW: Wrong pres value %f at %lu\n", interp_node_flow_fields[node_it.second].pressure,       interp_node_indexes[node_it.second]); exit(1);}
-            // if (interp_node_flow_fields[node_it.second].vel.x != mesh->dummy_gas_vel.x) 
-            //     {printf("ERROR UPDATE FLOW: Wrong velo value {%.10f y z} at %lu\n", interp_node_flow_fields[node_it.second].vel.x, interp_node_indexes[node_it.second]); exit(1);}
+        // #pragma ivdep
+        // for ( uint64_t i = 0;  i < nsize; i++ ) 
+        // {
+        //     if (interp_node_flow_fields[i].temp     != mesh->dummy_gas_tem)              
+        //         {printf("ERROR INTERP NODAL FINAL CHECK (RANK %d): Wrong temp value %f at %lu\n",  mpi_config->rank,           interp_node_flow_fields[i].temp,     interp_node_indexes[i]); exit(1);}
+        //     if (interp_node_flow_fields[i].pressure != mesh->dummy_gas_pre)              
+        //         {printf("ERROR INTERP NODAL FINAL CHECK (RANK %d): Wrong pres value %f at %lu\n",  mpi_config->rank,           interp_node_flow_fields[i].pressure, interp_node_indexes[i]); exit(1);}
+        //     if (interp_node_flow_fields[i].vel.x != mesh->dummy_gas_vel.x) 
+        //         {printf("ERROR INTERP NODAL FINAL CHECK (RANK %d): Wrong velo value {%.10f y z} at %lu\n",  mpi_config->rank,  interp_node_flow_fields[i].vel.x,    interp_node_indexes[i]); exit(1);}
 
-            interp_node_flow_fields[i].temp     = mesh->dummy_gas_tem;
-            interp_node_flow_fields[i].pressure = mesh->dummy_gas_pre;
-            interp_node_flow_fields[i].vel      = mesh->dummy_gas_vel;
-        }
+        //     interp_node_flow_fields[i].temp     = mesh->dummy_gas_tem;
+        //     interp_node_flow_fields[i].pressure = mesh->dummy_gas_pre;
+        //     interp_node_flow_fields[i].vel      = mesh->dummy_gas_vel;
+        // }
     }
 
     

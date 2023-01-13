@@ -51,15 +51,14 @@ namespace minicombust::flow
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mesh(mesh), mpi_config(mpi_config)
             {
                 const float fraction  = 0.125;
-                uint64_t max_cell_storage      = fraction * mesh->local_mesh_size;
-                uint64_t max_node_storage      = fraction * mesh->local_points_size;
+                uint64_t max_storage      = fraction * mesh->local_mesh_size;
 
                 // Compute array sizes
-                cell_index_array_size    = max_cell_storage * sizeof(uint64_t);
-                cell_particle_array_size = max_cell_storage * sizeof(particle_aos<T>);
+                cell_index_array_size    = max_storage * sizeof(uint64_t);
+                cell_particle_array_size = max_storage * sizeof(particle_aos<T>);
 
-                node_index_array_size   = max_node_storage * sizeof(uint64_t);
-                node_flow_array_size    = max_node_storage * sizeof(flow_aos<T>);
+                node_index_array_size   = max_storage * sizeof(uint64_t);
+                node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
 
                 async_locks = (bool*)malloc(4 * mesh->num_blocks * sizeof(bool));
                 
@@ -132,6 +131,7 @@ namespace minicombust::flow
                     MPI_Reduce(&total_node_to_position_map_size,     nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                 }
 
+                MPI_Barrier(mpi_config->world);
 
                 for (uint64_t b = 0; b < mesh->num_blocks; b++)
                 {

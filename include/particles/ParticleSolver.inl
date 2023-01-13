@@ -186,8 +186,9 @@ namespace minicombust::particles
             {
                 for (uint64_t i = 0; i < neighbours_size[b]; i++)
                 {
+                    // if (all_interp_node_indexes[b][i] == 540968)
+                    //     printf("Block %lu Rank %d recieved node %lu temp value is %f\n", b, mpi_config->rank, all_interp_node_indexes[b][i], all_interp_node_flow_fields[b][i].temp);
                     node_to_field_address_map[all_interp_node_indexes[b][i]] = &all_interp_node_flow_fields[b][i];
-                    // printf("Rank %d block %lu node %lu data is at %p\n", mpi_config->rank, b, all_interp_node_indexes[b][i], &all_interp_node_flow_fields[b][i]);
                 }
                 processed_block[b] = true;
             }
@@ -198,17 +199,6 @@ namespace minicombust::particles
             b = (b + 1) % mesh->num_blocks;
         }
 
-        // for (auto& node_it: node_to_field_address_map)
-        // {
-        //     if ((int)node_it.first < 0 || (int)node_it.first >= mesh->points_size)
-        //         {printf("ERROR UPDATE FLOW: Wrong node index %lu\n", node_it.first); exit(1);}
-        //     if (node_it.second->temp     != mesh->dummy_gas_tem)              
-        //         {printf("ERROR UPDATE FLOW: Wrong temp value %f at %lu\n", node_it.second->temp,           node_it.first); exit(1);}
-        //     if (node_it.second->pressure != mesh->dummy_gas_pre)              
-        //         {printf("ERROR UPDATE FLOW: Wrong pres value %f at %lu\n", node_it.second->pressure,       node_it.first); exit(1);}
-        //     if (node_it.second->vel.x != mesh->dummy_gas_vel.x) 
-        //         {printf("ERROR UPDATE FLOW: Wrong velo value {%.10f y z} at %lu\n", node_it.second->vel.x, node_it.first); exit(1);}
-        // }
         
         MPI_Barrier(mpi_config->world);
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
@@ -274,13 +264,12 @@ namespace minicombust::particles
 
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
-                
                 // if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
-                //     {printf("ERROR SOLVE SPRAY: Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
+                //     {printf("ERROR SOLVE SPRAY : Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
                 // if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
-                //     {printf("ERROR SOLVE SPRAY: Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
+                //     {printf("ERROR SOLVE SPRAY : Wrong pres value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->pressure, node, particles[p].cell); exit(1);}
                 // if (node_to_field_address_map[node]->vel.x != mesh->dummy_gas_vel.x) 
-                //     {printf("ERROR SOLVE SPRAY: Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
+                //     {printf("ERROR SOLVE SPRAY : Wrong velo value {%.10f y z} at %lu (cell %lu)\n", node_to_field_address_map[node]->vel.x,    node, particles[p].cell); exit(1);}
 
                 interp_gas_vel        += weight           * node_to_field_address_map[node]->vel;
                 interp_gas_pre        += weight_magnitude * node_to_field_address_map[node]->pressure;
