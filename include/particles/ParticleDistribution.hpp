@@ -169,8 +169,6 @@ namespace minicombust::particles
             Distribution<T> *decay_threshold; 
             Distribution<T> *temperature; 
 
-
-
             // TODO: Read particle distribution from file
 
             // Generate fixed distribution
@@ -250,7 +248,7 @@ namespace minicombust::particles
                 logger->emitted_particles  += wave_particles_per_timestep ;
             }
 
-            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn, Particle_Logger *logger)
+            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map, unordered_map<uint64_t, flow_aos<T> *>& node_to_field_address_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn, Particle_Logger *logger)
             {
                 particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 uint64_t start_cell = mesh->mesh_size * 0.49;
@@ -293,6 +291,15 @@ namespace minicombust::particles
                         indexed_fields[block_id][index]          = zero_field;
 
                         cell_particle_field_map[block_id][particle.cell] = index;
+
+                        #pragma ivdep
+                        for (uint64_t n = 0; n < mesh->cell_size; n++)
+                        {
+                            const uint64_t node_id = mesh->cells[(particle.cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
+                            
+                            if (!node_to_field_address_map.contains(node_id))
+                                node_to_field_address_map[node_id] = nullptr;
+                        }
                     }
                 }
 

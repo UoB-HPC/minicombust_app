@@ -160,7 +160,6 @@ namespace minicombust::particles
             }
         }
 
-        node_to_field_address_map.clear(); // OVERLAPS
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
             neighbours_sets[b].clear();
 
@@ -188,7 +187,9 @@ namespace minicombust::particles
                 {
                     // if (all_interp_node_indexes[b][i] == 540968)
                     //     printf("Block %lu Rank %d recieved node %lu temp value is %f\n", b, mpi_config->rank, all_interp_node_indexes[b][i], all_interp_node_flow_fields[b][i].temp);
-                    node_to_field_address_map[all_interp_node_indexes[b][i]] = &all_interp_node_flow_fields[b][i];
+
+                    if (node_to_field_address_map.contains(all_interp_node_indexes[b][i]))
+                        node_to_field_address_map[all_interp_node_indexes[b][i]] = &all_interp_node_flow_fields[b][i];
                 }
                 processed_block[b] = true;
             }
@@ -218,7 +219,7 @@ namespace minicombust::particles
         if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: particle_release.\n");
         function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
 
-        particle_dist->emit_particles_evenly(particles, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, resize_cell_particles_fn, &logger);
+        particle_dist->emit_particles_evenly(particles, cell_particle_field_map, node_to_field_address_map, cell_particle_indexes, cell_particle_aos, resize_cell_particles_fn, &logger);
         // particle_dist->emit_particles_waves(particles, cell_particle_field_map, cell_particle_indexes, cell_particle_aos,  &logger);
 
         performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_time);
@@ -264,6 +265,7 @@ namespace minicombust::particles
 
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
+
                 // if (node_to_field_address_map[node]->temp     != mesh->dummy_gas_tem)              
                 //     {printf("ERROR SOLVE SPRAY : Wrong temp value %f at %lu (cell %lu)\n",          node_to_field_address_map[node]->temp,     node, particles[p].cell); exit(1);}
                 // if (node_to_field_address_map[node]->pressure != mesh->dummy_gas_pre)              
@@ -281,6 +283,9 @@ namespace minicombust::particles
             particles[p].gas_temperature   = interp_gas_tem / total_scalar_weight;
 
         }
+
+        node_to_field_address_map.clear(); // TODO move this? 
+
 
         // static uint64_t node_avg = 0;
         static uint64_t timestep_counter = 0;
@@ -355,6 +360,15 @@ namespace minicombust::particles
                     cell_particle_aos[block_id][index]       = particles[p].particle_cell_fields;
 
                     cell_particle_field_map[block_id][cell]  = index;
+
+                    #pragma ivdep
+                    for (uint64_t n = 0; n < mesh->cell_size; n++)
+                    {
+                        const uint64_t node_id = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
+
+                        if (!node_to_field_address_map.contains(node_id))
+                            node_to_field_address_map[node_id] = nullptr;
+                    }
                 }
             }
         }
