@@ -79,7 +79,7 @@ if (len(counters) != 1):
             cacheline=8
             performance = kernel_vals["PAPI_FP_INS"] / kernel_vals["time"]
             performance /= 1000000000
-            OI = kernel_vals["PAPI_FP_INS"] / (cacheline*(kernel_vals["PAPI_LD_INS"] + kernel_vals["PAPI_SR_INS"]))
+            OI = kernel_vals["PAPI_FP_INS"] / (cacheline * (kernel_vals["PAPI_LD_INS"] + kernel_vals["PAPI_SR_INS"]))
             point_string += " --point " + str(OI) + "x" + str(performance) + " --pointname " + kernel
 
             mem_bandwidth  = cacheline*(kernel_vals["PAPI_LD_INS"] + kernel_vals["PAPI_SR_INS"]) / kernel_vals["time"]

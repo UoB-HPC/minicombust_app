@@ -9,6 +9,8 @@
 #include "geometry/Mesh.hpp"
 
 
+
+
 namespace minicombust::particles 
 {
     using namespace std; 
@@ -17,6 +19,9 @@ namespace minicombust::particles
 
     #define INVALID_FACE 1;
     #define VALID_FACE 0;
+
+    const double EPSILON = 5.0e-17;
+
     enum INTERSECT_PLANES { POSSIBLE = 0, IMPOSSIBLE = 1, PARALLEL = 3}; 
     
     template<class T>
@@ -58,7 +63,7 @@ namespace minicombust::particles
                 }
 
                 // if (PARTICLE_DEBUG)  cout << "\t\tpartial_volumes - total  " << partial_volumes-total_volume << endl;
-                if (abs(partial_volumes-total_volume) < 5.0e-15)  return true;
+                if (abs(partial_volumes-total_volume) < EPSILON)  return true;
                 return false;
                 
             }
@@ -167,7 +172,7 @@ namespace minicombust::particles
                                              + tetrahedral_volume(B, E, C, F);
 
                             if (PARTICLE_DEBUG)  printf("\t\t\t%.20f == %.20f\n", LHS, RHS);
-                            if (abs(LHS - RHS) < 5e-15 && LHS != 0)  
+                            if ( (abs(LHS - RHS) < EPSILON) && (LHS != 0.) )  
                             {
                                 intercepted_face_id = face;
                                 intercepted_faces++;
@@ -201,6 +206,7 @@ namespace minicombust::particles
                                 cell    = MESH_BOUNDARY;
                                 if (PARTICLE_DEBUG)  cout << "\t\t\tLost Particle " << endl;
                                 if (LOGGER) logger->lost_particles++;
+                                if (LOGGER) logger->decayed_particles++;
                                 return cell;
                             }
                             continue;

@@ -277,15 +277,13 @@ namespace minicombust::particles
 
                     start_cell = particle.cell; 
                     particles.push_back(particle);
-                    
 
                     const uint64_t block_id = mesh->get_block_id(particle.cell);
 
-                    elements[block_id] = cell_particle_field_map[block_id].size() + 1;
-
                     if ( !cell_particle_field_map[block_id].contains(particle.cell) )
                     {
-                        const uint64_t index    = cell_particle_field_map[block_id].size();
+                        elements[block_id]   = cell_particle_field_map[block_id].size() + 1;
+                        const uint64_t index = cell_particle_field_map[block_id].size();
 
                         resize_fn(elements, &indexes, &indexed_fields);
                         
@@ -297,8 +295,6 @@ namespace minicombust::particles
                         cell_particle_field_map[block_id][particle.cell] = index;
                     }
                 }
-                
-
 
                 logger->num_particles      += even_particles_per_timestep + remainder;
                 logger->emitted_particles  += even_particles_per_timestep + remainder;
