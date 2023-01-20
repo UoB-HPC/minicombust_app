@@ -245,8 +245,8 @@ namespace minicombust::geometry
                     printf("\t2 * block_disp_size               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
                     printf("\t2 * flow_term_size                (TOTAL %8.2f MB) (AVG %8.2f MB) \n\n"                             , (float) total_flow_term_size                   / 1000000.0, (float) total_flow_term_size                   / (1000000.0 * mpi_config->world_size));
 
-                    printf("\tFlow rank mesh size               (TOTAL %12.2f MB) (AVG %.2f MB) \n"                    , (float)(total_memory_usage - particle_memory_usage)/1000000.0, (float)(total_memory_usage - particle_memory_usage)/(1000000.0 * mpi_config->particle_flow_world_size));
-                    printf("\tParticle rank mesh size           (TOTAL %12.2f MB) (AVG %.2f MB) \n"                    , (float)particle_memory_usage/1000000.0,                        (float)particle_memory_usage/(1000000.0 * (mpi_config->world_size - mpi_config->particle_flow_world_size)));
+                    printf("\tFlow rank mesh size               (TOTAL %12.2f MB) (AVG %.2f MB) \n"                    , (float)(total_memory_usage - particle_memory_usage)/1000000.0, (float)(total_memory_usage - particle_memory_usage)/(1000000.0 * (mpi_config->world_size - mpi_config->particle_flow_world_size)));
+                    printf("\tParticle rank mesh size           (TOTAL %12.2f MB) (AVG %.2f MB) \n"                    , (float)particle_memory_usage/1000000.0,                        (float)particle_memory_usage/(1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\tTotal mesh size                   (TOTAL %12.2f MB) \n\n"                                , (float)total_memory_usage/1000000.0);
                 }
                 else

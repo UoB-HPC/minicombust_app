@@ -101,7 +101,7 @@ namespace minicombust::particles
             cout << "\tUseful Nodes (%)     (avg per rank):         " << round(10000.*((logger.useful_nodes_proportion) / (logger.nodes_recieved))) / 100. << "% "        << endl;
 
             cout << endl;
-            cout << "\tParticle cell overlap avg (per block):       " << round(10000.*(1 - total_cells_recieved / (mpi_config->particle_flow_world_size * logger.sent_cells))) / 100. << "% " << endl;
+            cout << "\tDuplicated cells across particle ranks:      " << round(10000.*(1 - total_cells_recieved / (mpi_config->particle_flow_world_size * logger.sent_cells))) / 100. << "% " << endl;
             cout << endl;
 
             cout <<"NOTE: REDUCING RELATIVE GAS VEL by 50\% in Particle.hpp while flow isn't implemented!!!" << endl;
@@ -213,7 +213,7 @@ namespace minicombust::particles
                     // if (all_interp_node_indexes[b][i] == 540968)
                     //     printf("Block %lu Rank %d recieved node %lu temp value is %f\n", b, mpi_config->rank, all_interp_node_indexes[b][i], all_interp_node_flow_fields[b][i].temp);
 
-                    if (node_to_field_address_map.contains(all_interp_node_indexes[b][i]))
+                    if (node_to_field_address_map.count(all_interp_node_indexes[b][i]))
                     {
                         node_to_field_address_map[all_interp_node_indexes[b][i]] = &all_interp_node_flow_fields[b][i];
                     }
@@ -360,8 +360,9 @@ namespace minicombust::particles
         if (PARTICLE_SOLVER_DEBUG )  printf("\tRunning fn: update_particle_positions.\n");
         const uint64_t particles_size  = particles.size();
 
-        uint64_t elements [mesh->num_blocks] = {0};
-
+        uint64_t elements [mesh->num_blocks];
+        for (uint64_t i = 0; i < mesh->num_blocks; i++)
+            elements[i] = 0;
 
         // Update particle positions
         vector<uint64_t> decayed_particles;
@@ -377,7 +378,7 @@ namespace minicombust::particles
                 const uint64_t cell     = particles[p].cell;
                 const uint64_t block_id = mesh->get_block_id(particles[p].cell);
 
-                if ( cell_particle_field_map[block_id].contains(cell) ) // TODO Resize arrays.
+                if ( cell_particle_field_map[block_id].count(cell) ) // TODO Resize arrays.
                 {
                     const uint64_t index = cell_particle_field_map[block_id][cell];
 
@@ -403,7 +404,7 @@ namespace minicombust::particles
                     {
                         const uint64_t node_id = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
 
-                        if (!node_to_field_address_map.contains(node_id))
+                        if (!node_to_field_address_map.count(node_id))
                             node_to_field_address_map[node_id] = nullptr;
                     }
                 }

@@ -413,7 +413,7 @@ namespace minicombust::utils
         if ( (world_sizes[mpi_config->particle_flow_rank] == 1) && (mpi_config->solver_type == FLOW) )  return;
 
 
-        bool have_data[num_blocks]   = {true};
+        bool have_data[num_blocks];
         for ( uint64_t b = 0; b < num_blocks; b++ )
         {
             alias_rank[b]          = (ranks[b] + 1) % world_sizes[b];
@@ -492,7 +492,7 @@ namespace minicombust::utils
                             recieved_indexes[b] = true;
                         }
 
-                        int index_done;
+                        int index_done = 0;
                         if (recieved_indexes[b])  MPI_Test(&requests[b], &index_done, MPI_STATUS_IGNORE);
 
                         if (index_done &&  recieved_indexes[b] && !processed_block[b])
@@ -501,7 +501,7 @@ namespace minicombust::utils
 
                             for (uint64_t i = 0; i < send_counts[b]; i++)
                             {
-                                if ( !indexes_sets[flow_block_index].contains(recv_indexes[b][i]) )
+                                if ( !indexes_sets[flow_block_index].count(recv_indexes[b][i]) )
                                 {
                                     curr_indexes[flow_block_index][indexes_sets[flow_block_index].size()] = recv_indexes[b][i];
                                     indexes_sets[flow_block_index].insert(recv_indexes[b][i]);
@@ -536,7 +536,7 @@ namespace minicombust::utils
                             recieved_indexes[b] = true;
                         }
 
-                        int index_done;
+                        int index_done = 0;
                         if (recieved_indexes[b])  MPI_Test(&requests[b], &index_done, MPI_STATUS_IGNORE);
 
                         if (index_done && recieved_indexes[b] && !processed_block[b])
@@ -651,7 +651,7 @@ namespace minicombust::utils
                             continue;
                         }
 
-                        int index_done;
+                        int index_done = 0;
                         if (recieved_indexes[b])  MPI_Testall(2, &requests[3 * b + 1], &index_done, MPI_STATUSES_IGNORE);
 
                         if (index_done &&  recieved_indexes[b] && !processed_block[b])
@@ -660,7 +660,7 @@ namespace minicombust::utils
                             for (uint64_t i = 0; i < send_counts[b]; i++)
                             {
                                 const uint64_t cell = recv_indexes[b][i];
-                                if ( cell_particle_maps[flow_block_index].contains(cell) )
+                                if ( cell_particle_maps[flow_block_index].count(cell) )
                                 {
                                     const uint64_t index = cell_particle_maps[flow_block_index][cell];
 

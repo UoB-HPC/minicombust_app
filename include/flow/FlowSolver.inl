@@ -31,7 +31,7 @@ namespace minicombust::flow
             for (uint64_t n = 0; n < cell_size; n++)
             {
                 const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
-                if (!node_to_position_map.contains(node_id))
+                if (!node_to_position_map.count(node_id))
                 {
                     const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id - mesh->shmem_point_disp];
 
@@ -189,7 +189,7 @@ namespace minicombust::flow
             {
                 const uint64_t node_id = mesh->cells[(c - mesh->shmem_cell_disp)*mesh->cell_size + n];
 
-                if (node_to_position_map.contains(node_id))
+                if (node_to_position_map.count(node_id))
                 {
                     const vec<T> direction      = mesh->points[node_id - mesh->shmem_point_disp] - cell_centre;
 
@@ -430,7 +430,7 @@ namespace minicombust::flow
             printf("\tRecieved Cells ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.recieved_cells / timesteps), round(min_cells / timesteps), round(max_cells / timesteps));
             printf("\tSent Nodes     ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.sent_nodes     / timesteps), round(min_nodes / timesteps), round(max_nodes / timesteps));
             printf("\tFlow blocks with <1%% max droplets: %d\n", mpi_config->particle_flow_world_size - (int)non_zero_blocks); 
-            printf("\tAvg Cells with droplets         : %.2f%%\n", total_cells_recieved / (timesteps * mesh->mesh_size));
+            printf("\tAvg Cells with droplets           : %.2f%%\n", 100 * total_cells_recieved / (timesteps * mesh->mesh_size));
 
             
             MPI_Barrier (mpi_config->particle_flow_world);

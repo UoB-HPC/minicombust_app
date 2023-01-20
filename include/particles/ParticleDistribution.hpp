@@ -260,7 +260,7 @@ namespace minicombust::particles
 
                         elements[block_id] = cell_particle_field_map[block_id].size() + 1;
 
-                        if ( !cell_particle_field_map[block_id].contains(particle.cell) )
+                        if ( !cell_particle_field_map[block_id].count(particle.cell) )
                         {
                             cell_particle_field_map[block_id][particle.cell] = index;
 
@@ -286,7 +286,9 @@ namespace minicombust::particles
                 uint64_t remainder = ((mpi_config->particle_flow_rank + timestep_count*remainder_particles) % mpi_config->particle_flow_world_size) < remainder_particles;
 
 
-                uint64_t elements [mesh->num_blocks] = {0};
+                uint64_t elements [mesh->num_blocks];
+                for (uint64_t i = 0; i < mesh->num_blocks; i++)
+                    elements[i] = 0;
 
                 for (uint64_t p = 0; p < even_particles_per_timestep + remainder; p++)
                 {
@@ -309,7 +311,7 @@ namespace minicombust::particles
 
                     const uint64_t block_id = mesh->get_block_id(particle.cell);
 
-                    if ( !cell_particle_field_map[block_id].contains(particle.cell) )
+                    if ( !cell_particle_field_map[block_id].count(particle.cell) )
                     {
                         elements[block_id]   = cell_particle_field_map[block_id].size() + 1;
                         const uint64_t index = cell_particle_field_map[block_id].size();
@@ -328,7 +330,7 @@ namespace minicombust::particles
                         {
                             const uint64_t node_id = mesh->cells[(particle.cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
                             
-                            if (!node_to_field_address_map.contains(node_id))
+                            if (!node_to_field_address_map.count(node_id))
                                 node_to_field_address_map[node_id] = nullptr;
                         }
                     }
