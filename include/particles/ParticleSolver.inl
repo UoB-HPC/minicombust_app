@@ -36,7 +36,7 @@ namespace minicombust::particles
         //     mesh->particles_per_point[closest_vertex] += 1;
         // }
 
-        VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
+        VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
         vtk_writer->write_particles("minicombust", timestep, particles);
     }
 
@@ -59,8 +59,16 @@ namespace minicombust::particles
             logger.decayed_particles        += loggers[rank].decayed_particles;
             logger.burnt_particles          += loggers[rank].burnt_particles;
             logger.breakups                 += loggers[rank].breakups;
-            logger.interpolated_cells       += loggers[rank].interpolated_cells / (double)mpi_config->particle_flow_world_size;
+            logger.sent_cells               += loggers[rank].sent_cells              / (double)  mpi_config->particle_flow_world_size;
+            logger.sent_cells_per_block     += loggers[rank].sent_cells_per_block    / (double)  mpi_config->particle_flow_world_size;
+            logger.nodes_recieved           += loggers[rank].nodes_recieved          / (double)  mpi_config->particle_flow_world_size;
+            logger.useful_nodes_proportion  += loggers[rank].useful_nodes_proportion / (double)  mpi_config->particle_flow_world_size;
         }
+
+        MPI_Barrier(mpi_config->world);
+        double total_cells_recieved;
+        if (mpi_config->particle_flow_rank == 0)
+            MPI_Recv(&total_cells_recieved, 1, MPI_DOUBLE, mpi_config->particle_flow_world_size, 0, mpi_config->world, MPI_STATUS_IGNORE);
 
         if (mpi_config->rank == 0)
         {
@@ -85,12 +93,21 @@ namespace minicombust::particles
             cout << "\tBurnt Particles:                             " << ((double)logger.burnt_particles)                                                                 << endl;
             cout << "\tBreakups:                                    " << ((double)logger.breakups)                                                                        << endl;
             cout << "\tBreakup Age:                                 " << ((double)logger.breakup_age)                                                                     << endl;
-            cout << endl;
-            cout << "\tInterpolated Cells (per rank):               " << ((double)logger.interpolated_cells)                                                              << endl;
-            cout << "\tInterpolated Cells Percentage (per rank):    " << round(10000.*(((double)logger.interpolated_cells) / ((double)mesh->mesh_size)))/100. << "% "     << endl;
+            cout << endl; 
+            cout << "\tAvg Sent Cells       (avg per rank, block):  " << round(logger.sent_cells_per_block / timesteps)                                                   << endl;
+            cout << "\tTotal Sent Cells     (avg per rank):         " << round(logger.sent_cells / timesteps)                                                             << endl;
+            cout << "\tTotal Recieved Nodes (avg per rank):         " << round(logger.nodes_recieved / timesteps)                                                         << endl;
+            cout << "\tUseful Nodes         (avg per rank):         " << round(logger.useful_nodes_proportion / timesteps)                                                << endl;
+            cout << "\tUseful Nodes (%)     (avg per rank):         " << round(10000.*((logger.useful_nodes_proportion) / (logger.nodes_recieved))) / 100. << "% "        << endl;
 
             cout << endl;
+            cout << "\tParticle cell overlap avg (per block):       " << round(10000.*(1 - total_cells_recieved / (mpi_config->particle_flow_world_size * logger.sent_cells))) / 100. << "% " << endl;
+            cout << endl;
+
+            cout <<"NOTE: REDUCING RELATIVE GAS VEL by 50\% in Particle.hpp while flow isn't implemented!!!" << endl;
+            cout << endl;
         }
+
         performance_logger.print_counters(mpi_config->rank, mpi_config->world_size, runtime);
     }
 
@@ -104,13 +121,21 @@ namespace minicombust::particles
 
         uint64_t elements[mesh->num_blocks];
         uint64_t block_world_size[mesh->num_blocks];
+        double avg_sent_cells  = 0.;
+        double non_zero_blocks = 0.;
         for (uint64_t b = 0; b < mesh->num_blocks; b++)
         {
             cell_particle_field_map[b].erase(MESH_BOUNDARY);
+            logger.sent_cells     += cell_particle_field_map[b].size();
+            avg_sent_cells        += cell_particle_field_map[b].size();
+            non_zero_blocks       += cell_particle_field_map[b].size() > 0;
+
             elements[b]         = cell_particle_field_map[b].size();
             block_world_size[b] = cell_particle_field_map[b].size() ? 1 : 0;
             MPI_Iallreduce(MPI_IN_PLACE, &block_world_size[b], 1, MPI_INT, MPI_SUM, mpi_config->every_one_flow_world[b], &requests[3 * b]);
         }
+        avg_sent_cells /= non_zero_blocks;
+        logger.sent_cells_per_block += avg_sent_cells;
 
         MPI_Barrier(mpi_config->world);
 
@@ -137,7 +162,6 @@ namespace minicombust::particles
 
 
         MPI_Barrier(mpi_config->world);        
-
         function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
         MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, cell_particle_indexes, cell_particle_aos, elements, async_locks, send_counts, recv_indexes, recv_indexed_fields, requests, resize_cell_particles_fn);
 
@@ -183,13 +207,16 @@ namespace minicombust::particles
 
             if ( ready && !processed_block[b] )
             {
+                logger.nodes_recieved += neighbours_size[b];
                 for (uint64_t i = 0; i < neighbours_size[b]; i++)
                 {
                     // if (all_interp_node_indexes[b][i] == 540968)
                     //     printf("Block %lu Rank %d recieved node %lu temp value is %f\n", b, mpi_config->rank, all_interp_node_indexes[b][i], all_interp_node_flow_fields[b][i].temp);
 
                     if (node_to_field_address_map.contains(all_interp_node_indexes[b][i]))
+                    {
                         node_to_field_address_map[all_interp_node_indexes[b][i]] = &all_interp_node_flow_fields[b][i];
+                    }
                 }
                 processed_block[b] = true;
             }
@@ -199,6 +226,8 @@ namespace minicombust::particles
                 all_true &= processed_block[bi];
             b = (b + 1) % mesh->num_blocks;
         }
+        
+        logger.useful_nodes_proportion += node_to_field_address_map.size();
 
         
         MPI_Barrier(mpi_config->world);
@@ -260,8 +289,9 @@ namespace minicombust::particles
 
                 const vec<T> node_to_particle = particles[p].x1 - mesh->points[node - mesh->shmem_point_disp];
 
-                vec<T> weight      = 1.0 / (node_to_particle * node_to_particle);
+                vec<T> weight      = 1.0 / ((node_to_particle * node_to_particle) + vec<T> {__DBL_MIN__, __DBL_MIN__, __DBL_MIN__});
                 T weight_magnitude = magnitude(weight);
+                // cout << "Weight mag " << print_vec(weight) << " particles[p].x1 " << print_vec(particles[p].x1)  << "mesh->points[node - mesh->shmem_point_disp]" << print_vec(mesh->points[node - mesh->shmem_point_disp]) << endl;
 
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
@@ -281,6 +311,13 @@ namespace minicombust::particles
             particles[p].gas_vel           = interp_gas_vel / total_vector_weight;
             particles[p].gas_pressure      = interp_gas_pre / total_scalar_weight;
             particles[p].gas_temperature   = interp_gas_tem / total_scalar_weight;
+
+            // if (particles[p].gas_temperature     != mesh->dummy_gas_tem)              
+            //     {printf("ERROR SOLVE SPRAY PARTICLE : Wrong gas_temperature value %f at %lu (cell %lu)\n",          particles[p].gas_temperature,     p, particles[p].cell); exit(1);}
+            // if (particles[p].gas_pressure != mesh->dummy_gas_pre)              
+            //     {printf("ERROR SOLVE SPRAY PARTICLE : Wrong pres value %f at %lu (cell %lu)\n",          particles[p].gas_pressure, p, particles[p].cell); exit(1);}
+            // if (particles[p].gas_vel.x != mesh->dummy_gas_vel.x) 
+            //     {printf("ERROR SOLVE SPRAY PARTICLE : Wrong velo value {%.10f y z} at %lu (cell %lu)\n", particles[p].gas_vel.x,    p, particles[p].cell); exit(1);}
 
         }
 
@@ -372,6 +409,7 @@ namespace minicombust::particles
                 }
             }
         }
+
 
         const uint64_t decayed_particles_size = decayed_particles.size();
         #pragma ivdep

@@ -270,6 +270,8 @@ namespace minicombust::flow
         function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
         MPI_GatherMap (mpi_config, mesh->num_blocks, cell_particle_field_map, &neighbour_indexes, &cell_particle_aos, &elements, async_locks, send_counts, recv_indexes, recv_indexed_fields, requests, resize_cell_particles_fn);
 
+        logger.recieved_cells += cell_particle_field_map[0].size();
+
         MPI_Barrier(mpi_config->world);     
 
         // printf("Flow Rank %d elements %lu \n", mpi_config->rank, unordered_neighbours_set[0].size());
@@ -291,11 +293,10 @@ namespace minicombust::flow
         time_stats[time_count]   -= MPI_Wtime(); //5
 
         // Send size of reduced neighbours of cells back to ranks.
-        uint64_t neighbour_size       = unordered_neighbours_set[0].size();
         uint64_t neighbour_point_size = node_to_position_map.size();
         
-        static uint64_t neighbour_avg = 0;
-        neighbour_avg += neighbour_size;
+
+        logger.sent_nodes += neighbour_point_size;
 
         if (neighbour_point_size != 0)  MPI_Bcast(&neighbour_point_size, 1, MPI_UINT64_T, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
 
@@ -355,7 +356,6 @@ namespace minicombust::flow
                     printf("Time stats %d: %f %.2f\n", i, time_stats[i], 100 * time_stats[i] / total_time);
                 printf("Total time %f\n", total_time);
 
-                printf("Reduced neighbour count = %f\n", (double)neighbour_avg    / 1500.);
             }
             else{
                 for (int i = 0; i < time_count; i++)
@@ -389,6 +389,73 @@ namespace minicombust::flow
         if (FLOW_DEBUG) printf("\tRunning function solve_flow_equations.\n");
     }
 
+        template<class T>
+    void FlowSolver<T>::print_logger_stats(uint64_t timesteps, double runtime)
+    {
+        Flow_Logger loggers[mpi_config->particle_flow_world_size];
+        MPI_Gather(&logger, sizeof(Flow_Logger), MPI_BYTE, &loggers, sizeof(Flow_Logger), MPI_BYTE, 0, mpi_config->particle_flow_world);
+
+        double max_cells = loggers[0].recieved_cells;
+        double min_cells = loggers[0].recieved_cells;
+        double min_nodes = loggers[0].sent_nodes;
+        double max_nodes = loggers[0].sent_nodes;
+
+        double non_zero_blocks      = 0;
+        double total_cells_recieved = 0;
+        if (mpi_config->particle_flow_rank == 0)
+        {
+            memset(&logger,           0, sizeof(Flow_Logger));
+            for (int rank = 0; rank < mpi_config->particle_flow_world_size; rank++)
+            {
+                total_cells_recieved        += loggers[rank].recieved_cells;
+                logger.recieved_cells       += loggers[rank].recieved_cells;
+                logger.sent_nodes           += loggers[rank].sent_nodes;
+
+
+                if ( min_cells > loggers[rank].recieved_cells )  min_cells = loggers[rank].recieved_cells ;
+                if ( max_cells < loggers[rank].recieved_cells )  max_cells = loggers[rank].recieved_cells ;
+
+                if ( min_nodes > loggers[rank].sent_nodes )  min_nodes = loggers[rank].sent_nodes ;
+                if ( max_nodes < loggers[rank].sent_nodes )  max_nodes = loggers[rank].sent_nodes ;
+            }
+            
+            for (int rank = 0; rank < mpi_config->particle_flow_world_size; rank++) 
+                non_zero_blocks += loggers[rank].recieved_cells > (0.01 * max_cells) ;
+
+
+            logger.recieved_cells /= non_zero_blocks;
+            logger.sent_nodes     /= non_zero_blocks;
+            
+            printf("Flow Solver Stats:\t                    AVG       MIN       MAX\n");
+            printf("\tRecieved Cells ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.recieved_cells / timesteps), round(min_cells / timesteps), round(max_cells / timesteps));
+            printf("\tSent Nodes     ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.sent_nodes     / timesteps), round(min_nodes / timesteps), round(max_nodes / timesteps));
+            printf("\tFlow blocks with <1%% max droplets: %d\n", mpi_config->particle_flow_world_size - (int)non_zero_blocks); 
+            printf("\tAvg Cells with droplets         : %.2f%%\n", total_cells_recieved / (timesteps * mesh->mesh_size));
+
+            
+            MPI_Barrier (mpi_config->particle_flow_world);
+
+            printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(loggers[mpi_config->particle_flow_rank].recieved_cells / timesteps), round(loggers[mpi_config->particle_flow_rank].sent_nodes / timesteps));
+
+            // MPI_Barrier (mpi_config->particle_flow_world);
+            cout << endl;
+        }
+        else
+        {
+            MPI_Barrier (mpi_config->particle_flow_world);
+            printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(logger.recieved_cells / timesteps), round(logger.sent_nodes / timesteps));
+            // MPI_Barrier (mpi_config->particle_flow_world);
+        }
+
+        MPI_Barrier(mpi_config->world);
+        if (mpi_config->particle_flow_rank == 0)
+            MPI_Send(&total_cells_recieved, 1, MPI_DOUBLE, 0, 0, mpi_config->world );
+
+
+        performance_logger.print_counters(mpi_config->rank, mpi_config->world_size, runtime);
+
+    }
+
     template<typename T> void FlowSolver<T>::timestep()
     {
         if (FLOW_DEBUG) printf("Start flow timestep\n");
@@ -398,8 +465,8 @@ namespace minicombust::flow
 
         if ((count % 100) == 0)
         {
-            double arr_usage = ((double)get_array_memory_usage())  / 1.e9;
-            double stl_usage = ((double)get_stl_memory_usage())    / 1.e9 ;
+            double arr_usage  = ((double)get_array_memory_usage()) / 1.e9;
+            double stl_usage  = ((double)get_stl_memory_usage())   / 1.e9 ;
             double mesh_usage = ((double)mesh->get_memory_usage()) / 1.e9 ;
             double arr_usage_total, stl_usage_total, mesh_usage_total;
 

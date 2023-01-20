@@ -34,6 +34,8 @@ namespace minicombust::flow
 
             MPI_Request *requests;
 
+            Flow_Logger logger;
+
 
         public:
             MPI_Config *mpi_config;
@@ -78,6 +80,7 @@ namespace minicombust::flow
 
                 requests = (MPI_Request *)malloc(mesh->num_blocks * 3 * sizeof(MPI_Request));
 
+                memset(&logger, 0, sizeof(Flow_Logger));
 
                 // Array sizes
                 uint64_t total_cell_index_array_size           = cell_index_array_size;
@@ -211,6 +214,8 @@ namespace minicombust::flow
             }
 
             bool is_halo( uint64_t cell );
+
+            void print_logger_stats(uint64_t timesteps, double runtime);
             
             void get_neighbour_cells();
             void interpolate_to_nodes();

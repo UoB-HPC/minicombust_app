@@ -74,7 +74,6 @@ namespace minicombust::particles
         public:
             MPI_Config *mpi_config;
 
-
             
             template<typename M>
             ParticleSolver(MPI_Config *mpi_config, uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t reserve_particles_size) : 

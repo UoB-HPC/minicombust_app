@@ -90,7 +90,8 @@ int main (int argc, char ** argv)
 
         const uint64_t reserve_particles_size         = 2 * (local_particles_per_timestep + 1) * ntimesteps;
 
-        ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
+        ParticleDistribution<double> *particle_dist = load_injector_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
+        // ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
         particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
     }
     else
@@ -106,10 +107,10 @@ int main (int argc, char ** argv)
 
     // Output mesh 
     MPI_Barrier(mpi_config.world); output_time -= MPI_Wtime(); 
-    if (mpi_config.rank == 0)
+    if ( output_iteration != -1 )
     {
-        VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh);
-        if (output_iteration != -1) vtk_writer->write_mesh("minicombust");
+        VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, &mpi_config);
+        vtk_writer->write_mesh("minicombust");
     }
     output_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
 
@@ -120,18 +121,22 @@ int main (int argc, char ** argv)
 
     for(uint64_t t = 0; t < ntimesteps; t++)
     {
-        if (mpi_config.solver_type == PARTICLE) 
+        if (mpi_config.solver_type == PARTICLE)
+        {
             particle_solver->timestep();
+            
+            if (((int64_t)(t % output_iteration) == output_iteration - 1))  
+            {
+                output_time -= MPI_Wtime();
+                particle_solver->output_data(t+1);
+                output_time += MPI_Wtime();
+            }
+        }
         else
             flow_solver->timestep();
 
         
-        if (((int64_t)(t % output_iteration) == output_iteration - 1) && mpi_config.rank == 0)  
-        {
-            output_time -= MPI_Wtime();
-            particle_solver->output_data(t+1);
-            output_time += MPI_Wtime();
-        }
+        
     }
     program_time += MPI_Wtime();
     MPI_Barrier(mpi_config.world);
@@ -143,7 +148,7 @@ int main (int argc, char ** argv)
         if (mpi_config.solver_type == PARTICLE)
             particle_solver->print_logger_stats(ntimesteps, program_time);
         else
-            flow_solver->performance_logger.print_counters(mpi_config.rank, mpi_config.world_size, program_time);
+            flow_solver->print_logger_stats(ntimesteps, program_time);
     }
 
     // Get program times

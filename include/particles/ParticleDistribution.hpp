@@ -111,13 +111,8 @@ namespace minicombust::particles
 
                     // cout << print_vec(mean) << "      " << print_vec(rnd_perpendicular) << "     ";
                 }
-
-
-
                 return r;
             }
-
-
     }; // class UniformDistribution
 
     template<class T>
@@ -145,9 +140,20 @@ namespace minicombust::particles
     template<class T>
     class ParticleDistribution 
     {
-        // private:
+        private:
+            vec<T> to_cartesian ( vec<T> cylindrical_vec )
+            {
+                vec<T> cartesian_vec;
+                cartesian_vec.y = cylindrical_vec.x * cos(cylindrical_vec.y);
+                cartesian_vec.z = cylindrical_vec.x * sin(cylindrical_vec.y);
+                cartesian_vec.x = cylindrical_vec.z;
+
+                return cartesian_vec;
+            }
 
         public:
+            bool cylindrical = false;
+
             // TODO: Change this to particles per unit of time?
             uint64_t wave_particles_per_timestep;
             uint64_t even_particles_per_timestep;
@@ -156,24 +162,21 @@ namespace minicombust::particles
             MPI_Config *mpi_config;
 
             Mesh<T> *mesh;
-            
+
+            vec<T> injector_position;
+
 
             Distribution<vec<T>> *start_pos;
-            Distribution<T> *rate;            
-            Distribution<T> *angle_xy;        
-            Distribution<T> *angle_rot;  
             Distribution<vec<T>> *velocity;
             Distribution<vec<T>> *acceleration;
-            Distribution<vec<T>> *jerk;
-            Distribution<T> *decay_rate;      
-            Distribution<T> *decay_threshold; 
-            Distribution<T> *temperature; 
+            Distribution<T>      *temperature; 
 
-            // TODO: Read particle distribution from file
+            Distribution<vec<T>> *cyclindrical_position;
+            Distribution<vec<T>> *cyclindrical_velocity;
+            
 
             // Generate fixed distribution
-            ParticleDistribution (uint64_t wave_particles_per_timestep, uint64_t even_particles_per_timestep, uint64_t remainder_particles, MPI_Config *mpi_config, Mesh<T> *mesh, vec<T> start, T rate_mean, T angle_xy_mean, T angle_rot_mean, vec<T> vel_mean,
-                                  vec<T> acc_mean, vec<T> jerk_mean, T decay_rate_mean, T decay_threshold_mean, T temp, ProbabilityDistribution dist) :
+            ParticleDistribution (uint64_t wave_particles_per_timestep, uint64_t even_particles_per_timestep, uint64_t remainder_particles, MPI_Config *mpi_config, Mesh<T> *mesh, vec<T> start, vec<T> vel_mean, vec<T> acc_mean, T temp, ProbabilityDistribution dist) :
                                   wave_particles_per_timestep(wave_particles_per_timestep), even_particles_per_timestep(even_particles_per_timestep), remainder_particles(remainder_particles), mpi_config(mpi_config), mesh(mesh)
             {   
                 // srand (time(NULL) + mpi_config->rank);
@@ -192,12 +195,37 @@ namespace minicombust::particles
                     acceleration     = new FixedDistribution<vec<T>>(acc_mean);
                     velocity         = new FixedDistribution<vec<T>>(vel_mean);
                 }
-                rate             = new FixedDistribution<T>(rate_mean);           
-                angle_xy         = new FixedDistribution<T>(angle_xy_mean);   
-                angle_rot        = new FixedDistribution<T>(angle_rot_mean);  
-                jerk             = new FixedDistribution<vec<T>>(jerk_mean);
-                decay_rate       = new FixedDistribution<T>(decay_rate_mean);  
-                decay_threshold  = new FixedDistribution<T>(decay_threshold_mean);  
+            }
+
+            // Generate fixed distribution
+            ParticleDistribution (uint64_t wave_particles_per_timestep, uint64_t even_particles_per_timestep, uint64_t remainder_particles, MPI_Config *mpi_config, Mesh<T> *mesh, vec<T> injector_position, double inner_injector_radius, double outer_injector_radius, vec<T> cyclindrical_velocity_mean, T temp, ProbabilityDistribution dist) :
+                                  wave_particles_per_timestep(wave_particles_per_timestep), even_particles_per_timestep(even_particles_per_timestep), remainder_particles(remainder_particles), mpi_config(mpi_config), mesh(mesh), injector_position(injector_position)
+            {   
+                // srand (time(NULL) + mpi_config->rank);
+                srand (0 + mpi_config->rank);
+                cylindrical = true;
+
+                if (dist == UNIFORM)
+                {
+                    vec<T> cyclindrical_velocity_lower = cyclindrical_velocity_mean - 0.05 * cyclindrical_velocity_mean;
+                    vec<T> cyclindrical_velocity_upper = cyclindrical_velocity_mean + 0.05 * cyclindrical_velocity_mean;
+                    cyclindrical_velocity_lower.y = 0;
+                    cyclindrical_velocity_upper.y = 2 * M_PI;
+
+
+                    cyclindrical_velocity_lower.y = (mpi_config->particle_flow_rank + 0) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
+                    cyclindrical_velocity_upper.y = (mpi_config->particle_flow_rank + 1) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
+
+
+                    vec<T> cyclindrical_position_lower = { inner_injector_radius,      0.0, -0.0001 }; 
+                    vec<T> cyclindrical_position_upper = { outer_injector_radius, 2 * M_PI, +0.0001 }; 
+
+                    cyclindrical_velocity = new UniformDistribution<vec<T>>( cyclindrical_velocity_lower, cyclindrical_velocity_upper );
+                    cyclindrical_position = new UniformDistribution<vec<T>>( cyclindrical_position_lower, cyclindrical_position_upper );
+
+                    acceleration     = new UniformDistribution<vec<T>>(vec<T> {0.0, 0.0, 0.0}, vec<T> {0.0, 0.0, 0.0});
+                    temperature      = new UniformDistribution<T>(temp - temp*0.05, temp + temp*0.05);
+                }
             }
 
             inline void emit_particles_waves(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, Particle_Logger *logger)
@@ -263,8 +291,11 @@ namespace minicombust::particles
                 for (uint64_t p = 0; p < even_particles_per_timestep + remainder; p++)
                 {
                     // printf("Rank %d trying new particle %lu\n", mpi_config->rank, p);
-                    const Particle<T> particle = Particle<T>(mesh, start_pos->get_value(), velocity->get_scaled_value(), acceleration->get_value(), temperature->get_value(), start_cell, logger);
+                    const Particle<T> particle = (!cylindrical) ? Particle<T>(mesh, start_pos->get_value(),                                               velocity->get_scaled_value(),                     acceleration->get_value(), temperature->get_value(), start_cell, logger) :
+                                                                  Particle<T>(mesh, injector_position + to_cartesian(cyclindrical_position->get_value()), to_cartesian(cyclindrical_velocity->get_value()), acceleration->get_value(), temperature->get_value(), start_cell, logger);
                     // printf("Rank %d trying new particle %lu decayed %d\n", mpi_config->rank, p, particle.decayed);
+
+                    // cout << "Particle created at position " << print_vec(particle.x1) << " with velocity " << print_vec(particle.v1) << " with acc " << print_vec(particle.a1) << " decayed " << particle.decayed << " cell " << " temp " << particle.temp << particle.cell << endl;
 
                     if (particle.decayed) 
                     {

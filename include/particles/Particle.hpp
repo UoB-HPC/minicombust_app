@@ -260,11 +260,12 @@ namespace minicombust::particles
                 // TODO Add better flop estimates for pow and ln. Also, can we get a fast approximation. Taylor series?
 
                 // TODO: Remove DUMMY_VALs
-                // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub
-                const vec<T> relative_drop_vel           = gas_vel - v1;                                         // DUMMY_VAL Relative velocity between droplet and the fluid
+                // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub7
+                const vec<T> relative_drop_vel           = 0.65 * (gas_vel - v1);                                         // DUMMY_VAL Relative velocity between droplet and the fluid 
                 const T relative_drop_vel_mag            = magnitude(relative_drop_vel);                         // DUMMY_VAL Relative acceleration between the gas and liquid phase.
                 const vec<T> relative_drop_acc           = a1 * delta ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 
+                // cout << "gas_vel " << print_vec(gas_vel) << "v1 " << print_vec(v1) << " relative_drop_vel_mag " << relative_drop_vel_mag << " m " << mass << endl;
 
                 const T gas_density  = 6.9;                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);

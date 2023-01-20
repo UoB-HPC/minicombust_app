@@ -20,15 +20,18 @@ namespace minicombust::visit
 
         public:
             Mesh<T> *mesh;
+            MPI_Config *mpi_config;
 
-            VisitWriter(Mesh<T> *mesh) : mesh(mesh)
+            VisitWriter(Mesh<T> *mesh, MPI_Config *mpi_config) : mesh(mesh), mpi_config(mpi_config)
             {  }
 
             void write_mesh(string filename)
             {
+                if ( mpi_config->rank != 0 )  return;
+
                 // Print VTK Header
                 ofstream vtk_file;
-                vtk_file.open ("out/" + filename + "_mesh.vtk");
+                vtk_file.open ("out/mesh/" + filename + to_string(mpi_config->rank) + "_mesh.vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
                 vtk_file << "ASCII " << endl;
@@ -48,7 +51,7 @@ namespace minicombust::visit
                 vtk_file << endl;
 
                 // Print cell data
-                vtk_file << endl << "CELLS " << mesh->mesh_size << " " << mesh->mesh_size*mesh->cell_size + mesh->mesh_size << endl;
+                vtk_file << endl << "CELLS " << mesh->mesh_size << " " << mesh->mesh_size * (mesh->cell_size + 1) << endl;
                 for(uint64_t c = 0; c < mesh->mesh_size; c++)
                 {
                     vtk_file << mesh->cell_size << " ";
@@ -74,7 +77,7 @@ namespace minicombust::visit
                 // Print VTK Header
                 ofstream vtk_file;
 
-                vtk_file.open ("out/" + filename + "_particle_timestep" + to_string(id) + ".vtk");
+                vtk_file.open ("out/particle/" + filename + "_particle" + to_string(mpi_config->rank) + "_timestep" + to_string(id) + ".vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
                 vtk_file << "ASCII " << endl;
@@ -92,8 +95,6 @@ namespace minicombust::visit
                 //     vtk_file << print_vec(mesh->points[p]) << "\t";
                 // }
                 // vtk_file << endl << endl;
-
-
 
 
             
@@ -170,28 +171,37 @@ namespace minicombust::visit
                 vtk_file << endl;
 
                 vtk_file << endl << "POINT_DATA " << particles.size() << endl;
-                vtk_file << "SCALARS mass float" << endl;
+                vtk_file << "SCALARS rank float" << endl;
                 vtk_file << "LOOKUP_TABLE default" << endl;
                 for(uint64_t p = 0; p < particles.size(); p++)
                 {
-                    vtk_file << particles[p].mass << "\t";
+                    vtk_file << (float)mpi_config->rank << "\t";
                 } 
                 vtk_file << endl;
 
-                vtk_file << "SCALARS temp float" << endl;
-                vtk_file << "LOOKUP_TABLE default" << endl;
-                for(uint64_t p = 0; p < particles.size(); p++)
-                {
-                    vtk_file << particles[p].temp << "\t";
-                } 
-                vtk_file << endl;
 
-                vtk_file << "VECTORS velocity float" << endl;
-                for(uint64_t p = 0; p < particles.size(); p++)
-                {
-                    vtk_file << print_vec(particles[p].v1) << "\t";
-                } 
-                vtk_file << endl;
+                // vtk_file << "SCALARS temp float" << endl;
+                // vtk_file << "LOOKUP_TABLE default" << endl;
+                // for(uint64_t p = 0; p < particles.size(); p++)
+                // {
+                //     vtk_file << particles[p].temp << "\t";
+                // } 
+                // vtk_file << endl;
+
+                // vtk_file << "SCALARS mass float" << endl;
+                // vtk_file << "LOOKUP_TABLE default" << endl;
+                // for(uint64_t p = 0; p < particles.size(); p++)
+                // {
+                //     vtk_file << particles[p].mass << "\t";
+                // } 
+                // vtk_file << endl;
+
+                // vtk_file << "VECTORS velocity float" << endl;
+                // for(uint64_t p = 0; p < particles.size(); p++)
+                // {
+                //     vtk_file << print_vec(particles[p].v1) << "\t";
+                // } 
+                // vtk_file << endl;
 
                 vtk_file.close();
             }

@@ -357,6 +357,15 @@ namespace minicombust::utils
         double avg_particles;
         double breakup_age;
         double interpolated_cells;
+        double sent_cells_per_block;
+        double sent_cells;
+        double nodes_recieved;
+        double useful_nodes_proportion;
+    };
+
+    struct Flow_Logger {
+        double recieved_cells;
+        double sent_nodes;
     };
 
     struct MPI_Config {
@@ -383,10 +392,8 @@ namespace minicombust::utils
         MPI_Win win_cell_neighbours;
         MPI_Win win_points;
         MPI_Win win_cells_per_point;
-
         
         int solver_type;
-        
         MPI_Datatype MPI_FLOW_STRUCTURE;
         MPI_Datatype MPI_PARTICLE_STRUCTURE;
         MPI_Op MPI_PARTICLE_OPERATION;
