@@ -32,6 +32,11 @@ namespace minicombust::flow
             uint64_t        **recv_indexes;        
             particle_aos<T> **recv_indexed_fields; 
 
+            int        *ranks;
+            uint64_t   *elements;
+            uint64_t   *element_disps;
+            MPI_Status *statuses;
+
             MPI_Request *requests;
 
             Flow_Logger logger;
@@ -53,7 +58,9 @@ namespace minicombust::flow
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mesh(mesh), mpi_config(mpi_config)
             {
                 const float fraction  = 0.125;
-                uint64_t max_storage      = fraction * mesh->local_mesh_size;
+                uint64_t max_storage  = fraction * mesh->local_mesh_size;
+
+                int particle_ranks = mpi_config->world_size - mpi_config->particle_flow_world_size;
 
                 // Compute array sizes
                 cell_index_array_size    = max_storage * sizeof(uint64_t);
@@ -68,6 +75,11 @@ namespace minicombust::flow
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
                 recv_indexed_fields = (particle_aos<T>**) malloc(mesh->num_blocks * sizeof(particle_aos<T>*));
 
+                ranks                = (int*)malloc(particle_ranks          * sizeof(int));
+                elements        = (uint64_t*)malloc(particle_ranks     * sizeof(uint64_t));
+                element_disps   = (uint64_t*)malloc((particle_ranks+1) * sizeof(uint64_t));
+                statuses      = (MPI_Status*)malloc(particle_ranks   * sizeof(MPI_Status));
+
                 // Allocate arrays
                 neighbour_indexes        = (uint64_t*)malloc(cell_index_array_size);
                 cell_particle_aos        = (particle_aos<T> * )malloc(cell_particle_array_size);
@@ -78,7 +90,7 @@ namespace minicombust::flow
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
 
-                requests = (MPI_Request *)malloc(mesh->num_blocks * 3 * sizeof(MPI_Request));
+                requests = (MPI_Request *)malloc(max((int)mesh->num_blocks, particle_ranks) * 3 * sizeof(MPI_Request));
 
                 memset(&logger, 0, sizeof(Flow_Logger));
 
@@ -138,7 +150,16 @@ namespace minicombust::flow
 
                 for (uint64_t b = 0; b < mesh->num_blocks; b++)
                 {
-                    MPI_Comm_split(mpi_config->world, ((uint64_t)mpi_config->particle_flow_rank == b) ? 1 : MPI_UNDEFINED, mpi_config->rank, &mpi_config->every_one_flow_world[b]);
+                    if ((uint64_t)mpi_config->particle_flow_rank == b)
+                    {
+                        MPI_Comm_split(mpi_config->world, 1, mpi_config->rank, &mpi_config->every_one_flow_world[b]);
+                        MPI_Comm_rank(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_rank[b]);
+                        MPI_Comm_size(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_world_size[b]);
+                    }
+                    else
+                    {
+                        MPI_Comm_split(mpi_config->world, MPI_UNDEFINED, mpi_config->rank, &mpi_config->every_one_flow_world[b]);
+                    }
                 }
 
                 performance_logger.init_papi();
@@ -151,10 +172,10 @@ namespace minicombust::flow
                 {
                     cell_index_array_size     *= 2;
 
-                    neighbour_indexes     = (uint64_t*) realloc(neighbour_indexes,     cell_index_array_size);
+                    neighbour_indexes     = (uint64_t*) realloc(neighbour_indexes, cell_index_array_size);
                 }
 
-                if (*new_cell_indexes != NULL) **new_cell_indexes = neighbour_indexes;
+                if (new_cell_indexes != NULL) **new_cell_indexes = neighbour_indexes;
             }
 
             // void resize_cell_flow (uint64_t elements)
@@ -179,13 +200,13 @@ namespace minicombust::flow
                     cell_particle_aos = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
                 }
 
-                if (*new_cell_particle != NULL)  **new_cell_particle = cell_particle_aos;
+                if (new_cell_particle != NULL)  **new_cell_particle = cell_particle_aos;
             }
 
             void resize_nodes_arrays (uint64_t elements)
             {
                 while ( node_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
-                    {
+                {
                     node_index_array_size *= 2;
                     node_flow_array_size  *= 2;
 
@@ -217,7 +238,7 @@ namespace minicombust::flow
 
             void print_logger_stats(uint64_t timesteps, double runtime);
             
-            void get_neighbour_cells();
+            void get_neighbour_cells(const uint64_t index_start, const uint64_t index_end);
             void interpolate_to_nodes();
 
             void update_flow_field();  // Synchronize point with flow solver

@@ -379,7 +379,9 @@ namespace minicombust::utils
 
         int      *alias_rank;
         int      *one_flow_rank;
+        int      *every_one_flow_rank;
         int      *one_flow_world_size;
+        int      *every_one_flow_world_size;
         MPI_Comm *one_flow_world;
         MPI_Comm *every_one_flow_world;
 
