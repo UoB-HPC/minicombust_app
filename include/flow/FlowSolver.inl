@@ -280,7 +280,7 @@ namespace minicombust::flow
 
             recvs_complete &= !message_waiting;
         }
-            // printf("Flow rank %d hit barrrier\n", mpi_config->rank);
+        // printf("Flow rank %d hit barrrier\n", mpi_config->rank);
 
         // printf("Flow Rank %d hit barrier\n", mpi_config->rank);
 
@@ -370,22 +370,54 @@ namespace minicombust::flow
 
         // Send size of reduced neighbours of cells back to ranks.
         uint64_t neighbour_point_size = node_to_position_map.size();
-        
 
         logger.sent_nodes += neighbour_point_size;
 
+        int level_count = 0;
+        uint64_t tree_id = 0;
+        int rounded_world_size = (int)pow(2., ceil(log((double)(particle_recvs+1))/log(2.)));
+
+        // printf("Flow block %3d world size %3d tree size %d \n", mpi_config->rank, particle_recvs+1, rounded_world_size);
+
+        // for (int i = 0; i <  particle_recvs; i++)
+        // {
+        //     printf("BLOCK %lu : ranks[%d] = %d \n", mpi_config->rank, i+1, ranks[i]);
+        // }
+
+
+        // for (uint64_t i = 0; i < neighbour_point_size; i++)
+        // {
+        //     if ( interp_node_indexes[i] >= mesh->points_size )
+        //     {
+        //         printf("Flow Rank %d out of bounds %lu\n", mpi_config->rank, interp_node_indexes[i]);
+        //         exit(0);
+        //     }
+        // }
+
+        for ( int level = 1; level < rounded_world_size; level *= 2 )
+        {
+            int next_tree_rank = ranks[level-1];
+            // printf("Level %3d rank %3d (%3d) is sending %lu data to rank %3d (%3d)\n", level, mpi_config->rank, 0, neighbour_point_size,  next_tree_rank, level);
+            MPI_Isend ( ranks,                   particle_recvs,       MPI_INT,                        next_tree_rank, 3*mpi_config->particle_flow_rank + 0, mpi_config->world, &requests[3*level_count + 0] );
+            MPI_Isend ( interp_node_indexes,     neighbour_point_size, MPI_UINT64_T,                   next_tree_rank, 3*mpi_config->particle_flow_rank + 1, mpi_config->world, &requests[3*level_count + 1] );
+            MPI_Isend ( interp_node_flow_fields, neighbour_point_size, mpi_config->MPI_FLOW_STRUCTURE, next_tree_rank, 3*mpi_config->particle_flow_rank + 2, mpi_config->world, &requests[3*level_count + 2] );
+            level_count++;
+        }
+
+
 
         // if (neighbour_point_size != 0)  MPI_Bcast(&neighbour_point_size, 1, MPI_UINT64_T, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank]);
-        MPI_Ibcast(&neighbour_point_size, 1, MPI_UINT64_T, mpi_config->every_one_flow_rank[mpi_config->particle_flow_rank], mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
-        MPI_Wait(requests, MPI_STATUS_IGNORE);
+        // MPI_Ibcast(&neighbour_point_size, 1, MPI_UINT64_T, mpi_config->every_one_flow_rank[mpi_config->particle_flow_rank], mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
+        // MPI_Wait(requests, MPI_STATUS_IGNORE);
 
-        // Send neighbours of cells back to ranks.
-        // if (neighbour_point_size != 0)  MPI_Ibcast(interp_node_indexes,     neighbour_point_size, MPI_UINT64_T,                   mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
-        // if (neighbour_point_size != 0)  MPI_Ibcast(interp_node_flow_fields, neighbour_point_size, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &requests[1]);
-        MPI_Ibcast(interp_node_indexes,     neighbour_point_size, MPI_UINT64_T,                   mpi_config->every_one_flow_rank[mpi_config->particle_flow_rank], mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
-        MPI_Ibcast(interp_node_flow_fields, neighbour_point_size, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->every_one_flow_rank[mpi_config->particle_flow_rank], mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests[1]);
+        // // Send neighbours of cells back to ranks.
+        // // if (neighbour_point_size != 0)  MPI_Ibcast(interp_node_indexes,     neighbour_point_size, MPI_UINT64_T,                   mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
+        // // if (neighbour_point_size != 0)  MPI_Ibcast(interp_node_flow_fields, neighbour_point_size, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->one_flow_rank[mpi_config->particle_flow_rank], mpi_config->one_flow_world[mpi_config->particle_flow_rank], &requests[1]);
+        // MPI_Ibcast(interp_node_indexes,     neighbour_point_size, MPI_UINT64_T,                   mpi_config->every_one_flow_rank[mpi_config->particle_flow_rank], mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests[0]);
+        // MPI_Ibcast(interp_node_flow_fields, neighbour_point_size, mpi_config->MPI_FLOW_STRUCTURE, mpi_config->every_one_flow_rank[mpi_config->particle_flow_rank], mpi_config->every_one_flow_world[mpi_config->particle_flow_rank], &requests[1]);
 
 
+        
         for (uint64_t i = 0; i < element_disps[particle_recvs]; i++)
         {
             const uint64_t cell = neighbour_indexes[i];
@@ -407,14 +439,16 @@ namespace minicombust::flow
             }
         }
 
-        if (neighbour_point_size != 0)  MPI_Waitall(2, requests, MPI_STATUSES_IGNORE);
+        MPI_Waitall(3*level_count, requests, MPI_STATUSES_IGNORE);
 
-        MPI_Barrier(mpi_config->particle_flow_world);
+        MPI_Barrier(mpi_config->world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //6
 
         
-        MPI_Barrier(mpi_config->world);
+
+        
+        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //7
 

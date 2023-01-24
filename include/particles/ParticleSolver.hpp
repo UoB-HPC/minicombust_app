@@ -54,18 +54,20 @@ namespace minicombust::particles
             uint64_t    **all_interp_node_indexes;
             flow_aos<T> **all_interp_node_flow_fields;
 
-
             size_t  *node_index_array_sizes;
             size_t  *node_flow_array_sizes;
 
             size_t  *cell_particle_index_array_sizes;
             size_t  *cell_particle_array_sizes;
 
+            int *block_ranks;
+
             double time_stats[6] = {0.0};
 
             bool *async_locks;
 
             MPI_Request *requests;
+            MPI_Status  *statuses;
 
             uint64_t         *send_counts;         
             uint64_t        **recv_indexes;        
@@ -81,11 +83,12 @@ namespace minicombust::particles
             {
                 // Allocate space for the size of each block array size
                 node_index_array_sizes           = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
-                node_flow_array_sizes           = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
+                node_flow_array_sizes            = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
                 
                 cell_particle_index_array_sizes  = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
                 cell_particle_array_sizes        = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
 
+                block_ranks = (int *)malloc(mesh->num_blocks * mpi_config->particle_flow_world_size * sizeof(int)); // TODO: Check how big this gets!
 
                 // Allocate each blocks cell arrays
                 neighbours_size             = (uint64_t *)     malloc(mesh->num_blocks * sizeof(uint64_t));
@@ -103,7 +106,8 @@ namespace minicombust::particles
 
 
                 // Allocate MPI requests
-                requests = (MPI_Request *)malloc(mesh->num_blocks * 3 * sizeof(MPI_Request));
+                requests = (MPI_Request *)malloc(max((int)mesh->num_blocks, mpi_config->particle_flow_world_size) * 3 * sizeof(MPI_Request));
+                statuses = (MPI_Status *) malloc(mesh->num_blocks     * sizeof(MPI_Status));
 
                 // For each block, allocate a fraction of their local mesh size
                 for ( uint64_t b = 0; b < mesh->num_blocks; b++ )
@@ -124,8 +128,8 @@ namespace minicombust::particles
                     all_interp_node_indexes[b]      = (uint64_t *)   malloc(node_index_array_sizes[b]);
                     all_interp_node_flow_fields[b]  = (flow_aos<T> *)malloc(node_flow_array_sizes[b]);
 
-                    cell_particle_indexes[b]             =        (uint64_t *)malloc(cell_particle_index_array_sizes[b]);
-                    cell_particle_aos[b]                 = (particle_aos<T> *)malloc(cell_particle_array_sizes[b]);
+                    cell_particle_indexes[b]        =        (uint64_t *)malloc(cell_particle_index_array_sizes[b]);
+                    cell_particle_aos[b]            = (particle_aos<T> *)malloc(cell_particle_array_sizes[b]);
 
                     neighbours_sets.push_back(unordered_set<uint64_t>());
                     cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
@@ -283,12 +287,14 @@ namespace minicombust::particles
                 for ( uint64_t b = 0; b < mesh->num_blocks; b++)
                 {
                     // bool resized = false;
+                        // printf("Rank %d Attempt resize node index block %lu: size %lu to %lu\n", mpi_config->rank, b, node_index_array_sizes[b]      / sizeof(uint64_t),    elements[b] );
                     while ( node_index_array_sizes[b] < ((size_t) elements[b] * sizeof(uint64_t)) )
                     {
                         // printf("Rank %d Resizing node index block %lu: size %lu to %lu\n", mpi_config->rank, b, node_index_array_sizes[b]      / sizeof(uint64_t),    2 * node_index_array_sizes[b]      / sizeof(uint64_t) );
                         // printf("Rank %d Resizing node field block %lu: size %lu to %lu\n", mpi_config->rank, b, node_flow_array_sizes[b] / sizeof(flow_aos<T>), 2 * node_flow_array_sizes[b] / sizeof(flow_aos<T>) );
 
                         // resized = true;
+                        
 
                         node_index_array_sizes[b] *= 2;
                         node_flow_array_sizes[b]  *= 2;
