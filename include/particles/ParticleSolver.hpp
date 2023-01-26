@@ -67,8 +67,9 @@ namespace minicombust::particles
 
             bool *async_locks;
 
-            MPI_Request *requests;
-            MPI_Status  *statuses;
+            vector<MPI_Request> send_requests;
+            vector<MPI_Request> recv_requests;
+            vector<MPI_Status>  statuses;
 
             uint64_t         *send_counts;         
             uint64_t        **recv_indexes;        
@@ -104,11 +105,6 @@ namespace minicombust::particles
                 send_counts    =              (uint64_t*) malloc(mesh->num_blocks * sizeof(uint64_t));
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
                 recv_indexed_fields = (particle_aos<T>**) malloc(mesh->num_blocks * sizeof(particle_aos<T>*));
-
-
-                // Allocate MPI requests
-                requests = (MPI_Request *)malloc(max((int)mesh->num_blocks, mpi_config->particle_flow_world_size) * 3 * sizeof(MPI_Request));
-                statuses = (MPI_Status *) malloc(mesh->num_blocks     * sizeof(MPI_Status));
 
                 // For each block, allocate a fraction of their local mesh size
                 for ( uint64_t b = 0; b < mesh->num_blocks; b++ )

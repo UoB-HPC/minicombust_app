@@ -36,13 +36,13 @@ namespace minicombust::flow
             uint64_t        **recv_indexes;        
             particle_aos<T> **recv_indexed_fields; 
 
-            int        *ranks;
+            vector<int> ranks;
             uint64_t   *elements;
             uint64_t   *element_disps;
-            MPI_Status *statuses;
 
-            MPI_Request *send_requests;
-            MPI_Request *recv_requests;
+            vector<MPI_Status>  statuses;
+            vector<MPI_Request> send_requests;
+            vector<MPI_Request> recv_requests;
 
             Flow_Logger logger;
 
@@ -62,6 +62,9 @@ namespace minicombust::flow
             size_t send_buffers_node_flow_array_size;
 
             double time_stats[11] = {0.0};
+
+            const MPI_Status empty_mpi_status = { 0, 0, 0, 0, 0};
+
 
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mesh(mesh), mpi_config(mpi_config)
             {
@@ -86,10 +89,8 @@ namespace minicombust::flow
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
                 recv_indexed_fields = (particle_aos<T>**) malloc(mesh->num_blocks * sizeof(particle_aos<T>*));
 
-                ranks                = (int*)malloc(particle_ranks          * sizeof(int));
                 elements        = (uint64_t*)malloc(particle_ranks     * sizeof(uint64_t));
                 element_disps   = (uint64_t*)malloc((particle_ranks+1) * sizeof(uint64_t));
-                statuses      = (MPI_Status*)malloc(particle_ranks   * sizeof(MPI_Status));
 
                 // Allocate arrays
                 neighbour_indexes        = (uint64_t*)malloc(cell_index_array_size);
@@ -104,24 +105,35 @@ namespace minicombust::flow
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
 
-                send_requests = (MPI_Request *)malloc(3 * particle_ranks * sizeof(MPI_Request));
-                recv_requests = (MPI_Request *)malloc(2 * particle_ranks * sizeof(MPI_Request));
+                send_requests.push_back( MPI_REQUEST_NULL );
+                send_requests.push_back( MPI_REQUEST_NULL );
+                recv_requests.push_back( MPI_REQUEST_NULL );
+                recv_requests.push_back( MPI_REQUEST_NULL );
+                statuses.push_back( empty_mpi_status );
 
                 memset(&logger, 0, sizeof(Flow_Logger));
 
                 // Array sizes
-                uint64_t total_cell_index_array_size           = cell_index_array_size;
-                uint64_t total_cell_particle_array_size        = cell_particle_array_size;
-                uint64_t total_node_index_array_size           = node_index_array_size;
-                uint64_t total_node_flow_array_size            = node_flow_array_size;
+                uint64_t total_cell_index_array_size              = cell_index_array_size;
+                uint64_t total_cell_particle_array_size           = cell_particle_array_size;
+                uint64_t total_node_index_array_size              = node_index_array_size;
+                uint64_t total_node_flow_array_size               = node_flow_array_size;
+                uint64_t total_send_buffers_node_index_array_size = send_buffers_node_index_array_size;
+                uint64_t total_send_buffers_node_flow_array_size  = send_buffers_node_flow_array_size;
 
                 // STL sizes
                 uint64_t total_unordered_neighbours_set_size   = unordered_neighbours_set[0].size() * sizeof(uint64_t) ;
                 uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()  * sizeof(uint64_t);
                 uint64_t total_node_to_position_map_size       = node_to_position_map.size()        * sizeof(uint64_t);
+                uint64_t total_mpi_requests_size               = recv_requests.size() * send_requests.size() * sizeof(MPI_Request);
+                uint64_t total_mpi_statuses_size               = statuses.size()                             * sizeof(MPI_Status);
+                uint64_t total_new_cells_size                  = new_cells_set.size()                        * sizeof(uint64_t);
+                uint64_t total_ranks_size                      = ranks.size()                                * sizeof(uint64_t);
+                uint64_t total_local_particle_node_sets_size   = 0;
+                for ( uint64_t i = 0; i < local_particle_node_sets.size(); i++ )
+                    total_local_particle_node_sets_size += local_particle_node_sets[i].size() * sizeof(uint64_t);
 
                 uint64_t total_memory_usage = get_array_memory_usage() + get_stl_memory_usage();
-
 
                 if (mpi_config->particle_flow_rank == 0)
                 {
@@ -131,34 +143,55 @@ namespace minicombust::flow
                     MPI_Reduce(MPI_IN_PLACE, &total_cell_particle_array_size,               1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_node_index_array_size,                  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_node_flow_array_size,                   1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_send_buffers_node_index_array_size,     1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_send_buffers_node_flow_array_size,      1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_unordered_neighbours_set_size,          1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_cell_particle_field_map_size,           1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_node_to_position_map_size,              1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_mpi_requests_size,                      1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_mpi_statuses_size,                      1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_new_cells_size,                         1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_ranks_size,                             1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_local_particle_node_sets_size,          1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
 
-                    // TODO: UPDATE MEMORY REQUIREMENTS!!!!
                     printf("Flow solver storage requirements (%d processes) : \n", mpi_config->particle_flow_world_size);
-                    printf("\ttotal_cell_index_array_size                               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_index_array_size              / 1000000.0, (float) total_cell_index_array_size          / (1000000.0 * mpi_config->world_size));
-                    printf("\ttotal_cell_particle_array_size                            (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_particle_array_size           / 1000000.0, (float) total_cell_particle_array_size       / (1000000.0 * mpi_config->world_size));
-                    printf("\ttotal_node_index_array_size                               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_node_index_array_size              / 1000000.0, (float) total_node_index_array_size          / (1000000.0 * mpi_config->world_size));
-                    printf("\ttotal_node_flow_array_size                                (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_node_flow_array_size               / 1000000.0, (float) total_node_flow_array_size           / (1000000.0 * mpi_config->world_size));
-                    printf("\ttotal_unordered_neighbours_set_size       (STL set)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_unordered_neighbours_set_size      / 1000000.0, (float) total_unordered_neighbours_set_size  / (1000000.0 * mpi_config->world_size));
-                    printf("\ttotal_cell_particle_field_map_size        (STL map)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_particle_field_map_size       / 1000000.0, (float) total_cell_particle_field_map_size   / (1000000.0 * mpi_config->world_size));
-                    printf("\ttotal_node_to_position_map_size           (STL map)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n\n"  , (float) total_node_to_position_map_size          / 1000000.0, (float) total_node_to_position_map_size      / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_cell_index_array_size                               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_index_array_size              / 1000000.0, (float) total_cell_index_array_size              / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_cell_particle_array_size                            (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_particle_array_size           / 1000000.0, (float) total_cell_particle_array_size           / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_node_index_array_size                               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_node_index_array_size              / 1000000.0, (float) total_node_index_array_size              / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_node_flow_array_size                                (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_node_flow_array_size               / 1000000.0, (float) total_node_flow_array_size               / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_send_buffers_node_index_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_send_buffers_node_index_array_size / 1000000.0, (float) total_send_buffers_node_index_array_size / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_send_buffers_node_flow_array_size                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_send_buffers_node_flow_array_size  / 1000000.0, (float) total_send_buffers_node_flow_array_size  / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_unordered_neighbours_set_size       (STL set)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_unordered_neighbours_set_size      / 1000000.0, (float) total_unordered_neighbours_set_size      / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_cell_particle_field_map_size        (STL map)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_particle_field_map_size       / 1000000.0, (float) total_cell_particle_field_map_size       / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_node_to_position_map_size           (STL map)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_node_to_position_map_size          / 1000000.0, (float) total_node_to_position_map_size          / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_mpi_requests_size                   (STL vector)    (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_mpi_requests_size                  / 1000000.0, (float) total_mpi_requests_size                  / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_mpi_statuses_size                   (STL vector)    (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_mpi_statuses_size                  / 1000000.0, (float) total_mpi_statuses_size                  / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_ranks_size                          (STL vector)    (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_ranks_size                         / 1000000.0, (float) total_ranks_size                         / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_new_cells_size                      (STL set)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_new_cells_size                     / 1000000.0, (float) total_new_cells_size                     / (1000000.0 * mpi_config->world_size));
+                    printf("\ttotal_local_particle_node_sets_size       (STL set)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n\n"  , (float) total_local_particle_node_sets_size      / 1000000.0, (float) total_local_particle_node_sets_size      / (1000000.0 * mpi_config->world_size));
                     
-                    printf("\tFlow solver size                                          (TOTAL %12.2f MB) (AVG %.2f MB) \n\n"  , (float)total_memory_usage                      /1000000.0,  (float)total_memory_usage / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\tFlow solver size                                          (TOTAL %12.2f MB) (AVG %.2f MB) \n\n"  , (float)total_memory_usage                                          /1000000.0,  (float)total_memory_usage / (1000000.0 * mpi_config->particle_flow_world_size));
                 }
                 else
                 {
                     MPI_Reduce(&total_memory_usage,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
-                    MPI_Reduce(&total_cell_index_array_size,         nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(&total_cell_particle_array_size,      nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(&total_node_index_array_size,         nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(&total_node_flow_array_size,          nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(&total_unordered_neighbours_set_size, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(&total_cell_particle_field_map_size,  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(&total_node_to_position_map_size,     nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_cell_index_array_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_cell_particle_array_size,           nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_node_index_array_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_node_flow_array_size,               nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_send_buffers_node_index_array_size, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_send_buffers_node_flow_array_size,  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_unordered_neighbours_set_size,      nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_cell_particle_field_map_size,       nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_node_to_position_map_size,          nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_mpi_requests_size,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_mpi_statuses_size,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_new_cells_size,                     nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_ranks_size,                         nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_local_particle_node_sets_size,      nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+
                 }
 
                 MPI_Barrier(mpi_config->world);
@@ -244,21 +277,31 @@ namespace minicombust::flow
 
             size_t get_array_memory_usage ()
             {
-                uint64_t total_cell_index_array_size           = cell_index_array_size;
-                uint64_t total_cell_particle_array_size        = cell_particle_array_size;
-                uint64_t total_node_index_array_size           = node_index_array_size;
-                uint64_t total_node_flow_array_size            = node_flow_array_size;
+                uint64_t total_cell_index_array_size              = cell_index_array_size;
+                uint64_t total_cell_particle_array_size           = cell_particle_array_size;
+                uint64_t total_node_index_array_size              = node_index_array_size;
+                uint64_t total_node_flow_array_size              = node_flow_array_size;
+                uint64_t total_send_buffers_node_index_array_size = send_buffers_node_index_array_size;
+                uint64_t total_send_buffers_node_flow_array_size  = send_buffers_node_flow_array_size;
 
-                return total_cell_index_array_size + total_cell_particle_array_size + total_node_index_array_size + total_node_flow_array_size;
+                return total_cell_index_array_size + total_cell_particle_array_size + total_node_index_array_size + total_node_flow_array_size + total_send_buffers_node_index_array_size + total_send_buffers_node_flow_array_size;
             }
 
             size_t get_stl_memory_usage ()
             {
-                uint64_t total_unordered_neighbours_set_size   = unordered_neighbours_set[0].size() * sizeof(uint64_t) ;
-                uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()  * sizeof(uint64_t);
-                uint64_t total_node_to_position_map_size       = node_to_position_map.size()        * sizeof(uint64_t);
+                uint64_t total_unordered_neighbours_set_size   = unordered_neighbours_set[0].size()          * sizeof(uint64_t) ;
+                uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()           * sizeof(uint64_t);
+                uint64_t total_node_to_position_map_size       = node_to_position_map.size()                 * sizeof(uint64_t);
+                uint64_t total_mpi_requests_size               = recv_requests.size() * send_requests.size() * sizeof(MPI_Request);
+                uint64_t total_mpi_statuses_size               = statuses.size()                             * sizeof(MPI_Status);
+                uint64_t total_new_cells_size                  = new_cells_set.size()                        * sizeof(uint64_t);
+                uint64_t total_ranks_size                      = ranks.size()                                * sizeof(uint64_t);
+                uint64_t total_local_particle_node_sets_size   = 0;
+                for ( uint64_t i = 0; i < local_particle_node_sets.size(); i++ )
+                    total_local_particle_node_sets_size += local_particle_node_sets[i].size() * sizeof(uint64_t);
 
-                return total_unordered_neighbours_set_size + total_cell_particle_field_map_size + total_node_to_position_map_size;
+
+                return total_unordered_neighbours_set_size + total_cell_particle_field_map_size + total_node_to_position_map_size + total_mpi_requests_size + total_mpi_statuses_size + total_new_cells_size + total_local_particle_node_sets_size + total_ranks_size;
             }
 
             bool is_halo( uint64_t cell );
