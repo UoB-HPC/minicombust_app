@@ -365,6 +365,7 @@ namespace minicombust::utils
 
     struct Flow_Logger {
         double recieved_cells;
+        double reduced_recieved_cells;
         double sent_nodes;
     };
 

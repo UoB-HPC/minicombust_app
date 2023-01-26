@@ -26,6 +26,7 @@ namespace minicombust::particles
             const uint64_t num_timesteps;
             const uint64_t reserve_particles_size;
            
+            vector<uint64_t>                             active_blocks;
             vector<Particle<T>>                          particles;
             vector<unordered_map<uint64_t, uint64_t>>    cell_particle_field_map;
             unordered_map<uint64_t, flow_aos<T> *>       node_to_field_address_map;
@@ -98,7 +99,7 @@ namespace minicombust::particles
                 cell_particle_indexes = (uint64_t **)         malloc(mesh->num_blocks * sizeof(uint64_t *));
                 cell_particle_aos     = (particle_aos<T>  **) malloc(mesh->num_blocks * sizeof(particle_aos<T>  *));
 
-                async_locks    = (bool*)malloc(4 * mesh->num_blocks * sizeof(bool));
+                async_locks    = (bool*)malloc(5 * mesh->num_blocks * sizeof(bool));
 
                 send_counts    =              (uint64_t*) malloc(mesh->num_blocks * sizeof(uint64_t));
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));

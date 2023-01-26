@@ -17,12 +17,16 @@ namespace minicombust::flow
             T combustion_field;
             T flow_field;
 
-            vector<unordered_set<uint64_t>>                unordered_neighbours_set;
-            vector<unordered_map<uint64_t, uint64_t>>      cell_particle_field_map;
-            unordered_map<uint64_t, uint64_t>              node_to_position_map;
+            vector<unordered_set<uint64_t>>             unordered_neighbours_set;
+            unordered_set<uint64_t>                     new_cells_set;
+            vector<unordered_map<uint64_t, uint64_t>>   cell_particle_field_map;
+            unordered_map<uint64_t, uint64_t>           node_to_position_map;
+            vector<unordered_set<uint64_t>>             local_particle_node_sets;
 
             uint64_t    *interp_node_indexes;
             flow_aos<T> *interp_node_flow_fields;
+            uint64_t    *send_buffers_interp_node_indexes;
+            flow_aos<T> *send_buffers_interp_node_flow_fields;
 
             particle_aos<T> *cell_particle_aos;
 
@@ -37,7 +41,8 @@ namespace minicombust::flow
             uint64_t   *element_disps;
             MPI_Status *statuses;
 
-            MPI_Request *requests;
+            MPI_Request *send_requests;
+            MPI_Request *recv_requests;
 
             Flow_Logger logger;
 
@@ -52,6 +57,9 @@ namespace minicombust::flow
 
             size_t node_index_array_size;
             size_t node_flow_array_size;
+
+            size_t send_buffers_node_index_array_size;
+            size_t send_buffers_node_flow_array_size;
 
             double time_stats[11] = {0.0};
 
@@ -68,6 +76,9 @@ namespace minicombust::flow
 
                 node_index_array_size   = max_storage * sizeof(uint64_t);
                 node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
+
+                send_buffers_node_index_array_size   = max_storage * sizeof(uint64_t);
+                send_buffers_node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
 
                 async_locks = (bool*)malloc(4 * mesh->num_blocks * sizeof(bool));
                 
@@ -87,10 +98,14 @@ namespace minicombust::flow
                 interp_node_indexes      = (uint64_t * )    malloc(node_index_array_size);
                 interp_node_flow_fields  = (flow_aos<T> * ) malloc(node_flow_array_size);
 
+                send_buffers_interp_node_indexes      = (uint64_t * )    malloc(send_buffers_node_index_array_size);
+                send_buffers_interp_node_flow_fields  = (flow_aos<T> * ) malloc(send_buffers_node_flow_array_size);
+
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
 
-                requests = (MPI_Request *)malloc(max((int)mesh->num_blocks, particle_ranks) * 3 * sizeof(MPI_Request));
+                send_requests = (MPI_Request *)malloc(3 * particle_ranks * sizeof(MPI_Request));
+                recv_requests = (MPI_Request *)malloc(2 * particle_ranks * sizeof(MPI_Request));
 
                 memset(&logger, 0, sizeof(Flow_Logger));
 
@@ -215,6 +230,18 @@ namespace minicombust::flow
                 }
             }
 
+            void resize_send_buffers_nodes_arrays (uint64_t elements)
+            {
+                while ( send_buffers_node_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
+                {
+                    send_buffers_node_index_array_size *= 2;
+                    send_buffers_node_flow_array_size  *= 2;
+
+                    send_buffers_interp_node_indexes     = (uint64_t*)    realloc(send_buffers_interp_node_indexes,     send_buffers_node_index_array_size);
+                    send_buffers_interp_node_flow_fields = (flow_aos<T> *)realloc(send_buffers_interp_node_flow_fields, send_buffers_node_flow_array_size);
+                }
+            }
+
             size_t get_array_memory_usage ()
             {
                 uint64_t total_cell_index_array_size           = cell_index_array_size;
@@ -238,7 +265,7 @@ namespace minicombust::flow
 
             void print_logger_stats(uint64_t timesteps, double runtime);
             
-            void get_neighbour_cells(const uint64_t index_start, const uint64_t index_end);
+            void get_neighbour_cells(const uint64_t recv_id);
             void interpolate_to_nodes();
 
             void update_flow_field();  // Synchronize point with flow solver

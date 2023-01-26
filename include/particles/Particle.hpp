@@ -80,9 +80,9 @@ namespace minicombust::particles
             T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
             T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
-            vec<T> gas_vel;
-            T      gas_pressure;
-            T      gas_temperature;
+            vec<T> gas_vel = {0.0, 0.0, 0.0};
+            T      gas_pressure = 0.0;
+            T      gas_temperature = 0.0;
 
             particle_aos<T> particle_cell_fields;
 
