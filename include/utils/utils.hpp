@@ -341,6 +341,41 @@ namespace minicombust::utils
         return v;
     }
 
+    template <typename T>
+    inline void check_flow_field_exit (const char *check_string, const flow_aos<T> *value, const flow_aos<T> *check_value, uint64_t position )
+    {
+        double epsilon = 1.e-11;
+        if (fabs(value->temp - check_value->temp) > epsilon)              
+        {
+            printf("ERROR %s : Wrong temp value %f at %lu. DIFF = %.11f \n",          check_string,  value->temp,     position, fabs(value->temp - check_value->temp) ); 
+            exit(1);
+        }
+
+        if (fabs(value->pressure - check_value->pressure) > epsilon)              
+        {
+            printf("ERROR %s : Wrong pres value %f at %lu. DIFF = %.11f \n",          check_string,  value->pressure, position, fabs(value->pressure - check_value->pressure) ); 
+            exit(1);
+        }
+
+        if (fabs(value->vel.x - check_value->vel.x) > epsilon) 
+        {
+            printf("ERROR %s : Wrong velo value {%.10f y z} at %lu. DIFF = %.11f \n", check_string,  value->vel.x,    position, fabs(value->vel.x - check_value->vel.x) ); 
+            exit(1);
+        }
+
+        if (fabs(value->vel.y - check_value->vel.y) > epsilon) 
+        {
+            printf("ERROR %s : Wrong velo value {x %.10f z} at %lu. DIFF = %.11f \n", check_string,  value->vel.y,    position, fabs(value->vel.y - check_value->vel.y) ); 
+            exit(1);
+        }
+
+        if (fabs(value->vel.z - check_value->vel.z) > epsilon) 
+        {
+            printf("ERROR %s : Wrong velo value {x y %.10f} at %lu. DIFF = %.11f \n", check_string,  value->vel.z,    position, fabs(value->vel.z - check_value->vel.z) ); 
+            exit(1);
+        }
+    }
+
 
 
     struct Particle_Logger {

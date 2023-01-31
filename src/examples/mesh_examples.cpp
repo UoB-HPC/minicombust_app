@@ -205,7 +205,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
         int max_component = 0;
         for ( int i = 1; i < 3; i++ )
         {
-            if ( flow_elements_per_dim[i-1] < flow_elements_per_dim[i] )
+            if ( flow_elements_per_dim[max_component] <= flow_elements_per_dim[i] )
                 max_component = i;
         }
 

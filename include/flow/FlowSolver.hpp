@@ -11,8 +11,10 @@ namespace minicombust::flow
 
             Mesh<T> *mesh;
 
-            uint64_t *neighbour_indexes;
-           
+            vector<uint64_t *>        neighbour_indexes;
+            vector<particle_aos<T> *> cell_particle_aos;
+
+
             T turbulence_field;
             T combustion_field;
             T flow_field;
@@ -28,7 +30,6 @@ namespace minicombust::flow
             uint64_t    *send_buffers_interp_node_indexes;
             flow_aos<T> *send_buffers_interp_node_flow_fields;
 
-            particle_aos<T> *cell_particle_aos;
 
             bool *async_locks;
             
@@ -37,9 +38,10 @@ namespace minicombust::flow
             particle_aos<T> **recv_indexed_fields; 
 
             vector<int> ranks;
-            uint64_t   *elements;
-            uint64_t   *element_disps;
+            int      *elements;
+            uint64_t *element_disps;
 
+            MPI_Request bcast_request;
             vector<MPI_Status>  statuses;
             vector<MPI_Request> send_requests;
             vector<MPI_Request> recv_requests;
@@ -51,8 +53,10 @@ namespace minicombust::flow
             MPI_Config *mpi_config;
             PerformanceLogger<T> performance_logger;
 
-            size_t cell_index_array_size;
-            size_t cell_particle_array_size;
+            vector<size_t> cell_index_array_size;
+            vector<size_t> cell_particle_array_size;
+
+
             size_t cell_flow_array_size;
 
             size_t node_index_array_size;
@@ -60,6 +64,8 @@ namespace minicombust::flow
 
             size_t send_buffers_node_index_array_size;
             size_t send_buffers_node_flow_array_size;
+
+            uint64_t max_storage;
 
             double time_stats[11] = {0.0};
 
@@ -69,13 +75,13 @@ namespace minicombust::flow
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mesh(mesh), mpi_config(mpi_config)
             {
                 const float fraction  = 0.125;
-                uint64_t max_storage  = fraction * mesh->local_mesh_size;
+                max_storage           = fraction * mesh->local_mesh_size;
 
                 int particle_ranks = mpi_config->world_size - mpi_config->particle_flow_world_size;
 
                 // Compute array sizes
-                cell_index_array_size    = max_storage * sizeof(uint64_t);
-                cell_particle_array_size = max_storage * sizeof(particle_aos<T>);
+                cell_index_array_size.push_back(max_storage    * sizeof(uint64_t));
+                cell_particle_array_size.push_back(max_storage * sizeof(particle_aos<T>));
 
                 node_index_array_size   = max_storage * sizeof(uint64_t);
                 node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
@@ -89,12 +95,14 @@ namespace minicombust::flow
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
                 recv_indexed_fields = (particle_aos<T>**) malloc(mesh->num_blocks * sizeof(particle_aos<T>*));
 
-                elements        = (uint64_t*)malloc(particle_ranks     * sizeof(uint64_t));
+                elements        = (int*)malloc(particle_ranks          * sizeof(int));
                 element_disps   = (uint64_t*)malloc((particle_ranks+1) * sizeof(uint64_t));
 
                 // Allocate arrays
-                neighbour_indexes        = (uint64_t*)malloc(cell_index_array_size);
-                cell_particle_aos        = (particle_aos<T> * )malloc(cell_particle_array_size);
+                neighbour_indexes.push_back((uint64_t*)         malloc(cell_index_array_size[0]));
+                cell_particle_aos.push_back((particle_aos<T> * )malloc(cell_particle_array_size[0]));
+
+                local_particle_node_sets.push_back(unordered_set<uint64_t>());
 
                 interp_node_indexes      = (uint64_t * )    malloc(node_index_array_size);
                 interp_node_flow_fields  = (flow_aos<T> * ) malloc(node_flow_array_size);
@@ -114,8 +122,7 @@ namespace minicombust::flow
                 memset(&logger, 0, sizeof(Flow_Logger));
 
                 // Array sizes
-                uint64_t total_cell_index_array_size              = cell_index_array_size;
-                uint64_t total_cell_particle_array_size           = cell_particle_array_size;
+                
                 uint64_t total_node_index_array_size              = node_index_array_size;
                 uint64_t total_node_flow_array_size               = node_flow_array_size;
                 uint64_t total_send_buffers_node_index_array_size = send_buffers_node_index_array_size;
@@ -129,12 +136,20 @@ namespace minicombust::flow
                 uint64_t total_mpi_statuses_size               = statuses.size()                             * sizeof(MPI_Status);
                 uint64_t total_new_cells_size                  = new_cells_set.size()                        * sizeof(uint64_t);
                 uint64_t total_ranks_size                      = ranks.size()                                * sizeof(uint64_t);
+                
                 uint64_t total_local_particle_node_sets_size   = 0;
                 for ( uint64_t i = 0; i < local_particle_node_sets.size(); i++ )
                     total_local_particle_node_sets_size += local_particle_node_sets[i].size() * sizeof(uint64_t);
 
-                uint64_t total_memory_usage = get_array_memory_usage() + get_stl_memory_usage();
+                uint64_t total_cell_index_array_size    = 0;
+                uint64_t total_cell_particle_array_size = 0;
+                for ( uint64_t i = 0; i < cell_index_array_size.size(); i++ )
+                {
+                    total_cell_index_array_size    = cell_index_array_size[i];
+                    total_cell_particle_array_size = cell_particle_array_size[i];
+                }
 
+                uint64_t total_memory_usage = get_array_memory_usage() + get_stl_memory_usage();
                 if (mpi_config->particle_flow_rank == 0)
                 {
                     MPI_Reduce(MPI_IN_PLACE, &total_memory_usage,                           1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
@@ -175,7 +190,7 @@ namespace minicombust::flow
                 }
                 else
                 {
-                    MPI_Reduce(&total_memory_usage,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_memory_usage,                       nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
                     MPI_Reduce(&total_cell_index_array_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_cell_particle_array_size,           nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
@@ -214,17 +229,17 @@ namespace minicombust::flow
                 performance_logger.load_papi_events(mpi_config->rank);
             }
 
-            void resize_cell_indexes(uint64_t *elements, uint64_t ***new_cell_indexes)
-            {
-                while ( cell_index_array_size < ((uint64_t) *elements * sizeof(uint64_t)) )
-                {
-                    cell_index_array_size     *= 2;
+            // void resize_cell_indexes(uint64_t *elements, uint64_t ***new_cell_indexes)
+            // {
+            //     while ( cell_index_array_size < ((uint64_t) *elements * sizeof(uint64_t)) )
+            //     {
+            //         cell_index_array_size     *= 2;
 
-                    neighbour_indexes     = (uint64_t*) realloc(neighbour_indexes, cell_index_array_size);
-                }
+            //         neighbour_indexes     = (uint64_t*) realloc(neighbour_indexes, cell_index_array_size);
+            //     }
 
-                if (new_cell_indexes != NULL) **new_cell_indexes = neighbour_indexes;
-            }
+            //     if (new_cell_indexes != NULL) **new_cell_indexes = neighbour_indexes;
+            // }
 
             // void resize_cell_flow (uint64_t elements)
             // {
@@ -238,17 +253,30 @@ namespace minicombust::flow
             //     }
             // }
 
-            void resize_cell_particle (uint64_t *elements, uint64_t ***new_cell_indexes, particle_aos<T> ***new_cell_particle)
+            // void resize_cell_particle (uint64_t *elements, uint64_t ***new_cell_indexes, particle_aos<T> ***new_cell_particle)
+            // {
+            //     resize_cell_indexes(elements, new_cell_indexes);
+            //     while ( cell_particle_array_size < ((size_t) *elements * sizeof(particle_aos<T>)) )
+            //     {
+            //         cell_particle_array_size *= 2;
+
+            //         cell_particle_aos = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
+            //     }
+
+            //     if (new_cell_particle != NULL)  **new_cell_particle = cell_particle_aos;
+            // }
+
+
+            void resize_cell_particle (uint64_t elements, uint64_t index)
             {
-                resize_cell_indexes(elements, new_cell_indexes);
-                while ( cell_particle_array_size < ((size_t) *elements * sizeof(particle_aos<T>)) )
+                while ( cell_index_array_size[index] < ((size_t) elements * sizeof(uint64_t)) )
                 {
-                    cell_particle_array_size *= 2;
+                    cell_index_array_size[index]    *= 2;
+                    cell_particle_array_size[index] *= 2;
 
-                    cell_particle_aos = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
+                    neighbour_indexes[index] = (uint64_t *)       realloc(neighbour_indexes[index],  cell_index_array_size[index]);
+                    cell_particle_aos[index] = (particle_aos<T> *)realloc(cell_particle_aos[index],  cell_particle_array_size[index]);
                 }
-
-                if (new_cell_particle != NULL)  **new_cell_particle = cell_particle_aos;
             }
 
             void resize_nodes_arrays (uint64_t elements)
@@ -277,12 +305,19 @@ namespace minicombust::flow
 
             size_t get_array_memory_usage ()
             {
-                uint64_t total_cell_index_array_size              = cell_index_array_size;
-                uint64_t total_cell_particle_array_size           = cell_particle_array_size;
                 uint64_t total_node_index_array_size              = node_index_array_size;
-                uint64_t total_node_flow_array_size              = node_flow_array_size;
+                uint64_t total_node_flow_array_size               = node_flow_array_size;
                 uint64_t total_send_buffers_node_index_array_size = send_buffers_node_index_array_size;
                 uint64_t total_send_buffers_node_flow_array_size  = send_buffers_node_flow_array_size;
+
+
+                uint64_t total_cell_index_array_size    = 0;
+                uint64_t total_cell_particle_array_size = 0;
+                for ( uint64_t i = 0; i < cell_index_array_size.size(); i++ )
+                {
+                    total_cell_index_array_size    = cell_index_array_size[i];
+                    total_cell_particle_array_size = cell_particle_array_size[i];
+                }
 
                 return total_cell_index_array_size + total_cell_particle_array_size + total_node_index_array_size + total_node_flow_array_size + total_send_buffers_node_index_array_size + total_send_buffers_node_flow_array_size;
             }

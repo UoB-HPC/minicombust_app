@@ -80,9 +80,7 @@ namespace minicombust::particles
             T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
             T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
-            vec<T> gas_vel = {0.0, 0.0, 0.0};
-            T      gas_pressure = 0.0;
-            T      gas_temperature = 0.0;
+            flow_aos<T> local_flow_value = {{0.0, 0.0, 0.0}, 0.0, 0.0};
 
             particle_aos<T> particle_cell_fields;
 
@@ -261,18 +259,18 @@ namespace minicombust::particles
 
                 // TODO: Remove DUMMY_VALs
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub7
-                const vec<T> relative_drop_vel           = 0.65 * (gas_vel - v1);                                         // DUMMY_VAL Relative velocity between droplet and the fluid 
+                const vec<T> relative_drop_vel           = 0.65 * (local_flow_value.vel - v1);                                         // DUMMY_VAL Relative velocity between droplet and the fluid 
                 const T relative_drop_vel_mag            = magnitude(relative_drop_vel);                         // DUMMY_VAL Relative acceleration between the gas and liquid phase.
                 const vec<T> relative_drop_acc           = a1 * delta ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 
-                // cout << "gas_vel " << print_vec(gas_vel) << "v1 " << print_vec(v1) << " relative_drop_vel_mag " << relative_drop_vel_mag << " m " << mass << endl;
+                // cout << "local_flow_value.vel " << print_vec(local_flow_value.vel) << "v1 " << print_vec(v1) << " relative_drop_vel_mag " << relative_drop_vel_mag << " m " << mass << endl;
 
                 const T gas_density  = 6.9;                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);
 
 
                 const T omega               = 1.;                                                                  // DUMMY_VAL What is this?
-                const T kinematic_viscosity = 1.48e-5 * pow(gas_temperature, 1.5) / (gas_temperature + 110.4);    // DUMMY_VAL 
+                const T kinematic_viscosity = 1.48e-5 * pow(local_flow_value.temp, 1.5) / (local_flow_value.temp + 110.4);    // DUMMY_VAL 
                 const T reynolds            = gas_density * relative_drop_vel_mag * diameter / kinematic_viscosity;
 
                 const T droplet_frontal_area  = M_PI * (diameter / 2.) * (diameter / 2.);
@@ -294,7 +292,7 @@ namespace minicombust::particles
 
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
                 // Amount of spray evaporation is used in the modified transport equation of mixture fraction (each timestep).
-                const T air_pressure           = gas_pressure;
+                const T air_pressure           = local_flow_value.pressure;
                 const T boiling_temp           = 333.;
                 const T critical_temp          = 548.;
                 const T a_constant             = (temp < boiling_temp) ? 13.7600 : 14.1964;
@@ -322,7 +320,7 @@ namespace minicombust::particles
 
                 
                 const T latent_heat       = 346.0 * pow((critical_temp - temp) / (critical_temp - boiling_temp), 0.38);                     // DUMMY_VAL Latent heat of fuel vaporization (kJ/kg)
-                const T air_heat_transfer = 2. * M_PI * fuel_vapour_pressure * (gas_temperature - temp) * log_mass_transfer / mass_transfer;   // The heat transferred from air to fuel
+                const T air_heat_transfer = 2. * M_PI * fuel_vapour_pressure * (local_flow_value.temp - temp) * log_mass_transfer / mass_transfer;   // The heat transferred from air to fuel
                 const T evaporation_heat  = mass_delta * latent_heat;                                                                       // The heat absorbed through evaporation
                 const T temp_delta        = (air_heat_transfer - evaporation_heat) / (specific_heat * mass);                                // Temperature change of the droplet's surface
 
@@ -344,7 +342,7 @@ namespace minicombust::particles
                 // cout << "\ta                     "     << print_vec(a1)     << endl;
                 // cout << "\tvel1                  "     << print_vec(v1)     << endl;
                 // cout << "\tcell                  "     << cell     << endl;
-                // cout << "\tgas_vel               "     << print_vec(gas_vel)     << endl;
+                // cout << "\tlocal_flow_value.vel               "     << print_vec(local_flow_value.vel)     << endl;
                 // cout << "\trelative_drop_acc     "     << print_vec(relative_drop_acc)     << endl;
                 // cout << "\trelative_drop_vel     "     << print_vec(relative_drop_vel)     << endl;
                 // cout << "\trelative_drop_vel_mag "  << relative_drop_vel_mag << endl;
@@ -364,7 +362,7 @@ namespace minicombust::particles
 
 
                 // cout << "\ttemp                  "  << temp << endl;
-                // cout << "\tgas_temperature       "  << gas_temperature << endl;
+                // cout << "\tlocal_flow_value.temp       "  << local_flow_value.temp << endl;
                 // cout << "\tfuel_vapour_pressure  "  << fuel_vapour_pressure << endl;
                 // cout << "\tair_pressure          "  << air_pressure << endl;
                 // cout << "\tpressure_relation     "  << pressure_relation << endl;

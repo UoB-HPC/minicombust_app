@@ -101,18 +101,16 @@ namespace minicombust::geometry
  
             uint64_t *particles_per_point; // Number of particles in each cell
 
-            // Particle source terms
-            T      *evaporated_fuel_mass_rate;       // particle_rate_of_mass
-            T      *particle_energy_rate;            // particle_energy
-            vec<T> *particle_momentum_rate;          // particle_momentum_rate
-
             // Flow source terms
             const vec<T> dummy_gas_vel = {12., 0.01, 0.01};
             const T      dummy_gas_pre = 4000.;
             const T      dummy_gas_tem = 2000.;
+            const flow_aos<T> dummy_flow_field      = {dummy_gas_vel, dummy_gas_pre, dummy_gas_tem};
+            const flow_aos<T> dummy_flow_field_grad = {{0., 0., 0.}, 0., 0.};
 
-            flow_aos<T> *flow_terms;
-            flow_aos<T> *flow_grad_terms;
+            particle_aos<T> *particle_terms;
+            flow_aos<T>     *flow_terms;
+            flow_aos<T>     *flow_grad_terms;
 
             size_t points_array_size               = 0;
             size_t cells_array_size                = 0;
@@ -124,13 +122,10 @@ namespace minicombust::geometry
             size_t cell_neighbours_array_size      = 0;
             size_t cells_per_point_size            = 0;
 
-            size_t evaporated_fuel_mass_rate_size  = 0;
-            size_t particle_energy_size            = 0;
-            size_t particle_momentum_rate_size     = 0;
-
             size_t block_disp_size                 = 0;
 
             size_t flow_term_size                  = 0;
+            size_t particle_term_size              = 0;
 
             Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<T> *faces, uint64_t *cell_neighbours, uint8_t *cells_per_point, uint64_t num_blocks, uint64_t *shmem_cell_disps, uint64_t *shmem_point_disps, uint64_t *block_element_disp, vec<uint64_t> flow_block_dim) 
             : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_neighbours(cell_neighbours), cells_per_point(cells_per_point), num_blocks(num_blocks), shmem_cell_disps(shmem_cell_disps), shmem_point_disps(shmem_point_disps), block_element_disp(block_element_disp), flow_block_dim(flow_block_dim)
@@ -159,23 +154,18 @@ namespace minicombust::geometry
                 {
                     faces_array_size                = faces_size * sizeof(Face<T>);
                     
-                    evaporated_fuel_mass_rate_size  = local_mesh_size * sizeof(T);
-                    particle_energy_size            = local_mesh_size * sizeof(T);
-                    particle_momentum_rate_size     = local_mesh_size * sizeof(vec<T>);
-                    
                     flow_term_size                  = local_mesh_size * sizeof(flow_aos<T>);
+                    particle_term_size              = local_mesh_size * sizeof(particle_aos<T>);
 
-                    evaporated_fuel_mass_rate                    = (T *)          malloc(evaporated_fuel_mass_rate_size);
-                    particle_energy_rate                         = (T *)          malloc(particle_energy_size);
-                    particle_momentum_rate                       = (vec<T> *)     malloc(particle_momentum_rate_size);
-
-                    flow_terms                                   = (flow_aos<T> *)malloc(flow_term_size);
-                    flow_grad_terms                              = (flow_aos<T> *)malloc(flow_term_size);
+                    particle_terms                               = (particle_aos<T> *)malloc(particle_term_size);
+                    flow_terms                                   = (flow_aos<T> *)    malloc(flow_term_size);
+                    flow_grad_terms                              = (flow_aos<T> *)    malloc(flow_term_size);
                     
+                    #pragma ivdep
                     for (uint64_t c = 0; c < local_mesh_size; c++)
                     {
-                        flow_terms[c]      = {dummy_gas_vel, dummy_gas_pre, dummy_gas_tem};
-                        flow_grad_terms[c] = {{0.0, 0.0, 0.0}, 0.0, 0.0};
+                        flow_terms[c]      = dummy_flow_field;
+                        flow_grad_terms[c] = dummy_flow_field_grad;
                     }
                 }
                 else if (mpi_config->solver_type == PARTICLE || mpi_config->world_size == 1)
@@ -205,11 +195,9 @@ namespace minicombust::geometry
                 uint64_t total_cell_centre_size                = cell_centre_size;
                 uint64_t total_cell_neighbours_array_size      = cell_neighbours_array_size;
                 uint64_t total_cells_per_point_size            = cells_per_point_size;
-                uint64_t total_evaporated_fuel_mass_rate_size  = evaporated_fuel_mass_rate_size;
-                uint64_t total_particle_energy_size            = particle_energy_size;
-                uint64_t total_particle_momentum_rate_size     = particle_momentum_rate_size;
                 uint64_t total_block_disp_size                 = 2 * block_disp_size;
                 uint64_t total_flow_term_size                  = 2 * flow_term_size;        
+                uint64_t total_particle_term_size              = particle_term_size;        
 
                 if (mpi_config->rank == 0)
                 {
@@ -221,11 +209,9 @@ namespace minicombust::geometry
                     MPI_Reduce(MPI_IN_PLACE, &total_cell_centre_size,                1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(MPI_IN_PLACE, &total_cell_neighbours_array_size,      1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(MPI_IN_PLACE, &total_cells_per_point_size,            1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
-                    MPI_Reduce(MPI_IN_PLACE, &total_evaporated_fuel_mass_rate_size,  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
-                    MPI_Reduce(MPI_IN_PLACE, &total_particle_energy_size,            1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
-                    MPI_Reduce(MPI_IN_PLACE, &total_particle_momentum_rate_size,     1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(MPI_IN_PLACE, &total_block_disp_size,                 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(MPI_IN_PLACE, &total_flow_term_size,                  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_particle_term_size,              1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
 
                     if (mpi_config->solver_type == PARTICLE)
                         MPI_Reduce(MPI_IN_PLACE, &particle_memory_usage, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
@@ -239,11 +225,9 @@ namespace minicombust::geometry
                     printf("\tcell_neighbours_array_size        (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_cell_neighbours_array_size       / 1000000.0, (float) total_cell_neighbours_array_size       / (1000000.0 * mpi_config->world_size));
                     printf("\tcells_per_point_size              (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_cells_per_point_size             / 1000000.0, (float) total_cells_per_point_size             / (1000000.0 * mpi_config->world_size));
                     printf("\tblock_disp_size                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
-                    printf("\tevaporated_fuel_mass_rate_size    (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_evaporated_fuel_mass_rate_size   / 1000000.0, (float) total_evaporated_fuel_mass_rate_size   / (1000000.0 * mpi_config->world_size));
-                    printf("\tparticle_energy_size              (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_particle_energy_size             / 1000000.0, (float) total_particle_energy_size             / (1000000.0 * mpi_config->world_size));
-                    printf("\tparticle_momentum_rate_size       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_particle_momentum_rate_size      / 1000000.0, (float) total_particle_momentum_rate_size      / (1000000.0 * mpi_config->world_size));
                     printf("\t2 * block_disp_size               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                               , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
                     printf("\t2 * flow_term_size                (TOTAL %8.2f MB) (AVG %8.2f MB) \n\n"                             , (float) total_flow_term_size                   / 1000000.0, (float) total_flow_term_size                   / (1000000.0 * mpi_config->world_size));
+                    printf("\tparticle_term_size                (TOTAL %8.2f MB) (AVG %8.2f MB) \n\n"                             , (float) total_particle_term_size               / 1000000.0, (float) total_particle_term_size               / (1000000.0 * mpi_config->world_size));
 
                     printf("\tFlow rank mesh size               (TOTAL %12.2f MB) (AVG %.2f MB) \n"                    , (float)(total_memory_usage - particle_memory_usage)/1000000.0, (float)(total_memory_usage - particle_memory_usage)/(1000000.0 * (mpi_config->world_size - mpi_config->particle_flow_world_size)));
                     printf("\tParticle rank mesh size           (TOTAL %12.2f MB) (AVG %.2f MB) \n"                    , (float)particle_memory_usage/1000000.0,                        (float)particle_memory_usage/(1000000.0 * mpi_config->particle_flow_world_size));
@@ -259,11 +243,9 @@ namespace minicombust::geometry
                     MPI_Reduce(&total_cell_centre_size,                nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(&total_cell_neighbours_array_size,      nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(&total_cells_per_point_size,            nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
-                    MPI_Reduce(&total_evaporated_fuel_mass_rate_size,  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
-                    MPI_Reduce(&total_particle_energy_size,            nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
-                    MPI_Reduce(&total_particle_momentum_rate_size,     nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(&total_block_disp_size,                 nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(&total_flow_term_size,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
+                    MPI_Reduce(&total_particle_term_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
 
                     if (mpi_config->solver_type == PARTICLE)
                         MPI_Reduce(&particle_memory_usage, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
@@ -278,11 +260,9 @@ namespace minicombust::geometry
                      + cell_centre_size 
                      + cell_neighbours_array_size 
                      + cells_per_point_size 
-                     + evaporated_fuel_mass_rate_size 
-                     + particle_energy_size 
-                     + particle_momentum_rate_size 
                      + 2 * block_disp_size 
-                     + 2 * flow_term_size;
+                     + 2 * flow_term_size
+                     + particle_term_size;
             }
 
             // void clear_particles_per_point_array(void)

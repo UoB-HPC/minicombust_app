@@ -47,7 +47,7 @@ namespace minicombust::particles
 
             particle_aos<T> **cell_particle_aos;
 
-            uint64_t *neighbours_size;
+            int *neighbours_size;
             uint64_t  rank_neighbours_size;
             uint64_t **cell_particle_indexes;
 
@@ -67,6 +67,7 @@ namespace minicombust::particles
 
             bool *async_locks;
 
+            MPI_Request bcast_request;
             vector<MPI_Request> send_requests;
             vector<MPI_Request> recv_requests;
             vector<MPI_Status>  statuses;
@@ -93,7 +94,7 @@ namespace minicombust::particles
                 block_ranks = (int *)malloc(mesh->num_blocks * mpi_config->particle_flow_world_size * sizeof(int)); // TODO: Check how big this gets!
 
                 // Allocate each blocks cell arrays
-                neighbours_size             = (uint64_t *)     malloc(mesh->num_blocks * sizeof(uint64_t));
+                neighbours_size             = (int *)          malloc(mesh->num_blocks * sizeof(int));
                 all_interp_node_indexes     = (uint64_t **)    malloc(mesh->num_blocks * sizeof(uint64_t *));
                 all_interp_node_flow_fields = (flow_aos<T> **) malloc(mesh->num_blocks * sizeof(flow_aos<T> *));
 
@@ -279,34 +280,15 @@ namespace minicombust::particles
                 }
             }
 
-            void resize_nodes_arrays (uint64_t *elements)
+            void resize_nodes_arrays (int elements, uint64_t block_id)
             {
-                for ( uint64_t b = 0; b < mesh->num_blocks; b++)
+                while ( node_index_array_sizes[block_id] < ((size_t) elements * sizeof(uint64_t)) )
                 {
-                    // bool resized = false;
-                        // printf("Rank %d Attempt resize node index block %lu: size %lu to %lu\n", mpi_config->rank, b, node_index_array_sizes[b]      / sizeof(uint64_t),    elements[b] );
-                    while ( node_index_array_sizes[b] < ((size_t) elements[b] * sizeof(uint64_t)) )
-                    {
-                        // printf("Rank %d Resizing node index block %lu: size %lu to %lu\n", mpi_config->rank, b, node_index_array_sizes[b]      / sizeof(uint64_t),    2 * node_index_array_sizes[b]      / sizeof(uint64_t) );
-                        // printf("Rank %d Resizing node field block %lu: size %lu to %lu\n", mpi_config->rank, b, node_flow_array_sizes[b] / sizeof(flow_aos<T>), 2 * node_flow_array_sizes[b] / sizeof(flow_aos<T>) );
+                    node_index_array_sizes[block_id] *= 2;
+                    node_flow_array_sizes[block_id]  *= 2;
 
-                        // resized = true;
-                        
-
-                        node_index_array_sizes[b] *= 2;
-                        node_flow_array_sizes[b]  *= 2;
-
-                        
-
-                        all_interp_node_indexes[b]     = (uint64_t*)    realloc(all_interp_node_indexes[b],     node_index_array_sizes[b]);
-                        all_interp_node_flow_fields[b] = (flow_aos<T> *)realloc(all_interp_node_flow_fields[b], node_flow_array_sizes[b]);
-                    }
-
-                    // if (mpi_config->particle_flow_rank == 0 && resized)
-                    // {
-                    //     printf("Block %lu elements %lu resizing indexes to %f resizing flow to %f\n", b, elements[b], node_index_array_sizes[b] / 1.e9, node_flow_array_sizes[b] / 1.e9 );
-                    // }
-
+                    all_interp_node_indexes[block_id]     = (uint64_t*)    realloc(all_interp_node_indexes[block_id],     node_index_array_sizes[block_id]);
+                    all_interp_node_flow_fields[block_id] = (flow_aos<T> *)realloc(all_interp_node_flow_fields[block_id], node_flow_array_sizes[block_id]);
                 }
             }
 
