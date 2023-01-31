@@ -137,7 +137,6 @@ namespace minicombust::particles
 
                     send_requests.push_back( MPI_REQUEST_NULL );
                     send_requests.push_back( MPI_REQUEST_NULL );
-                    send_requests.push_back( MPI_REQUEST_NULL );
                     recv_requests.push_back( MPI_REQUEST_NULL );
                     recv_requests.push_back( MPI_REQUEST_NULL );
                 }
@@ -158,9 +157,9 @@ namespace minicombust::particles
             neighbours_size[b] = cell_particle_field_map[b].size();
             if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Sending %d indexes to block %lu.\n", mpi_config->rank, neighbours_size[b], b);
 
-            MPI_Issend(&neighbours_size[b],     1,                  MPI_INT,                             mpi_config->particle_flow_world_size + b, 0, mpi_config->world, &send_requests[count] );
-            MPI_Isend(cell_particle_indexes[b], neighbours_size[b], MPI_UINT64_T,                        mpi_config->particle_flow_world_size + b, 1, mpi_config->world, &send_requests[count   + 1*active_blocks.size()] );
-            MPI_Isend(cell_particle_aos[b],     neighbours_size[b], mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->particle_flow_world_size + b, 2, mpi_config->world, &send_requests[count++ + 2*active_blocks.size()] );
+            // MPI_Isend(&neighbours_size[b],      1,                  MPI_INT,                             mpi_config->particle_flow_world_size + b, 0, mpi_config->world, &send_requests[count] );
+            MPI_Issend(cell_particle_indexes[b], neighbours_size[b], MPI_UINT64_T,                        mpi_config->particle_flow_world_size + b, 0, mpi_config->world, &send_requests[count  + 0*active_blocks.size()] );
+            MPI_Isend(cell_particle_aos[b],     neighbours_size[b], mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->particle_flow_world_size + b, 2, mpi_config->world, &send_requests[count++ + 1*active_blocks.size()] );
         }
 
 
@@ -174,76 +173,78 @@ namespace minicombust::particles
         
         MPI_Ibcast(&sends_done, 1, MPI_INT, 0, mpi_config->world, &bcast_request);
 
-
         for (uint64_t b : active_blocks)
             cell_particle_field_map[b].clear();
 
-        MPI_Wait(&bcast_request, MPI_STATUS_IGNORE);
-
-        
-        for ( uint64_t ba = 0; ba < active_blocks.size(); ba++ )
-        {
-            MPI_Probe (MPI_ANY_SOURCE, 0, mpi_config->world, &statuses[ba] );
-
-            const uint64_t send_rank = statuses[ba].MPI_SOURCE;
-            const uint64_t block_id  = statuses[ba].MPI_SOURCE - mpi_config->particle_flow_world_size;
-            
-            MPI_Get_count( &statuses[ba], MPI_UINT64_T, &neighbours_size[block_id] );
-            resize_nodes_arrays(neighbours_size[block_id] + 1, block_id);
-
-            logger.nodes_recieved += neighbours_size[block_id];
-            int active_block_index = find(active_blocks.begin(), active_blocks.end(), block_id) - active_blocks.begin(); 
-
-            if ( PARTICLE_SOLVER_DEBUG )  printf("\tRank %d: Posted %d recieves (ptr %p) for flow block %lu (slots %d %ld max %ld) .\n", mpi_config->rank, neighbours_size[block_id], all_interp_node_indexes[block_id], block_id, active_block_index, active_block_index + active_blocks.size(), recv_requests.size() );
-            MPI_Irecv ( all_interp_node_indexes[block_id],     neighbours_size[block_id], MPI_UINT64_T,                   send_rank, 0, mpi_config->world, &recv_requests[active_block_index] );
-            MPI_Irecv ( all_interp_node_flow_fields[block_id], neighbours_size[block_id], mpi_config->MPI_FLOW_STRUCTURE, send_rank, 1, mpi_config->world, &recv_requests[active_block_index + active_blocks.size()] );
-        }
-
-        if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Posted recieves.\n", mpi_config->rank);
-        
-
+        uint64_t posted_recvs = 0;
         uint64_t ba = active_blocks.size() - 1;
         uint64_t bi;
-        bool     all_processed   = true;
-        bool    *processed_block = async_locks;
+        bool     all_processed      = true;
+        bool    *posted_block_recvs = async_locks;
+        bool    *processed_block    = async_locks + active_blocks.size();
         for ( uint64_t ba = 0; ba < active_blocks.size(); ba++ )  
         {
-            processed_block[ba]  = 0;
+            posted_block_recvs[ba]  = false;
+            processed_block[ba]     = false;
             all_processed       &= processed_block[ba];
         }
-
+        
         while (!all_processed)
         {
             ba = (ba + 1) % active_blocks.size();
             bi = active_blocks[ba];
 
+            int message_waiting = 0;
+            MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[posted_recvs] );
+
+            if ( message_waiting && (posted_recvs < active_blocks.size()) )
+            {
+                const uint64_t send_rank = statuses[posted_recvs].MPI_SOURCE;
+                const uint64_t block_id  = statuses[posted_recvs].MPI_SOURCE - mpi_config->particle_flow_world_size;
+
+                MPI_Get_count( &statuses[posted_recvs], MPI_UINT64_T, &neighbours_size[block_id] );
+                resize_nodes_arrays(neighbours_size[block_id] + 1, block_id);
+
+                logger.nodes_recieved += neighbours_size[block_id];
+                int active_block_index = find(active_blocks.begin(), active_blocks.end(), block_id) - active_blocks.begin(); 
+
+                if ( PARTICLE_SOLVER_DEBUG )  printf("\tRank %d: Posted %d recieves (ptr %p) for flow block %lu (slots %d %ld max %ld) .\n", mpi_config->rank, neighbours_size[block_id], all_interp_node_indexes[block_id], block_id, active_block_index, active_block_index + active_blocks.size(), recv_requests.size() );
+                MPI_Irecv ( all_interp_node_indexes[block_id],     neighbours_size[block_id], MPI_UINT64_T,                   send_rank, 0, mpi_config->world, &recv_requests[active_block_index] );
+                MPI_Irecv ( all_interp_node_flow_fields[block_id], neighbours_size[block_id], mpi_config->MPI_FLOW_STRUCTURE, send_rank, 1, mpi_config->world, &recv_requests[active_block_index + active_blocks.size()] );
+
+                posted_block_recvs[active_block_index] = true;
+                posted_recvs++;
+                continue;
+            }
+
             int recieve_done = 0;
             MPI_Test(&recv_requests[ba], &recieve_done, MPI_STATUS_IGNORE);
 
-            if (recieve_done && !processed_block[ba])
+            if ( recieve_done && !processed_block[ba] && posted_block_recvs[ba] )
             {
-                uint64_t size_before = node_to_field_address_map.size();
+                // uint64_t size_before = node_to_field_address_map.size();
 
-                if ( PARTICLE_SOLVER_DEBUG )  
-                {
-                    printf("\tRank %d: Indexes (%p ptr) load finished for flow block %lu (slots %lu ) .\n", mpi_config->rank, all_interp_node_indexes[bi], bi, ba );
+                // if ( PARTICLE_SOLVER_DEBUG )  
+                // {
+                //     printf("\tRank %d: Indexes (%p ptr) load finished for flow block %lu (slots %lu ) .\n", mpi_config->rank, all_interp_node_indexes[bi], bi, ba );
 
-                    if      ( (uint64_t) neighbours_size[bi]  >= (node_flow_array_sizes[bi]   / sizeof(flow_aos<T>)) )
-                        {printf("ERROR RECV VALS : Rank %d Block %lu will write indexes to unallocated memory required size %d max %lu\n", mpi_config->rank, bi, neighbours_size[bi], node_flow_array_sizes[bi] / sizeof(flow_aos<T>)); exit(1);}
-                    else if ( (uint64_t) neighbours_size[bi]  >= (node_index_array_sizes[bi]  / sizeof(uint64_t)) )
-                        {printf("ERROR RECV VALS : Rank %d Block %lu will write fields  to unallocated memory required size %d max %lu\n", mpi_config->rank, bi, neighbours_size[bi], node_index_array_sizes[bi] / sizeof(uint64_t)); exit(1);}
-                }
+                //     if      ( (uint64_t) neighbours_size[bi]  >= (node_flow_array_sizes[bi]   / sizeof(flow_aos<T>)) )
+                //         {printf("ERROR RECV VALS : Rank %d Block %lu will write indexes to unallocated memory required size %d max %lu\n", mpi_config->rank, bi, neighbours_size[bi], node_flow_array_sizes[bi] / sizeof(flow_aos<T>)); exit(1);}
+                //     else if ( (uint64_t) neighbours_size[bi]  >= (node_index_array_sizes[bi]  / sizeof(uint64_t)) )
+                //         {printf("ERROR RECV VALS : Rank %d Block %lu will write fields  to unallocated memory required size %d max %lu\n", mpi_config->rank, bi, neighbours_size[bi], node_index_array_sizes[bi] / sizeof(uint64_t)); exit(1);}
+                // }
 
+                #pragma ivdep
                 for (int i = 0; i < neighbours_size[bi]; i++)
                 {
                     node_to_field_address_map[all_interp_node_indexes[bi][i]] = &all_interp_node_flow_fields[bi][i];
 
-                    if (PARTICLE_SOLVER_DEBUG && all_interp_node_indexes[bi][i] > mesh->points_size )
-                        {printf("ERROR RECV VALS : Rank %d Flow block %lu Value %lu out of range at %d\n", mpi_config->rank, bi, all_interp_node_indexes[bi][i], i); exit(1);}
+                    // if (PARTICLE_SOLVER_DEBUG && all_interp_node_indexes[bi][i] > mesh->points_size )
+                    //     {printf("ERROR RECV VALS : Rank %d Flow block %lu Value %lu out of range at %d\n", mpi_config->rank, bi, all_interp_node_indexes[bi][i], i); exit(1);}
                 }
 
-                if (PARTICLE_SOLVER_DEBUG && size_before != node_to_field_address_map.size())
-                    {printf("\tRank %d: Recieving wrong amount of data(+%lu). Block %lu Node map size %ld sent size %d.\n", mpi_config->rank, node_to_field_address_map.size() - size_before, bi, node_to_field_address_map.size(), neighbours_size[bi] ); exit(1);};
+                // if (PARTICLE_SOLVER_DEBUG && size_before != node_to_field_address_map.size())
+                //     {printf("\tRank %d: Recieving wrong amount of data(+%lu). Block %lu Node map size %ld sent size %d.\n", mpi_config->rank, node_to_field_address_map.size() - size_before, bi, node_to_field_address_map.size(), neighbours_size[bi] ); exit(1);};
                     
                 processed_block[ba] = true;
             }

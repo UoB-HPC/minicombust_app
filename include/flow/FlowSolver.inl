@@ -241,10 +241,8 @@ namespace minicombust::flow
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
-        static double time0=0, time1=0, time2=0, time3=0;
+        static double time0=0, time1=0, time2=0;
         static double recv_time1=0, recv_time2=0, recv_time3=0;
-        time3 -= MPI_Wtime(); //1
-
 
         int recvs_complete = 0;
 
@@ -255,7 +253,6 @@ namespace minicombust::flow
 
         bool  all_processed        = false;
         bool *processed_neighbours = async_locks;
-        time3 += MPI_Wtime(); //1
         while(!all_processed)
         {
             time0 -= MPI_Wtime(); //1
@@ -264,20 +261,17 @@ namespace minicombust::flow
             {
                 uint64_t rank_slot = ranks.size();
                 ranks.push_back(statuses[rank_slot].MPI_SOURCE);
-                // MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
-                // if ( FLOW_SOLVER_DEBUG )  printf("\tFlow block %d: Recieving index size from %d (slot %lu). Max size size %d \n", mpi_config->particle_flow_rank, ranks[rank_slot], rank_slot, mpi_config->world_size - mpi_config->particle_flow_world_size);
-                MPI_Recv(&elements[rank_slot], 1, MPI_INT, ranks[rank_slot], 0, mpi_config->world, MPI_STATUS_IGNORE );
+                MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
 
                 resize_cell_particle(elements[rank_slot], rank_slot);
                 if ( FLOW_SOLVER_DEBUG )  printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
 
                 logger.recieved_cells += elements[rank_slot];
 
-                MPI_Irecv(neighbour_indexes[rank_slot], elements[rank_slot], MPI_UINT64_T,                       ranks[rank_slot], 1, mpi_config->world, &recv_requests[2*rank_slot] );
+                MPI_Irecv(neighbour_indexes[rank_slot], elements[rank_slot], MPI_UINT64_T,                       ranks[rank_slot], 0, mpi_config->world, &recv_requests[2*rank_slot] );
                 MPI_Irecv(cell_particle_aos[rank_slot], elements[rank_slot], mpi_config->MPI_PARTICLE_STRUCTURE, ranks[rank_slot], 2, mpi_config->world, &recv_requests[2*rank_slot + 1] );
 
                 processed_neighbours[rank_slot] = false;
-
 
                 if ( statuses.size() <= ranks.size() )
                 {
@@ -296,6 +290,8 @@ namespace minicombust::flow
                     local_particle_node_sets.push_back(unordered_set<uint64_t>());
                 }
                 message_waiting = 0;
+                MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
+                continue;
              }
 
 
@@ -393,7 +389,6 @@ namespace minicombust::flow
 
             recv_time2  += MPI_Wtime();
         }
-
         
         recv_time3  -= MPI_Wtime();
 
@@ -444,8 +439,6 @@ namespace minicombust::flow
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //8
 
-
-
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
         
         time_stats[time_count++] += MPI_Wtime();
@@ -457,7 +450,6 @@ namespace minicombust::flow
             printf("Rank %d Time 0: %.2f\n", mpi_config->rank, time0);
             printf("Rank %d Time 1: %.2f\n", mpi_config->rank, time1);
             printf("Rank %d Time 2: %.2f\n", mpi_config->rank, time2);
-            printf("Rank %d Time 3: %.2f\n", mpi_config->rank, time3);
 
             printf("Rank %d RECV Time 1: %.2f\n", mpi_config->rank, recv_time1);
             printf("Rank %d RECV Time 2: %.2f\n", mpi_config->rank, recv_time2);
