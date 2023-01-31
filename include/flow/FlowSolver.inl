@@ -236,13 +236,13 @@ namespace minicombust::flow
         
         performance_logger.my_papi_start();
 
-        MPI_Barrier(mpi_config->world);
+        // MPI_Barrier(mpi_config->world);
         if ( PARTICLE_SOLVER_DEBUG )  printf("\tFlow Rank %d: Completed Barrrier.\n", mpi_config->rank);
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
-        static double time0=0, time1=0, time2=0;
-        static double recv_time1=0, recv_time2=0, recv_time3=0;
+        static double time0=0., time1=0., time2=0.;
+        static double recv_time1=0., recv_time2=0., recv_time3=0.;
 
         int recvs_complete = 0;
 
