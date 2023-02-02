@@ -211,12 +211,12 @@ namespace minicombust::particles
                     MPI_Reduce(&total_node_to_field_address_map_size, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                 }
 
-                for (uint64_t b = 0; b < mesh->num_blocks; b++)
-                {
-                    MPI_Comm_split(mpi_config->world, 1, mpi_config->rank, &mpi_config->every_one_flow_world[b]); 
-                    MPI_Comm_rank(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_rank[b]);
-                    MPI_Comm_size(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_world_size[b]);
-                }
+                // for (uint64_t b = 0; b < mesh->num_blocks; b++)
+                // {
+                //     MPI_Comm_split(mpi_config->world, 1, mpi_config->rank, &mpi_config->every_one_flow_world[b]); 
+                //     MPI_Comm_rank(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_rank[b]);
+                //     MPI_Comm_size(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_world_size[b]);
+                // }
 
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);

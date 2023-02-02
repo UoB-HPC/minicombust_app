@@ -211,19 +211,19 @@ namespace minicombust::flow
 
                 MPI_Barrier(mpi_config->world);
 
-                for (uint64_t b = 0; b < mesh->num_blocks; b++)
-                {
-                    if ((uint64_t)mpi_config->particle_flow_rank == b)
-                    {
-                        MPI_Comm_split(mpi_config->world, 1, mpi_config->rank, &mpi_config->every_one_flow_world[b]);
-                        MPI_Comm_rank(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_rank[b]);
-                        MPI_Comm_size(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_world_size[b]);
-                    }
-                    else
-                    {
-                        MPI_Comm_split(mpi_config->world, MPI_UNDEFINED, mpi_config->rank, &mpi_config->every_one_flow_world[b]);
-                    }
-                }
+                // for (uint64_t b = 0; b < mesh->num_blocks; b++)
+                // {
+                //     if ((uint64_t)mpi_config->particle_flow_rank == b)
+                //     {
+                //         MPI_Comm_split(mpi_config->world, 1, mpi_config->rank, &mpi_config->every_one_flow_world[b]);
+                //         MPI_Comm_rank(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_rank[b]);
+                //         MPI_Comm_size(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_world_size[b]);
+                //     }
+                //     else
+                //     {
+                //         MPI_Comm_split(mpi_config->world, MPI_UNDEFINED, mpi_config->rank, &mpi_config->every_one_flow_world[b]);
+                //     }
+                // }
 
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
