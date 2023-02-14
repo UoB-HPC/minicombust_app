@@ -9,6 +9,8 @@
 #include "geometry/Mesh.hpp"
 
 
+
+
 namespace minicombust::particles 
 {
     using namespace std; 
@@ -17,6 +19,9 @@ namespace minicombust::particles
 
     #define INVALID_FACE 1;
     #define VALID_FACE 0;
+
+    const double EPSILON = 5.0e-17;
+
     enum INTERSECT_PLANES { POSSIBLE = 0, IMPOSSIBLE = 1, PARALLEL = 3}; 
     
     template<class T>
@@ -46,26 +51,22 @@ namespace minicombust::particles
             inline bool check_cell(uint64_t current_cell, Mesh<T> *mesh)
             {
                 // TODO: Currently is solely a cube partial volume algorithm. Tetra partial volume algorithm;
-                uint64_t *current_cell_points = mesh->cells + current_cell*mesh->cell_size;
-                vec<T> box_size = mesh->points[current_cell_points[H_VERTEX]] - mesh->points[current_cell_points[A_VERTEX]];
+                vec<T> box_size = mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + H_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
                 double total_volume  = abs(box_size.x * box_size.y * box_size.z);
 
                 double partial_volumes = 0.0;
                 #pragma ivdep
                 for (uint64_t i=0; i < mesh->cell_size; i++)
                 {
-                    vec<T> partial_box_size = mesh->points[current_cell_points[i]] - x1;
+                    vec<T> partial_box_size = mesh->points[mesh->cells[(current_cell - mesh->shmem_cell_disp)*mesh->cell_size + i] - mesh->shmem_point_disp] - x1;
                     partial_volumes += abs(partial_box_size.x * partial_box_size.y * partial_box_size.z);
                 }
 
                 // if (PARTICLE_DEBUG)  cout << "\t\tpartial_volumes - total  " << partial_volumes-total_volume << endl;
-                if (abs(partial_volumes-total_volume) < 5.0e-15)  return true;
+                if (abs(partial_volumes-total_volume) < EPSILON)  return true;
                 return false;
                 
             }
-
-            
-
 
 
         public:
@@ -75,13 +76,13 @@ namespace minicombust::particles
 
             bool decayed = false;
 
-            T mass        = 0.02;           // DUMMY_VAL Current mass (kg)
+            T mass        = 0.02;          // DUMMY_VAL Current mass (kg)
             T temp;                        // DUMMY_VAL Current surface temperature (Kelvin)
             T diameter;                    // DUMMY_VAL Relationship between mass and diameter? Droplet is assumed to be spherical.
 
-            vec<T> gas_vel;
-            T      gas_pressure;
-            T      gas_temperature;
+            flow_aos<T> local_flow_value = {{0.0, 0.0, 0.0}, 0.0, 0.0};
+
+            particle_aos<T> particle_cell_fields;
 
 
             T age = 0.0;
@@ -89,7 +90,7 @@ namespace minicombust::particles
             uint64_t cell;          // cell at timestep beginning
 
 
-            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, uint64_t cell, particle_logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp), cell(cell)
+            Particle(Mesh<T> *mesh, vec<T> start, vec<T> velocity, vec<T> acceleration, T temp, uint64_t cell, Particle_Logger *logger) : x1(start), v1(velocity), a1(acceleration), temp(temp), cell(cell)
             { 
                 update_cell(mesh, logger);
 
@@ -98,12 +99,12 @@ namespace minicombust::particles
                 if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x1: " << print_vec(x1) << " v1: " << print_vec(v1) <<  endl ;
             }
 
-            Particle(Mesh<T> *mesh, vec<T> position, vec<T> velocity, vec<T> acceleration, T mass, T temp, T diameter, uint64_t cell) : 
+            Particle(vec<T> position, vec<T> velocity, vec<T> acceleration, T mass, T temp, T diameter, uint64_t cell) : 
                      x1(position), v1(velocity), a1(acceleration),
                      mass(mass), temp(temp), diameter(diameter), cell(cell)
             { }
 
-            inline uint64_t update_cell(Mesh<T> *mesh, particle_logger *logger)
+            inline uint64_t update_cell(Mesh<T> *mesh, Particle_Logger *logger)
             {
 
 
@@ -118,20 +119,20 @@ namespace minicombust::particles
                 else
                 {
                     bool found_cell     = false;
-                    vec<T> artificial_A = mesh->cell_centres[cell];
+                    vec<T> artificial_A = mesh->cell_centres[cell - mesh->shmem_cell_disp];
                     vec<T> *A = &artificial_A;
-                    // vec<T> *A = &x0;
                     vec<T> *B = &x1;
 
                     uint64_t num_tries = 0;
                     
                     uint64_t face_mask = POSSIBLE; // Prevents double interceptions     
 
-                    vec<T> z_vec = mesh->points[mesh->cells[cell*mesh->cell_size + E_VERTEX]] - mesh->points[mesh->cells[cell*mesh->cell_size + A_VERTEX]];
-                    vec<T> x_vec = mesh->points[mesh->cells[cell*mesh->cell_size + B_VERTEX]] - mesh->points[mesh->cells[cell*mesh->cell_size + A_VERTEX]];
-                    vec<T> y_vec = mesh->points[mesh->cells[cell*mesh->cell_size + C_VERTEX]] - mesh->points[mesh->cells[cell*mesh->cell_size + A_VERTEX]];
+                    vec<T> z_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + E_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
+                    vec<T> x_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + B_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
+                    vec<T> y_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + C_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
 
                     vec<T> x_delta   = x1 - artificial_A;
+                    
                     // Detects which cells you could possibly hit. Should at least halve the number of face checks.
                     T dot = dot_product(x_delta, z_vec); 
                     face_mask = face_mask | (((dot == 0) ? PARALLEL : IMPOSSIBLE) << ((dot >= 0) ? 0 : 1));
@@ -142,23 +143,21 @@ namespace minicombust::particles
 
                     while (!found_cell)
                     {
-                        uint64_t *current_cell_points = mesh->cells + cell*mesh->cell_size;       
-                        
-                        uint64_t intercepted_face_id = 0;
+                        uint64_t intercepted_face_id = -1;
                         uint64_t intercepted_faces   = 0;
-
  
                         for (uint64_t face = 0; face < 6; face++)
                         {
                             if ((1 << face) & face_mask)  continue;
 
                             if (PARTICLE_DEBUG) cout << "\t\t\tTrying face " << mesh->get_face_string(face) << " " << bitset<6>(face_mask) << endl; 
+                            if (PARTICLE_DEBUG) cout << "\t\t\tMoving from cell " << cell << " with pos " << print_vec(*A) << " to " << print_vec (*B) << endl; 
 
                             // Check whether particle - moving from A to B - intercepts face CDEF. If LHS == RHS, particle intercepts this face.
-                            vec<T> *C = &mesh->points[current_cell_points[CUBE_FACE_VERTEX_MAP[face][0]]];
-                            vec<T> *D = &mesh->points[current_cell_points[CUBE_FACE_VERTEX_MAP[face][1]]];
-                            vec<T> *E = &mesh->points[current_cell_points[CUBE_FACE_VERTEX_MAP[face][2]]];
-                            vec<T> *F = &mesh->points[current_cell_points[CUBE_FACE_VERTEX_MAP[face][3]]];
+                            vec<T> *C = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][0]] - mesh->shmem_point_disp];
+                            vec<T> *D = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][1]] - mesh->shmem_point_disp];
+                            vec<T> *E = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][2]] - mesh->shmem_point_disp];
+                            vec<T> *F = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][3]] - mesh->shmem_point_disp];
 
                             const double LHS = tetrahedral_volume(A, C, D, B)
                                              + tetrahedral_volume(A, D, F, B)
@@ -170,13 +169,13 @@ namespace minicombust::particles
                                              + tetrahedral_volume(B, C, D, F)
                                              + tetrahedral_volume(B, E, C, F);
 
-                            if (abs(LHS - RHS) < 5e-12 && LHS != 0)  
+                            if (PARTICLE_DEBUG)  printf("\t\t\t%.20f == %.20f\n", LHS, RHS);
+                            if ( (abs(LHS - RHS) < EPSILON) && (LHS != 0.) )  
                             {
                                 intercepted_face_id = face;
                                 intercepted_faces++;
                                 
                                 if (PARTICLE_DEBUG)  cout << "\t\t\tIntercepted Face " << mesh->get_face_string(face) << " num faces =  " << intercepted_faces << endl;
-                                if (PARTICLE_DEBUG)  printf("\t\t\t%.20f == %.20f\n", LHS, RHS);
                             }
                         }
 
@@ -186,32 +185,36 @@ namespace minicombust::particles
                         }
 
                         // Check if multiple faces have been intercepted
-                        if (intercepted_faces > 1)
+                        if (intercepted_faces != 1)
                         {
                             // Get random point within unit sphere
                             vec<T> r = vec<T> { static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX) } ;
                             r        = - 1. + (r * 2.);
-                            artificial_A = mesh->cell_centres[cell] + 0.4 * r * mesh->cell_size_vector / 2.;
+                            artificial_A = mesh->cell_centres[cell - mesh->shmem_cell_disp] + 0.4 * r * mesh->cell_size_vector / 2.;
 
-                            if (PARTICLE_DEBUG)  cout << "\t\t\tNo faces, artificial position " <<  print_vec(artificial_A) << endl;
+                            if (PARTICLE_DEBUG)  cout << "\t\t\tMultiple faces, artificial position " <<  print_vec(artificial_A) << endl;
                             if (LOGGER)
                             {
                                 logger->position_adjustments++;
                             }
 
-
-                            if (num_tries++ > 15)
+                            if (num_tries++ > 4)
                             {
                                 decayed = true;
                                 cell    = MESH_BOUNDARY;
+                                if (PARTICLE_DEBUG)  cout << "\t\t\tLost Particle " << endl;
                                 if (LOGGER) logger->lost_particles++;
+                                if (LOGGER) logger->decayed_particles++;
                                 return cell;
                             }
                             continue;
                         }
 
+                        num_tries = 0;
+
                         // Test neighbour cell
-                        cell = mesh->cell_neighbours[cell*mesh->faces_per_cell + intercepted_face_id];
+                        cell = mesh->cell_neighbours[(cell - mesh->shmem_cell_disp)*mesh->faces_per_cell + intercepted_face_id];
+                        artificial_A = mesh->cell_centres[cell - mesh->shmem_cell_disp];
 
                         if (PARTICLE_DEBUG)  cout << "\t\tMoving to cell " << cell << " " << mesh->get_face_string(intercepted_face_id) << " direction" << endl;  
 
@@ -244,7 +247,7 @@ namespace minicombust::particles
                 return cell;
             }
 
-            inline void solve_spray(Mesh<T> *mesh, double delta, particle_logger *logger, vector<Particle<T>>& particles)
+            inline void solve_spray(double delta, Particle_Logger *logger, vector<Particle<T>>& particles)
             {
                 // Inputs from flow: relative_acc, kinematic viscoscity?, air_temp, air_pressure
                 // Scenario constants: omega?, latent_heat, droplet_pressure?, evaporation_constant
@@ -255,18 +258,19 @@ namespace minicombust::particles
                 // TODO Add better flop estimates for pow and ln. Also, can we get a fast approximation. Taylor series?
 
                 // TODO: Remove DUMMY_VALs
-                // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub
-                const vec<T> relative_drop_vel           = gas_vel - v1;                                         // DUMMY_VAL Relative velocity between droplet and the fluid
+                // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub7
+                const vec<T> relative_drop_vel           = 0.65 * (local_flow_value.vel - v1);                                         // DUMMY_VAL Relative velocity between droplet and the fluid 
                 const T relative_drop_vel_mag            = magnitude(relative_drop_vel);                         // DUMMY_VAL Relative acceleration between the gas and liquid phase.
                 const vec<T> relative_drop_acc           = a1 * delta ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 
+                // cout << "local_flow_value.vel " << print_vec(local_flow_value.vel) << "v1 " << print_vec(v1) << " relative_drop_vel_mag " << relative_drop_vel_mag << " m " << mass << endl;
 
                 const T gas_density  = 6.9;                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);
 
 
                 const T omega               = 1.;                                                                  // DUMMY_VAL What is this?
-                const T kinematic_viscosity = 1.48e-5 * pow(gas_temperature, 1.5) / (gas_temperature + 110.4);    // DUMMY_VAL 
+                const T kinematic_viscosity = 1.48e-5 * pow(local_flow_value.temp, 1.5) / (local_flow_value.temp + 110.4);    // DUMMY_VAL 
                 const T reynolds            = gas_density * relative_drop_vel_mag * diameter / kinematic_viscosity;
 
                 const T droplet_frontal_area  = M_PI * (diameter / 2.) * (diameter / 2.);
@@ -283,12 +287,12 @@ namespace minicombust::particles
                 // cout << "vf " << print_vec(virtual_force) << " df " << print_vec(drag_force) << " m " << mass << endl;
                 a1 = ((virtual_force + drag_force) / mass);
                 v1 = v1 + a1 * delta;
-                x1 = x1 + v1 * delta;
+                
 
 
                 // SOLVE EVAPORATION MODEL https://arc.aiaa.org/doi/pdf/10.2514/3.8264 
                 // Amount of spray evaporation is used in the modified transport equation of mixture fraction (each timestep).
-                const T air_pressure           = gas_pressure;
+                const T air_pressure           = local_flow_value.pressure;
                 const T boiling_temp           = 333.;
                 const T critical_temp          = 548.;
                 const T a_constant             = (temp < boiling_temp) ? 13.7600 : 14.1964;
@@ -316,7 +320,7 @@ namespace minicombust::particles
 
                 
                 const T latent_heat       = 346.0 * pow((critical_temp - temp) / (critical_temp - boiling_temp), 0.38);                     // DUMMY_VAL Latent heat of fuel vaporization (kJ/kg)
-                const T air_heat_transfer = 2. * M_PI * fuel_vapour_pressure * (gas_temperature - temp) * log_mass_transfer / mass_transfer;   // The heat transferred from air to fuel
+                const T air_heat_transfer = 2. * M_PI * fuel_vapour_pressure * (local_flow_value.temp - temp) * log_mass_transfer / mass_transfer;   // The heat transferred from air to fuel
                 const T evaporation_heat  = mass_delta * latent_heat;                                                                       // The heat absorbed through evaporation
                 const T temp_delta        = (air_heat_transfer - evaporation_heat) / (specific_heat * mass);                                // Temperature change of the droplet's surface
 
@@ -326,18 +330,19 @@ namespace minicombust::particles
                 mass     = mass - mass_delta * delta;
                 diameter = sqrt(diameter * diameter  - evaporation_constant * delta);
 
+                // Store particle fields
+                particle_cell_fields = {mass * v1 * delta, (air_heat_transfer - evaporation_heat) * delta, mass_delta * delta};
 
-                mesh->evaporated_fuel_mass_rate[cell] += mass_delta * delta;                             // Do we need to worry about the if the particle is vaporized
-                mesh->particle_energy_rate[cell]      += (air_heat_transfer - evaporation_heat) * delta;
-                mesh->particle_momentum_rate[cell]    += mass * v1 * delta;
+
 
                 decayed = (mass < 0 || temp > critical_temp);
+
 
                 // cout << endl << "Particle Drag Effects" << endl;
                 // cout << "\ta                     "     << print_vec(a1)     << endl;
                 // cout << "\tvel1                  "     << print_vec(v1)     << endl;
                 // cout << "\tcell                  "     << cell     << endl;
-                // cout << "\tgas_vel               "     << print_vec(gas_vel)     << endl;
+                // cout << "\tlocal_flow_value.vel               "     << print_vec(local_flow_value.vel)     << endl;
                 // cout << "\trelative_drop_acc     "     << print_vec(relative_drop_acc)     << endl;
                 // cout << "\trelative_drop_vel     "     << print_vec(relative_drop_vel)     << endl;
                 // cout << "\trelative_drop_vel_mag "  << relative_drop_vel_mag << endl;
@@ -357,7 +362,7 @@ namespace minicombust::particles
 
 
                 // cout << "\ttemp                  "  << temp << endl;
-                // cout << "\tgas_temperature       "  << gas_temperature << endl;
+                // cout << "\tlocal_flow_value.temp       "  << local_flow_value.temp << endl;
                 // cout << "\tfuel_vapour_pressure  "  << fuel_vapour_pressure << endl;
                 // cout << "\tair_pressure          "  << air_pressure << endl;
                 // cout << "\tpressure_relation     "  << pressure_relation << endl;
@@ -426,7 +431,7 @@ namespace minicombust::particles
                         velocity2 = velocity2 - dot_product(velocity2, unit_rel_velocity) * unit_rel_velocity; 
 
                         
-                        particles.push_back(Particle<T>(mesh, x1, velocity2 * length + v1, a1, mass2, temp, diameter2, cell));
+                        particles.push_back(Particle<T>(x1 + (velocity2 * length + v1 * delta), velocity2 * length + v1, a1, mass2, temp, diameter2, cell));
 
                         // Update parent to droplet1;
                         v1  += velocity1 * length;
@@ -451,6 +456,9 @@ namespace minicombust::particles
                     logger->decayed_particles++;
                     logger->burnt_particles++;
                 }
+
+
+                x1 = x1 + v1 * delta;
             }
 
     }; // class Particle

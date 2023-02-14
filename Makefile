@@ -1,9 +1,9 @@
 ## Compilers and Flags
-#CC := g++ 
-CC := icpc 
-#CC := CC 
-#CFLAGS := -g -Wall -std=c++17 -O3 -march=native -Wno-unknown-pragmas
-CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
+CC := CC 
+#CC := mpic++ 
+CFLAGS := -g -Wall -Wextra -std=c++20 -O3 -march=native -Wno-unknown-pragmas 
+#CFLAGS := -g -Wall -Wextra -std=c++17 -O3 -Wno-unknown-pragmas 
+#CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
 LIB := -Lbuild/
 INC := -Iinclude/
 
@@ -25,7 +25,15 @@ OBJECTS := $(patsubst $(SRC)/%,build/%,$(SOURCES:.cpp=.o))
 
 all: $(EXE) $(TEST_EXE)
 
+notest: $(EXE)
+
 $(EXE): $(OBJECTS)
+	$(CC) $(CFLAGS) $(INC) $(SRC)/minicombust.cpp -c -o build/minicombust.o 
+	@echo ""
+	@echo "Linking..."
+	$(CC) $(LIB) $^ build/minicombust.o -o $(EXE) 
+
+$(TEST_EXE): $(OBJECTS)
 	$(CC) $(CFLAGS) $(INC) $(SRC)/minicombust.cpp -c -o build/minicombust.o 
 	$(CC) $(CFLAGS) $(INC) $(TESTS)/minicombust_tests.cpp -c -o build/minicombust_tests.o 
 	@echo ""
