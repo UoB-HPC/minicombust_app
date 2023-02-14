@@ -447,13 +447,13 @@ namespace minicombust::flow
         if (timestep_count++ == 1499)
         {
 
-            printf("Rank %d Time 0: %.2f\n", mpi_config->rank, time0);
-            printf("Rank %d Time 1: %.2f\n", mpi_config->rank, time1);
-            printf("Rank %d Time 2: %.2f\n", mpi_config->rank, time2);
+            // printf("Rank %d Time 0: %.2f\n", mpi_config->rank, time0);
+            // printf("Rank %d Time 1: %.2f\n", mpi_config->rank, time1);
+            // printf("Rank %d Time 2: %.2f\n", mpi_config->rank, time2);
 
-            printf("Rank %d RECV Time 1: %.2f\n", mpi_config->rank, recv_time1);
-            printf("Rank %d RECV Time 2: %.2f\n", mpi_config->rank, recv_time2);
-            printf("Rank %d RECV Time 3: %.2f\n", mpi_config->rank, recv_time3);
+            // printf("Rank %d RECV Time 1: %.2f\n", mpi_config->rank, recv_time1);
+            // printf("Rank %d RECV Time 2: %.2f\n", mpi_config->rank, recv_time2);
+            // printf("Rank %d RECV Time 3: %.2f\n", mpi_config->rank, recv_time3);
 
             if ( mpi_config->particle_flow_rank == 0 )
             {

@@ -19,6 +19,8 @@ for k in kernels:
     weak_particles_dfs[k] = pd.read_csv("results/tx2-weak_mesh-%dnodes-%dppn-%dparticles-%s.log" % (int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), k), delim_whitespace=True)
     weak_particles_dfs[k].set_index("cells", inplace=True)
 
+weak_particles_dfs["updated_flow_field"] = weak_particles_dfs["minicombust"] - (weak_particles_dfs["particle_interpolation_data"] + weak_particles_dfs["solve_spray_equations"] + weak_particles_dfs["update_particle_positions"] + weak_particles_dfs["emitted_particles"])
+
 
 # Reorganise dataframes into fields
 # plot kernels against each other, for each field
@@ -32,7 +34,7 @@ for field in fields:
         weak_particles_field_df[-1].insert(1, k, weak_particles_dfs[k][field])
     weak_particles_field_df[-1].drop(columns=fields, inplace=True)
     
-    ax  = weak_particles_field_df[-1].plot.line(title="weak mesh scaling: " + field, style='.-')
+    ax  = weak_particles_field_df[-1].plot.line(title="weak mesh scaling: %d PPI (%d node) " % (int(sys.argv[3]), int(sys.argv[1])), style='.-')
     lgd = ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
     ax.set_ylabel(field)
     plt.suptitle("%dnodes-%dppn-%dparticles" % (int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])), y=1.05, fontsize=18)

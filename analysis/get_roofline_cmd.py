@@ -17,7 +17,7 @@ times            = []
 kernel_counters  = {}
 
 for proc in range(int(sys.argv[-1])):
-    perf_file = open("out/performance_rank" + str(proc) + "_" + sys.argv[-1]+".csv", 'r')
+    perf_file = open("out/performance/performance_rank" + str(proc) + "_" + sys.argv[-1]+".csv", 'r')
 
     read_header = False
     for line in perf_file:

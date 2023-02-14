@@ -102,7 +102,7 @@ namespace minicombust::geometry
             uint64_t *particles_per_point; // Number of particles in each cell
 
             // Flow source terms
-            const vec<T> dummy_gas_vel = {12., 0.01, 0.01};
+            const vec<T> dummy_gas_vel = {12., 0.00, 0.00};
             const T      dummy_gas_pre = 4000.;
             const T      dummy_gas_tem = 2000.;
             const flow_aos<T> dummy_flow_field      = {dummy_gas_vel, dummy_gas_pre, dummy_gas_tem};
@@ -164,6 +164,20 @@ namespace minicombust::geometry
                     #pragma ivdep
                     for (uint64_t c = 0; c < local_mesh_size; c++)
                     {
+                        // T p = 0.25;
+                        // vec<T> rand_vel      = vec<T> { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
+                        // T      rand_pressure = rand() / RAND_MAX ;
+                        // T      rand_temp     = rand() / RAND_MAX ;
+
+                        // flow_aos<T> rand_flow;
+                        // rand_flow.vel      =  dummy_flow_field.vel      * ((1. - p) + 2. * rand_vel      * p) ;
+                        // rand_flow.pressure =  dummy_flow_field.pressure * ((1. - p) + 2. * rand_pressure * p) ;
+                        // rand_flow.temp     =  dummy_flow_field.temp     * ((1. - p) + 2. * rand_temp     * p) ;
+
+                        // rand_flow.vel.x = 100. * (points[cells[c*cell_size - shmem_cell_disp] - shmem_point_disp].x) ;
+                        // // printf ("%f %f\n", points[cells[c*cell_size - shmem_cell_disp] - shmem_point_disp].x, rand_flow.vel.x);
+
+                        // flow_terms[c]      = rand_flow;
                         flow_terms[c]      = dummy_flow_field;
                         flow_grad_terms[c] = dummy_flow_field_grad;
                     }

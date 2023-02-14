@@ -171,22 +171,22 @@ namespace minicombust::visit
                 vtk_file << endl;
 
                 vtk_file << endl << "POINT_DATA " << particles.size() << endl;
-                vtk_file << "SCALARS rank float" << endl;
-                vtk_file << "LOOKUP_TABLE default" << endl;
-                for(uint64_t p = 0; p < particles.size(); p++)
-                {
-                    vtk_file << (float)mpi_config->rank << "\t";
-                } 
-                vtk_file << endl;
-
-
-                // vtk_file << "SCALARS temp float" << endl;
+                // vtk_file << "SCALARS rank float" << endl;
                 // vtk_file << "LOOKUP_TABLE default" << endl;
                 // for(uint64_t p = 0; p < particles.size(); p++)
                 // {
-                //     vtk_file << particles[p].temp << "\t";
+                //     vtk_file << (float)mpi_config->rank << "\t";
                 // } 
                 // vtk_file << endl;
+
+
+                vtk_file << "SCALARS temp float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t p = 0; p < particles.size(); p++)
+                {
+                    vtk_file << particles[p].temp << "\t";
+                } 
+                vtk_file << endl;
 
                 // vtk_file << "SCALARS mass float" << endl;
                 // vtk_file << "LOOKUP_TABLE default" << endl;
