@@ -559,7 +559,7 @@ namespace minicombust::flow
             
             MPI_Barrier (mpi_config->particle_flow_world);
 
-            printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(loggers[mpi_config->particle_flow_rank].recieved_cells / timesteps), round(loggers[mpi_config->particle_flow_rank].sent_nodes / timesteps));
+            // printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(loggers[mpi_config->particle_flow_rank].recieved_cells / timesteps), round(loggers[mpi_config->particle_flow_rank].sent_nodes / timesteps));
 
             // MPI_Barrier (mpi_config->particle_flow_world);
             cout << endl;
@@ -567,7 +567,7 @@ namespace minicombust::flow
         else
         {
             MPI_Barrier (mpi_config->particle_flow_world);
-            printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(logger.recieved_cells / timesteps), round(logger.sent_nodes / timesteps));
+            // printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(logger.recieved_cells / timesteps), round(logger.sent_nodes / timesteps));
             // MPI_Barrier (mpi_config->particle_flow_world);
         }
 

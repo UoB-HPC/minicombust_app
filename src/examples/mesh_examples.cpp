@@ -252,35 +252,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     // const uint64_t num_points = (points_per_dim.z + block_dim.z - 1) * (points_per_dim.y + block_dim.y - 1) * (points_per_dim.x + block_dim.x - 1);   
     const uint64_t num_points = points_per_dim.z * points_per_dim.y * points_per_dim.x;   
     
-    if ( mpi_config->rank == 0 )
-    {
-        printf("\nMesh dimensions\n");
-        cout << "\tReal dimensions (m)   : " << print_vec(mesh_dim)         << endl;
-        cout << "\tTotal cells           : " << num_cubes                   << endl;
-        cout << "\tTotal points          : " << num_points                  << endl;
-        cout << "\tElement dimensions    : " << print_vec(elements_per_dim) << endl;
-        cout << "\tFlow block dimensions : " << print_vec(block_dim)        << endl;
-        cout << "\tFlow blocks           : " << num_blocks                  << endl;
-        for (int i = 0; i < 3; i++) 
-        {   
-            cout << "\tBlock displacement " << dim_chars[i] << "  : ";
-            for (uint64_t b = 0; b < block_dim[i] + 1; b++)
-                cout << flow_block_displacements[i][b] << " ";
-            cout << endl;
-        }
-        cout << "\tIdle flow ranks       : " << flow_ranks - num_blocks << endl;
-    }
-
-    MPI_Barrier(mpi_config->world);
-    if (mpi_config->solver_type == FLOW && (uint64_t)mpi_config->particle_flow_rank < num_blocks )
-        printf( "\tFlow %5d dimensons : %lu %lu %lu\n", mpi_config->particle_flow_rank, flow_block_element_sizes[0][mpi_config->particle_flow_rank % block_dim.x], 
-                                                                                        flow_block_element_sizes[1][(mpi_config->particle_flow_rank / block_dim.x) % block_dim.y],
-                                                                                        flow_block_element_sizes[2][mpi_config->particle_flow_rank / (block_dim.x * block_dim.y)]);
-    MPI_Barrier(mpi_config->world);
-
-
-
-    uint64_t *block_element_disp = (uint64_t *) malloc( (flow_ranks+1) * sizeof(uint64_t) ); 
+        uint64_t *block_element_disp = (uint64_t *) malloc( (flow_ranks+1) * sizeof(uint64_t) ); 
     uint64_t *block_point_disps  = (uint64_t *) malloc( (flow_ranks+1) * sizeof(uint64_t) ); 
     uint64_t cell_displacement  = 0; 
     uint64_t point_displacement = 0; 
@@ -301,6 +273,37 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
             }
         }
     }
+
+    if ( mpi_config->rank == 0 )
+    {
+        printf("\nMesh dimensions\n");
+        cout << "\tReal dimensions (m)   : " << print_vec(mesh_dim)         << endl;
+        cout << "\tTotal cells           : " << num_cubes                   << endl;
+        cout << "\tTotal points          : " << num_points                  << endl;
+        cout << "\tElement dimensions    : " << print_vec(elements_per_dim) << endl;
+        cout << "\tFlow block dimensions : " << print_vec(block_dim)        << endl;
+        cout << "\tFlow blocks           : " << num_blocks                  << endl;
+
+        vec<uint64_t> average_block_size = { 0, 0, 0 };
+        for (int i = 0; i < 3; i++) 
+        {   
+            cout << "\tBlock displacement " << dim_chars[i] << "  : ";
+            for (uint64_t b = 0; b < block_dim[i] + 1; b++)
+                cout << flow_block_displacements[i][b] << " ";
+
+            for (uint64_t b = 0; b < block_dim[i]; b++)
+                average_block_size[i] = average_block_size[i] + flow_block_element_sizes[i][b];
+
+            average_block_size[i] = average_block_size[i] / block_dim[i];
+            cout << endl;
+        }
+
+        printf( "\tAvg Flow dimensons    : %lu %lu %lu (%lu cells)\n", average_block_size.x,  average_block_size.y,  average_block_size.z,
+                                                                       average_block_size.x * average_block_size.y * average_block_size.z );
+
+        cout << "\tIdle flow ranks       : " << flow_ranks - num_blocks << endl;
+    }
+
 
     MPI_Comm_split_type ( mpi_config->world, MPI_COMM_TYPE_SHARED, mpi_config->rank, MPI_INFO_NULL, &mpi_config->node_world );
     MPI_Comm_rank (mpi_config->node_world,  &mpi_config->node_rank);
