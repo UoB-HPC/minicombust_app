@@ -60,9 +60,6 @@ namespace minicombust::flow
                 }
             }
 
-            
-
-
             // Get 6 immediate neighbours
             const uint64_t below_neighbour                = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + DOWN_FACE];
             const uint64_t above_neighbour                = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + UP_FACE];
@@ -476,6 +473,17 @@ namespace minicombust::flow
             }
         }
     } 
+
+    template<typename T> void FlowSolver<T>::setup_sparse_matrix()
+    {
+        if (FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0) printf("\tRunning function setup_sparse_matrix.\n");
+    }
+
+    template<typename T> void FlowSolver<T>::setup_sparse_matrices()
+    {
+        if (FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0) printf("\tRunning function setup_sparse_matrices.\n");
+        
+    }
     
     template<typename T> void FlowSolver<T>::solve_combustion_equations()
     {

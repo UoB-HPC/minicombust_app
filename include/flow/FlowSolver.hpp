@@ -347,7 +347,10 @@ namespace minicombust::flow
             void interpolate_to_nodes();
 
             void update_flow_field();  // Synchronize point with flow solver
-            
+
+            void setup_sparse_matrix ();
+            void setup_sparse_matrices ();
+
             void solve_combustion_equations();
             void update_combustion_fields();
 
