@@ -215,7 +215,6 @@ namespace minicombust::flow
         }
     }
 
-    
     template<typename T> void FlowSolver<T>::update_flow_field()
     {
         
@@ -477,6 +476,8 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::setup_sparse_matrix()
     {
         if (FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0) printf("\tRunning function setup_sparse_matrix.\n");
+
+        
     }
 
     template<typename T> void FlowSolver<T>::setup_sparse_matrices()

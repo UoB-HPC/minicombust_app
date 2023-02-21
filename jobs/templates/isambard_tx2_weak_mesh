@@ -23,7 +23,7 @@ do
     ACTUAL_MESH_SIZE=$(( 2*$MESH*$MESH*$MESH ))
     echo "Running $MESH mesh experiment with $ACTUAL_MESH_SIZE cells"
     module unload cray-python/3.8.5.1
-    aprun -n MC_PROCS -N MC_PPN ./bin/minicombust $(( 3 * MC_PROCS / 4 )) MC_PARTICLES $MESH -1
+    aprun -n MC_PROCS -N MC_PPN ./bin/minicombust $(( 1 * MC_PROCS / 16 )) MC_PARTICLES $MESH -1
     module load cray-python/3.8.5.1
 
     echo "Running: python analysis/get_roofline_cmd.py TX2 MC_ROOFLINE MC_PPN | tee /tmp/roofline.log"

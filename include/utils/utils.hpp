@@ -144,6 +144,15 @@ namespace minicombust::utils
         T fuel          = 0.0;
     };
 
+    template <typename T>
+    struct phi_vector
+    {
+        T *U;
+        T *V;
+        T *W;
+        T *P;
+    };
+
     template<typename T>
     inline bool vec_nequal(const vec<T> lhs, const vec<T> rhs)
     {

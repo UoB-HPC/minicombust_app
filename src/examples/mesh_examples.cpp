@@ -452,8 +452,8 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
 
     // Create array of faces, each face is a pointer to two neighbouring cells.
     uint64_t faces_size = 0;
-    Face     *faces      = nullptr;
-    uint64_t *cell_faces = nullptr;
+    Face<uint64_t> *faces      = nullptr;
+    uint64_t       *cell_faces = nullptr;
     if ( mpi_config->solver_type == FLOW )
     {
         vec<uint64_t> local_flow_dim = vec<uint64_t> { flow_block_element_sizes[0][mpi_config->particle_flow_rank % block_dim.x], 
@@ -466,7 +466,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
         const uint64_t local_flow_size = local_flow_dim.x * local_flow_dim.y * local_flow_dim.z;
 
         faces_size = (local_flow_dim.x + 1)*local_flow_dim.y*local_flow_dim.z + (local_flow_dim.y + 1)*local_flow_dim.x*local_flow_dim.z + (local_flow_dim.z + 1)*local_flow_dim.x*local_flow_dim.y;
-        faces      = (Face *)    malloc(faces_size * sizeof(Face));                        // Faces  = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...}; 
+        faces      = (Face<uint64_t> *)    malloc(faces_size * sizeof(Face<uint64_t>));                        // Faces  = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...}; 
         cell_faces = (uint64_t *)malloc(local_flow_size * faces_per_cell * sizeof(uint64_t));  // Cfaces = {f0, f1, f2, f3, f4, f5, f1, f2, f4, f5}; 
         // printf("faces size %lu cell_faces size %lu disp %lu \n", faces_size, local_flow_size * faces_per_cell, cell_shmem_disp);
 
@@ -481,7 +481,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                 
                 if ( face_indexes[ (cell - cell_block_disp) * faces_per_cell + f_id ] == -1 )
                 {  
-                    faces [face_count] = Face ( cell, face_neighbour_cell );
+                    faces [face_count] = Face<uint64_t> ( cell, face_neighbour_cell );
 
                     if ( face_neighbour_cell >= block_element_disp[mpi_config->particle_flow_rank] && face_neighbour_cell < block_element_disp[mpi_config->particle_flow_rank+1] )
                             face_indexes[ (face_neighbour_cell - cell_block_disp) * faces_per_cell + (f_id ^ 1) ] = face_count;
