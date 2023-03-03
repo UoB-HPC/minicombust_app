@@ -2,14 +2,22 @@
 
 #include "utils/utils.hpp"
 
+#include <Eigen/SparseCore>
+#include <Eigen/Dense>
+#include <Eigen/IterativeLinearSolvers>
+
 namespace minicombust::flow 
 {
     template<class T>
     class FlowSolver 
     {
+        using Eigen::RowMajor;
+
         private:
 
             Mesh<T> *mesh;
+
+            double delta;
 
             vector<uint64_t *>        neighbour_indexes;
             vector<particle_aos<T> *> cell_particle_aos;
@@ -35,11 +43,26 @@ namespace minicombust::flow
             uint64_t        **recv_indexes;        
             particle_aos<T> **recv_indexed_fields; 
 
-            Face<T> *face_fields;
-            T             *result_array;
-            phi_vector<T>  A_terms;
-            phi_vector<T>  phi_terms;
-            phi_vector<T>  source_phi_terms;
+            Face<T>       *face_fields;
+            T             *face_mass_fluxes;
+            T             *face_areas;
+            T             *face_lambdas;
+            T             *face_rlencos;
+            vec<T>        *face_normals;
+            vec<T>        *face_centers;
+            T             *residual;
+            phi_vector<T>  A_phi;
+            phi_vector<T>  phi;
+            phi_vector<T>  old_phi;
+            phi_vector<T>  S_phi;
+            phi_vector<vec<T>> phi_grad;
+            Eigen::SparseMatrix<T, RowMajor> A_spmatrix;
+            Eigen::BiCGSTAB<Eigen::SparseMatrix<T>> eigen_solver;
+
+            T effective_viscosity;
+
+            T *cell_densities;
+            T *cell_volumes;
 
             vector<int> ranks;
             int      *elements;
@@ -69,8 +92,18 @@ namespace minicombust::flow
             size_t send_buffers_node_flow_array_size;
 
             size_t face_field_array_size;
+            size_t face_mass_fluxes_array_size;
+            size_t face_areas_array_size;
+            size_t face_centers_array_size;
+            size_t face_lambdas_array_size;
+            size_t face_rlencos_array_size;
+            size_t face_normals_array_size;
             size_t phi_array_size;
+            size_t phi_grad_array_size;
             size_t source_phi_array_size;
+            
+            size_t density_array_size;
+            size_t volume_array_size;
 
             uint64_t max_storage;
 
@@ -78,10 +111,12 @@ namespace minicombust::flow
 
             const MPI_Status empty_mpi_status = { 0, 0, 0, 0, 0};
 
-            FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh) : mesh(mesh), mpi_config(mpi_config)
+            FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh, double delta) : mesh(mesh), delta(delta), mpi_config(mpi_config)
             {
+                if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Entered FlowSolver constructor.\n", mpi_config->particle_flow_rank);
+                
                 const float fraction  = 0.125;
-                max_storage           = fraction * mesh->local_mesh_size;
+                max_storage           = max((uint64_t)(fraction * mesh->local_mesh_size), 1UL);
 
                 int particle_ranks = mpi_config->world_size - mpi_config->particle_flow_world_size;
 
@@ -120,46 +155,185 @@ namespace minicombust::flow
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
 
                 // Allocate face data
-                face_field_array_size = mesh->faces_size * sizeof(Face<T>);
-                face_fields = (Face<T> *) malloc(face_field_array_size);
+                face_field_array_size       = mesh->faces_size * sizeof(Face<T>);
+                face_centers_array_size     = mesh->faces_size * sizeof(vec<T>);
+                face_normals_array_size     = mesh->faces_size * sizeof(vec<T>);
+                face_mass_fluxes_array_size = mesh->faces_size * sizeof(T);
+                face_areas_array_size       = mesh->faces_size * sizeof(T);
+                face_lambdas_array_size     = mesh->faces_size * sizeof(T);
+                face_rlencos_array_size     = mesh->faces_size * sizeof(T);
+
+                face_fields      = (Face<T> *) malloc( face_field_array_size       );
+                face_centers     = (vec<T>  *) malloc( face_centers_array_size     );
+                face_normals     = (vec<T>  *) malloc( face_normals_array_size     );
+                face_mass_fluxes = (T *)       malloc( face_mass_fluxes_array_size );       
+                face_areas       = (T *)       malloc( face_areas_array_size       ); 
+                face_lambdas     = (T *)       malloc( face_lambdas_array_size     );   
+                face_rlencos     = (T *)       malloc( face_rlencos_array_size     );   
 
                 uint64_t nboundaries = 1;
                 phi_array_size        = (mesh->local_mesh_size + nboundaries) * sizeof(T);
+                phi_grad_array_size   = (mesh->local_mesh_size + nboundaries) * sizeof(vec<T>);
                 source_phi_array_size =  mesh->local_mesh_size                * sizeof(T);
-                phi_terms.U           = (T *)malloc(phi_array_size);
-                phi_terms.V           = (T *)malloc(phi_array_size);
-                phi_terms.W           = (T *)malloc(phi_array_size);
-                phi_terms.P           = (T *)malloc(phi_array_size);
-                A_terms.U             = (T *)malloc(source_phi_array_size);
-                A_terms.V             = (T *)malloc(source_phi_array_size);
-                A_terms.W             = (T *)malloc(source_phi_array_size);
-                A_terms.P             = (T *)malloc(source_phi_array_size);
-                source_phi_terms.U    = (T *)malloc(source_phi_array_size);
-                source_phi_terms.V    = (T *)malloc(source_phi_array_size);
-                source_phi_terms.W    = (T *)malloc(source_phi_array_size);
-                source_phi_terms.P    = (T *)malloc(source_phi_array_size);
-                result_array          = (T *)malloc(source_phi_array_size);
+                phi.U           = (T *)malloc(phi_array_size);
+                phi.V           = (T *)malloc(phi_array_size);
+                phi.W           = (T *)malloc(phi_array_size);
+                phi.P           = (T *)malloc(phi_array_size);
+                old_phi.U       = (T *)malloc(phi_array_size);
+                old_phi.V       = (T *)malloc(phi_array_size);
+                old_phi.W       = (T *)malloc(phi_array_size);
+                old_phi.P       = (T *)malloc(phi_array_size);
+                phi_grad.U      = (vec<T> *)malloc(phi_grad_array_size);
+                phi_grad.V      = (vec<T> *)malloc(phi_grad_array_size);
+                phi_grad.W      = (vec<T> *)malloc(phi_grad_array_size);
+                phi_grad.P      = (vec<T> *)malloc(phi_grad_array_size);
+                A_phi.U         = (T *)malloc(source_phi_array_size);
+                A_phi.V         = (T *)malloc(source_phi_array_size);
+                A_phi.W         = (T *)malloc(source_phi_array_size);
+                A_phi.P         = (T *)malloc(source_phi_array_size);
+                S_phi.U         = (T *)malloc(source_phi_array_size);
+                S_phi.V         = (T *)malloc(source_phi_array_size);
+                S_phi.W         = (T *)malloc(source_phi_array_size);
+                S_phi.P         = (T *)malloc(source_phi_array_size);
+                residual        = (T *)malloc(source_phi_array_size);
+
+                density_array_size = mesh->local_mesh_size * sizeof(T);
+                volume_array_size  = mesh->local_mesh_size * sizeof(T);
+                cell_densities     = (T *)malloc(density_array_size);
+                cell_volumes       = (T *)malloc(volume_array_size);
+
+                if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up face data.\n", mpi_config->particle_flow_rank);
 
 
-                send_requests.push_back( MPI_REQUEST_NULL );
-                send_requests.push_back( MPI_REQUEST_NULL );
-                recv_requests.push_back( MPI_REQUEST_NULL );
-                recv_requests.push_back( MPI_REQUEST_NULL );
-                statuses.push_back( empty_mpi_status );
+                #pragma ivdep
+                for ( uint64_t face = 0; face < mesh->faces_size; face++ )  
+                {
+                    uint64_t cell0 = mesh->faces[face].cell0 - mesh->shmem_cell_disp;
+                    uint64_t cell1 = mesh->faces[face].cell1 - mesh->shmem_cell_disp;
+
+                    if ( mesh->faces[face].cell1 == MESH_BOUNDARY )  continue;
+
+                    uint64_t *cell_nodes0 = &mesh->cells[cell0 * mesh->cell_size];
+                    uint64_t *cell_nodes1 = &mesh->cells[cell1 * mesh->cell_size];
+
+                    uint64_t node_count = 0;
+                    uint64_t face_node_ids[4];
+                    vec<T>  *face_nodes[4];
+                    for ( uint64_t n0 = 0; n0 < mesh->cell_size; n0++ )
+                    {
+                        for ( uint64_t n1 = 0; n1 < mesh->cell_size; n1++ )
+                        {
+                            if ( cell_nodes0[n0] == cell_nodes1[n1] )
+                                face_node_ids[node_count++] = cell_nodes0[n0];
+                        }
+                    }
+
+                    face_nodes[0] = &mesh->points[face_node_ids[0] - mesh->shmem_point_disp];
+                    face_nodes[1] = &mesh->points[face_node_ids[1] - mesh->shmem_point_disp];
+                    face_nodes[2] = &mesh->points[face_node_ids[2] - mesh->shmem_point_disp];
+                    face_nodes[3] = &mesh->points[face_node_ids[3] - mesh->shmem_point_disp];
+
+                    vec<T> cell0_cell1_vec = mesh->cell_centers[cell1] - mesh->cell_centers[cell0];
+                    
+                    face_mass_fluxes[face] = 0.0;
+                    face_areas[face]       = magnitude(*face_nodes[2] - *face_nodes[0]) * magnitude(*face_nodes[1] - *face_nodes[0]);
+                    face_centers[face]     = (*face_nodes[0] + *face_nodes[1] + *face_nodes[2] + *face_nodes[3]) / 4.0;
+                    face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[cell0]) / magnitude(cell0_cell1_vec) ;
+                    face_normals[face]     = normalise(cross_product(*face_nodes[2] - *face_nodes[0], *face_nodes[1] - *face_nodes[0])); 
+                    face_rlencos[face]     = face_areas[face] / magnitude(cell0_cell1_vec) / vector_cosangle(face_normals[face], cell0_cell1_vec);
+                }
+
+                const T visc_lambda = 0.001;  
+                effective_viscosity = visc_lambda; // NOTE: Localise this to cells and boundaries when implementing Turbulence model
+
+                if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up cell data.\n", mpi_config->particle_flow_rank);
+
+                #pragma ivdep
+                for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
+                {
+                    const uint64_t shmem_cell = block_cell + mesh->local_cells_disp - mesh->shmem_cell_disp;
+                    const uint64_t *cell_nodes = &mesh->cells[shmem_cell * mesh->cell_size];
+
+                    A_phi.U[block_cell]   = mesh->dummy_gas_vel.x;
+                    A_phi.V[block_cell]   = mesh->dummy_gas_vel.y;
+                    A_phi.W[block_cell]   = mesh->dummy_gas_vel.z;
+
+                    phi.U[block_cell]     = mesh->dummy_gas_vel.x;
+                    phi.V[block_cell]     = mesh->dummy_gas_vel.y;
+                    phi.W[block_cell]     = mesh->dummy_gas_vel.z;
+
+                    old_phi.U[block_cell] = mesh->dummy_gas_vel.x;
+                    old_phi.V[block_cell] = mesh->dummy_gas_vel.y;
+                    old_phi.W[block_cell] = mesh->dummy_gas_vel.z;
+
+                    cell_densities[block_cell] = 1.2;
+
+                    const T width   = cell_nodes[B_VERTEX] - cell_nodes[A_VERTEX];
+                    const T height  = cell_nodes[C_VERTEX] - cell_nodes[A_VERTEX];
+                    const T length  = cell_nodes[E_VERTEX] - cell_nodes[A_VERTEX];
+                    cell_volumes[block_cell] = width * height * length;
+
+                    for ( uint64_t f = 0; f < mesh->faces_per_cell; f++ )
+                    {
+                        if ( mesh->cell_neighbours[shmem_cell * mesh->faces_per_cell + f] == MESH_BOUNDARY )
+                        {
+                            const uint64_t face = mesh->cell_faces[block_cell * mesh->faces_per_cell + f];
+
+                            const uint64_t shmem_cell0 = mesh->faces[face].cell0 - mesh->shmem_cell_disp;
+                            const uint64_t shmem_cell1 = mesh->faces[face].cell1 - mesh->shmem_cell_disp;
+
+                            vec<T>  *face_nodes[4];
+                            face_nodes[0] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][0]] - mesh->shmem_point_disp];
+                            face_nodes[1] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][1]] - mesh->shmem_point_disp];
+                            face_nodes[2] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][2]] - mesh->shmem_point_disp];
+                            face_nodes[3] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][3]] - mesh->shmem_point_disp];
+
+                            face_mass_fluxes[face] = 0.0;
+                            face_lambdas[face]     = 1.0;
+                            face_areas[face]       = magnitude(*face_nodes[2] - *face_nodes[0]) * magnitude(*face_nodes[1] - *face_nodes[0]);
+                            face_centers[face]     = (*face_nodes[0] + *face_nodes[1] + *face_nodes[2] + *face_nodes[3]) / 4.0;
+                            face_normals[face]     = normalise(cross_product(*face_nodes[2] - *face_nodes[0], *face_nodes[1] - *face_nodes[0])); 
+
+                            vec<T> cell0_center_vec = mesh->cell_centers[shmem_cell1] - mesh->cell_centers[shmem_cell0];
+                            face_rlencos[face]     = face_areas[face] / magnitude(cell0_center_vec) / vector_cosangle(face_normals[face], cell0_center_vec);
+                        }
+                    }
+                }
+
+                if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
+
+
+                Eigen::SparseMatrix<T, RowMajor> new_matrix( mesh->local_mesh_size, mesh->local_mesh_size + 1 );
+                new_matrix.reserve( mesh->faces_size );
+                A_spmatrix = new_matrix;
+
+                send_requests.push_back ( MPI_REQUEST_NULL );
+                send_requests.push_back ( MPI_REQUEST_NULL );
+                recv_requests.push_back ( MPI_REQUEST_NULL );
+                recv_requests.push_back ( MPI_REQUEST_NULL );
+                statuses.push_back ( empty_mpi_status );
 
                 memset(&logger, 0, sizeof(Flow_Logger));
 
                 // Array sizes
-                
                 uint64_t total_node_index_array_size              = node_index_array_size;
                 uint64_t total_node_flow_array_size               = node_flow_array_size;
                 uint64_t total_send_buffers_node_index_array_size = send_buffers_node_index_array_size;
                 uint64_t total_send_buffers_node_flow_array_size  = send_buffers_node_flow_array_size;
                 uint64_t total_face_field_array_size              = face_field_array_size;
-                uint64_t total_phi_array_size                     = 4 * phi_array_size;
+                uint64_t total_face_centers_array_size            = face_centers_array_size;
+                uint64_t total_face_normals_array_size            = face_normals_array_size;
+                uint64_t total_face_mass_fluxes_array_size        = face_mass_fluxes_array_size;
+                uint64_t total_face_areas_array_size              = face_areas_array_size;
+                uint64_t total_face_lambdas_array_size            = face_lambdas_array_size;
+                uint64_t total_face_rlencos_array_size            = face_rlencos_array_size;
+                uint64_t total_phi_array_size                     = 8 * phi_array_size;
+                uint64_t total_phi_grad_array_size                = 4 * phi_grad_array_size;
                 uint64_t total_source_phi_array_size              = 4 * source_phi_array_size;
                 uint64_t total_A_array_size                       = 4 * source_phi_array_size;
-                uint64_t total_result_array_size                  = source_phi_array_size;
+                uint64_t total_residual_size                      = source_phi_array_size;
+                uint64_t total_volume_array_size                  = volume_array_size;
+                uint64_t total_density_array_size                 = density_array_size;
 
                 // STL sizes
                 uint64_t total_unordered_neighbours_set_size   = unordered_neighbours_set[0].size() * sizeof(uint64_t) ;
@@ -202,10 +376,19 @@ namespace minicombust::flow
                     MPI_Reduce(MPI_IN_PLACE, &total_ranks_size,                             1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_local_particle_node_sets_size,          1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_face_field_array_size,                  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_face_centers_array_size,                1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_face_normals_array_size,                1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_face_mass_fluxes_array_size,            1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_face_areas_array_size,                  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_face_lambdas_array_size,                1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_face_rlencos_array_size,                1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_phi_array_size,                         1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_phi_grad_array_size,                    1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_source_phi_array_size,                  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_A_array_size,                           1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(MPI_IN_PLACE, &total_result_array_size,                      1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_residual_size,                          1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_volume_array_size,                      1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(MPI_IN_PLACE, &total_density_array_size,                     1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
 
                     printf("Flow solver storage requirements (%d processes) : \n", mpi_config->particle_flow_world_size);
@@ -216,10 +399,19 @@ namespace minicombust::flow
                     printf("\ttotal_send_buffers_node_index_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_send_buffers_node_index_array_size / 1000000.0, (float) total_send_buffers_node_index_array_size / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_send_buffers_node_flow_array_size                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_send_buffers_node_flow_array_size  / 1000000.0, (float) total_send_buffers_node_flow_array_size  / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_face_field_array_size                               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_face_field_array_size              / 1000000.0, (float) total_face_field_array_size              / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_face_centers_array_size                             (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_face_centers_array_size            / 1000000.0, (float) total_face_centers_array_size            / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_face_normals_array_size                             (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_face_normals_array_size            / 1000000.0, (float) total_face_normals_array_size            / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_face_mass_fluxes_array_size                         (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_face_mass_fluxes_array_size        / 1000000.0, (float) total_face_mass_fluxes_array_size        / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_face_areas_array_size                               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_face_areas_array_size              / 1000000.0, (float) total_face_areas_array_size              / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_face_lambdas_array_size                             (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_face_lambdas_array_size            / 1000000.0, (float) total_face_lambdas_array_size            / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_face_rlencos_array_size                             (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_face_rlencos_array_size            / 1000000.0, (float) total_face_rlencos_array_size            / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_phi_array_size                                      (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_phi_array_size                     / 1000000.0, (float) total_phi_array_size                     / (1000000.0 * mpi_config->particle_flow_world_size));
-                    printf("\ttotal_source_phi_array_size                               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_source_phi_array_size              / 1000000.0, (float) total_source_phi_array_size              / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_phi_grad_array_size                                 (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_phi_grad_array_size                / 1000000.0, (float) total_phi_grad_array_size                / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_S_phi_array_size                                    (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_source_phi_array_size              / 1000000.0, (float) total_source_phi_array_size              / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_A_array_size                                        (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_A_array_size                       / 1000000.0, (float) total_A_array_size                       / (1000000.0 * mpi_config->particle_flow_world_size));
-                    printf("\ttotal_result_array_size                                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_result_array_size                  / 1000000.0, (float) total_result_array_size                  / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_residual_size                                       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_residual_size                      / 1000000.0, (float) total_residual_size                      / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_volume_array_size                                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_volume_array_size                  / 1000000.0, (float) total_volume_array_size                  / (1000000.0 * mpi_config->particle_flow_world_size));
+                    printf("\ttotal_density_array_size                                  (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_density_array_size                 / 1000000.0, (float) total_density_array_size                 / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_unordered_neighbours_set_size       (STL set)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_unordered_neighbours_set_size      / 1000000.0, (float) total_unordered_neighbours_set_size      / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_cell_particle_field_map_size        (STL map)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_cell_particle_field_map_size       / 1000000.0, (float) total_cell_particle_field_map_size       / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_node_to_position_map_size           (STL map)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_node_to_position_map_size          / 1000000.0, (float) total_node_to_position_map_size          / (1000000.0 * mpi_config->particle_flow_world_size));
@@ -250,10 +442,19 @@ namespace minicombust::flow
                     MPI_Reduce(&total_ranks_size,                         nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_local_particle_node_sets_size,      nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_face_field_array_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_face_centers_array_size,            nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_face_normals_array_size,            nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_face_mass_fluxes_array_size,        nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_face_areas_array_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_face_lambdas_array_size,            nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_face_rlencos_array_size,            nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_phi_array_size,                     nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_phi_grad_array_size,                nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_source_phi_array_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_A_array_size,                       nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(&total_result_array_size,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_residual_size,                      nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_volume_array_size,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    MPI_Reduce(&total_density_array_size,                 nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                 }
 
                 MPI_Barrier(mpi_config->world);
@@ -357,9 +558,16 @@ namespace minicombust::flow
                 uint64_t total_send_buffers_node_index_array_size = send_buffers_node_index_array_size;
                 uint64_t total_send_buffers_node_flow_array_size  = send_buffers_node_flow_array_size;
                 uint64_t total_face_field_array_size              = face_field_array_size;
-                uint64_t total_phi_array_size                     = 4 * phi_array_size;
+                uint64_t total_phi_array_size                     = 8 * phi_array_size;
+                uint64_t total_phi_grad_array_size                = 4 * phi_grad_array_size;
                 uint64_t total_source_phi_array_size              = 4 * source_phi_array_size;
 
+                uint64_t total_face_centers_array_size            = face_centers_array_size;
+                uint64_t total_face_normals_array_size            = face_normals_array_size;
+                uint64_t total_face_mass_fluxes_array_size        = face_mass_fluxes_array_size;
+                uint64_t total_face_areas_array_size              = face_areas_array_size;
+                uint64_t total_face_lambdas_array_size            = face_lambdas_array_size;
+                uint64_t total_face_rlencos_array_size            = face_rlencos_array_size;
 
                 uint64_t total_cell_index_array_size    = 0;
                 uint64_t total_cell_particle_array_size = 0;
@@ -371,7 +579,9 @@ namespace minicombust::flow
 
                 return total_cell_index_array_size + total_cell_particle_array_size + total_node_index_array_size + total_node_flow_array_size + 
                        total_send_buffers_node_index_array_size + total_send_buffers_node_flow_array_size + total_face_field_array_size + 
-                       total_phi_array_size + total_source_phi_array_size;
+                       total_phi_array_size + total_source_phi_array_size + total_phi_grad_array_size +
+                       total_face_centers_array_size + total_face_normals_array_size + total_face_mass_fluxes_array_size +
+                       total_face_areas_array_size + total_face_lambdas_array_size + total_face_rlencos_array_size;
             }
 
             size_t get_stl_memory_usage ()
@@ -400,8 +610,11 @@ namespace minicombust::flow
 
             void update_flow_field();  // Synchronize point with flow solver
 
-            void setup_sparse_matrix ();
-            void setup_sparse_matrices ();
+            void setup_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component );
+            void solve_sparse_matrix ( T *A_phi_component, T *phi_component, T *old_phi_component, T *S_phi_component );
+            void calculate_flux_UVW ();
+            void calculate_UVW ();
+            void get_phi_gradient ( T *phi_component, vec<T> *phi_grad_component );
 
             void solve_combustion_equations();
             void update_combustion_fields();

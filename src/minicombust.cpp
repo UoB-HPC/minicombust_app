@@ -98,7 +98,7 @@ int main (int argc, char ** argv)
     }
     else
     {
-        flow_solver     = new FlowSolver<double>(&mpi_config, mesh);
+        flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta);
     }
 
     if (mpi_config.rank == 0)   cout << endl;

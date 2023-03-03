@@ -12,8 +12,9 @@ namespace minicombust::geometry
 {   
     static const uint64_t MESH_BOUNDARY = UINT64_MAX;
 
-    enum FACE_DIRECTIONS { NOFACE_ERROR = -1, FRONT_FACE = 0, BACK_FACE = 1, LEFT_FACE = 2, RIGHT_FACE = 3, DOWN_FACE = 4, UP_FACE = 5};
-    enum CUBE_VERTEXES { A_VERTEX = 0, B_VERTEX = 1, C_VERTEX = 2, D_VERTEX = 3, E_VERTEX = 4, F_VERTEX = 5, G_VERTEX = 6, H_VERTEX = 7};
+    enum FACE_DIRECTIONS  { NOFACE_ERROR = -1, FRONT_FACE = 0, BACK_FACE = 1, LEFT_FACE = 2, RIGHT_FACE = 3, DOWN_FACE = 4, UP_FACE = 5};
+    enum CUBE_VERTEXES    { A_VERTEX = 0, B_VERTEX = 1, C_VERTEX = 2, D_VERTEX = 3, E_VERTEX = 4, F_VERTEX = 5, G_VERTEX = 6, H_VERTEX = 7};
+
 
     static const uint64_t CUBE_FACE_VERTEX_MAP[6][4] = 
     {
@@ -49,18 +50,18 @@ namespace minicombust::geometry
 
             // Calculate the centre point in each cell
             // Computed as the average of all vertex positions
-            void calculate_cell_centres(void) {
+            void calculate_cell_centers(void) {
 
                 for (uint64_t c = 0; c < shmem_mesh_size; ++c) 
                 {
                     // printf("Rank %d calculating cell %lu local_points_disp %lu local_points_size %lu\n", mpi_config->rank, c, local_points_disp, local_points_size);
-                    cell_centres[c] = vec<T>{0.0, 0.0, 0.0};
+                    cell_centers[c] = vec<T>{0.0, 0.0, 0.0};
                     for (uint64_t i = 0; i < cell_size; ++i) 
                     {
                         // printf("Rank %d %lu point index %lu point index real %lu\n", mpi_config->rank, i, cells[c*cell_size + i] - local_points_disp, cells[c*cell_size + i] );
-                        cell_centres[c] += points[cells[c*cell_size + i] - shmem_point_disp];
+                        cell_centers[c] += points[cells[c*cell_size + i] - shmem_point_disp];
                     }
-                    cell_centres[c] /= static_cast<T>(cell_size);
+                    cell_centers[c] /= static_cast<T>(cell_size);
                 }
                 
             }
@@ -87,7 +88,7 @@ namespace minicombust::geometry
             uint64_t *cells;              // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
             Face<uint64_t> *faces;        // Faces          = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...};  TODO: Not needed by particle ranks (25% mesh mem)
             uint64_t *cell_faces;         // Cfaces         = {f0, f1, f2, f3, f4, f5, f1, f2, f4, f5};
-            vec<T> *cell_centres;         // Cell centres   = {{0.5, 3.0, 4.0}, {2.5, 3.0, 4.0}, ...};
+            vec<T> *cell_centers;         // Cell centres   = {{0.5, 3.0, 4.0}, {2.5, 3.0, 4.0}, ...};
             uint64_t *cell_neighbours;    // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}}
             uint8_t *cells_per_point;     // Number of neighbouring cells for each point
 
@@ -192,12 +193,12 @@ namespace minicombust::geometry
                 cell_neighbours_array_size      = shmem_mesh_size * faces_per_cell * sizeof(uint64_t);
 
                 // particles_per_point = (uint64_t *) malloc(particles_per_point_size);
-                // cell_centres        = (vec<T> *)   malloc(cell_centre_size);
+                // cell_centers        = (vec<T> *)   malloc(cell_centre_size);
 
                 MPI_Aint shmem_cell_winsize = cell_centre_size;
-                MPI_Win_allocate_shared ( shmem_cell_winsize, sizeof(vec<double>), MPI_INFO_NULL, mpi_config->node_world, &cell_centres, &mpi_config->win_cell_centres );
+                MPI_Win_allocate_shared ( shmem_cell_winsize, sizeof(vec<double>), MPI_INFO_NULL, mpi_config->node_world, &cell_centers, &mpi_config->win_cell_centers );
 
-                calculate_cell_centres();
+                calculate_cell_centers();
                 MPI_Barrier(mpi_config->world);
 
                 

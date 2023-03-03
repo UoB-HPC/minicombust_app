@@ -302,6 +302,12 @@ namespace minicombust::utils
     }
 
     template<typename T> 
+    inline vec<T> normalise(vec<T> a)
+    {
+        return a / magnitude(a);
+    }
+
+    template<typename T> 
     inline T dot_product(vec<T> a, vec<T> b)
     {
         return a.x*b.x + a.y*b.y + a.z*b.z;
@@ -311,6 +317,20 @@ namespace minicombust::utils
     inline T dot_product(T a, vec<T> b)
     {
         return a*(b.x + b.y + b.z);
+    }
+
+    template<typename T>
+    inline void ptr_swap( T **ptr0, T **ptr1 )
+    {
+        T *ptr_tmp = *ptr0;
+        *ptr0 = *ptr1;
+        *ptr1 = ptr_tmp;
+    }
+
+    template<typename T> 
+    inline T vector_cosangle(vec<T> a, vec<T> b)
+    {
+        return dot_product(a, b) / (magnitude(a) * magnitude(b));
     }
 
     template<typename T> 
@@ -385,6 +405,8 @@ namespace minicombust::utils
         }
     }
 
+    
+
 
 
     struct Particle_Logger {
@@ -435,7 +457,7 @@ namespace minicombust::utils
         MPI_Comm node_world;
 
         MPI_Win win_cells;
-        MPI_Win win_cell_centres;
+        MPI_Win win_cell_centers;
         MPI_Win win_cell_neighbours;
         MPI_Win win_points;
         MPI_Win win_cells_per_point;

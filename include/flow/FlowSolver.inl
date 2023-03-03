@@ -176,11 +176,18 @@ namespace minicombust::flow
             }
             else
             {
-                flow_term      = mesh->flow_terms[displaced_c];      
+                flow_term      = mesh->flow_terms[displaced_c];
+
+                flow_term.vel.x = phi.U[displaced_c];
+                flow_term.vel.y = phi.V[displaced_c];
+                flow_term.vel.z = phi.W[displaced_c];
+
+                printf("flow_term %f %f %f\n", flow_term.vel.x, flow_term.vel.y, flow_term.vel.z);
+
                 flow_grad_term = mesh->flow_grad_terms[displaced_c]; 
             }
 
-            const vec<T> cell_centre         = mesh->cell_centres[c - mesh->shmem_cell_disp];
+            const vec<T> cell_centre         = mesh->cell_centers[c - mesh->shmem_cell_disp];
 
 
             if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      c );
@@ -233,7 +240,7 @@ namespace minicombust::flow
         performance_logger.my_papi_start();
 
         // MPI_Barrier(mpi_config->world);
-        if ( PARTICLE_SOLVER_DEBUG )  printf("\tFlow Rank %d: Completed Barrrier.\n", mpi_config->rank);
+        if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Completed Barrrier.\n", mpi_config->rank);
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
@@ -247,12 +254,20 @@ namespace minicombust::flow
         int message_waiting = 0;
         MPI_Iprobe(MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
 
+        bool  first_time           = true ;
         bool  all_processed        = false;
         bool *processed_neighbours = async_locks;
         while(!all_processed)
         {
             time0 -= MPI_Wtime(); //1
 
+            if (first_time)
+            {
+                // printf("\tFlow Rank %d: Waiting message_waiting %d\n", mpi_config->rank, message_waiting );
+                // first_time = false;
+            }
+
+            // printf("\tFlow Rank %d: Waiting message_waiting %d\n", mpi_config->rank, message_waiting );
             if ( message_waiting )
             {
                 uint64_t rank_slot = ranks.size();
@@ -264,7 +279,7 @@ namespace minicombust::flow
 
                 logger.recieved_cells += elements[rank_slot];
 
-                MPI_Irecv(neighbour_indexes[rank_slot], elements[rank_slot], MPI_UINT64_T,                       ranks[rank_slot], 0, mpi_config->world, &recv_requests[2*rank_slot] );
+                MPI_Irecv(neighbour_indexes[rank_slot], elements[rank_slot], MPI_UINT64_T,                       ranks[rank_slot], 0, mpi_config->world, &recv_requests[2*rank_slot]     );
                 MPI_Irecv(cell_particle_aos[rank_slot], elements[rank_slot], mpi_config->MPI_PARTICLE_STRUCTURE, ranks[rank_slot], 2, mpi_config->world, &recv_requests[2*rank_slot + 1] );
 
                 processed_neighbours[rank_slot] = false;
@@ -319,6 +334,7 @@ namespace minicombust::flow
             MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
 
             if ( FLOW_SOLVER_DEBUG && recvs_complete )  printf("\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
+            // printf("\tFlow block %d: message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
             
             all_processed = all_processed & !message_waiting & recvs_complete;
             time2 += MPI_Wtime(); //1
@@ -326,7 +342,7 @@ namespace minicombust::flow
 
         logger.reduced_recieved_cells += new_cells_set.size();
 
-        if ( FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0 )  printf("\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
+        if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
@@ -473,17 +489,486 @@ namespace minicombust::flow
         }
     } 
 
-    template<typename T> void FlowSolver<T>::setup_sparse_matrix()
+    template<typename T> void FlowSolver<T>::get_phi_gradient ( T *phi_component, vec<T> *phi_grad_component )
     {
-        if (FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0) printf("\tRunning function setup_sparse_matrix.\n");
+        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function get_phi_gradient.\n", mpi_config->rank);
+        // NOTE: Currently Least squares is the only method supported
 
-        
+        Eigen::Matrix3f A;
+        Eigen::Vector3f b;
+        Eigen::Vector3f x;
+
+        for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
+        {
+            const uint64_t cell = block_cell + mesh->local_cells_disp;
+            // vec<T> center      = mesh->cell_centers[real_cell - mesh->shmem_cell_disp];
+
+            A = Eigen::Matrix3f::Zero();
+            b = Eigen::Vector3f::Zero();
+
+            for ( uint64_t f = 0; f < mesh->faces_per_cell; f++ )
+            {
+                const uint64_t face_id = mesh->cell_faces[block_cell * mesh->faces_per_cell + f];
+                const uint64_t cell0   = mesh->faces[face_id].cell0;
+                const uint64_t cell1   = mesh->faces[face_id].cell1;
+
+                if ( cell1 == MESH_BOUNDARY ) continue;
+
+                T dPhi;
+                vec<T> dX;
+                if ( cell0 == cell )
+                {
+                    if ( cell1 - mesh->local_cells_disp > mesh->local_mesh_size ) continue;
+
+                    dPhi = phi_component[cell1      - mesh->local_cells_disp] - phi_component[cell0      - mesh->local_cells_disp];
+                    dX   = mesh->cell_centers[cell1 - mesh->shmem_cell_disp]  - mesh->cell_centers[cell0 - mesh->shmem_cell_disp];
+                }
+                else
+                {
+                    if ( cell0 - mesh->local_cells_disp > mesh->local_mesh_size ) continue;
+                    dPhi = phi_component[cell0      - mesh->local_cells_disp ] - phi_component[cell1      - mesh->local_cells_disp];
+                    dX   = mesh->cell_centers[cell0 - mesh->shmem_cell_disp]   - mesh->cell_centers[cell1 - mesh->shmem_cell_disp];
+                }
+                
+                // 
+                // ADD code for porous cells here!!
+                // 
+
+                A(0,0) = A(0,0) + dX.x * dX.x;
+                A(1,0) = A(1,0) + dX.x * dX.y;
+                A(2,0) = A(2,0) + dX.x * dX.z;
+
+                A(0,1) = A(1,0);
+                A(1,1) = A(1,1) + dX.y * dX.y;
+                A(2,1) = A(2,1) + dX.y * dX.z;
+
+                A(0,2) = A(2,0);
+                A(1,2) = A(2,1);
+                A(2,2) = A(2,2) + dX.x * dX.z;
+
+                b(0) = b(0) + dX.x * dPhi;
+                b(1) = b(1) + dX.y * dPhi;
+                b(2) = b(2) + dX.z * dPhi;
+            }
+
+            // Swap out eigen solve for LAPACK SGESV?
+            // call SGESV( 3, 1, A, 3, IPIV, RHS_A, 3, INFO )
+
+            x = A.partialPivLu().solve(b);
+
+            phi_grad_component[block_cell].x = x(0);
+            phi_grad_component[block_cell].x = x(1);
+            phi_grad_component[block_cell].x = x(2);
+        }
     }
 
-    template<typename T> void FlowSolver<T>::setup_sparse_matrices()
+
+    template<typename T> void FlowSolver<T>::setup_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component )
     {
-        if (FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0) printf("\tRunning function setup_sparse_matrices.\n");
+        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_sparse_matrix.\n", mpi_config->rank);
+
+        T RURF = 1. / URFactor;
+
+        static int timestep = 0;
+        // if ((timestep % 100) == 0)
+        //     printf("Flow Rank %d SpmatrixA before (rows %lu cols %lu nnz %lu) \n", mpi_config->rank, A_spmatrix.rows(), A_spmatrix.cols(), A_spmatrix.nonZeros() );
+
+        #pragma ivdep 
+        for (uint64_t i = 0; i < mesh->local_mesh_size; i++)
+            residual[i] = 0.0;
+
+        uint64_t face_count = 0;
+        for (uint64_t i = 0; i < mesh->local_mesh_size; i++)
+        {
+            T app = A_phi_component[i];
+
+            for (uint64_t f = 0; f < mesh->faces_per_cell; f++)
+            {
+                T face_value = 0.0;
+                uint64_t face_id  = mesh->cell_faces[i * mesh->faces_per_cell + f];
+
+                uint64_t cell0    = mesh->faces[face_id].cell0 - mesh->local_cells_disp;
+                // uint64_t cell1    = mesh->faces[face_id].cell1 - mesh->local_cells_disp;
+                uint64_t cell1    = ( mesh->faces[face_id].cell1 == MESH_BOUNDARY ) ? mesh->local_mesh_size : mesh->faces[face_id].cell1 - mesh->local_cells_disp;
+                
+                // if ( cell1 != MESH_BOUNDARY )
+                // {
+                    if ( cell0 == i )
+                    {
+                        if ( cell1 >= mesh->local_mesh_size ) continue;
+
+                        face_value = face_fields[face_id].cell1;
+
+                        A_spmatrix.coeffRef(i, cell1) = face_value;
+
+                        residual[i] = residual[i] - face_value * phi_component[cell1];
+                        face_count++;
+                    }
+                    else if ( cell1 == i )
+                    {
+                        if ( cell0 >= mesh->local_mesh_size ) continue;
+
+                        face_value = face_fields[face_id].cell0;
+
+                        A_spmatrix.coeffRef(i, cell0) = face_value;
+
+                        residual[i] = residual[i] - face_value * phi_component[cell0];
+                        face_count++;
+                    }
+                    app = app - face_value;
+                // }
+            }
+
+            A_phi_component[i]  = app * RURF;
+            S_phi_component[i]  = S_phi_component[i] + (1.0 - URFactor) * A_phi_component[i] * phi_component[i];
+            
+            A_spmatrix.coeffRef(i, i) = A_phi_component[i];
+            face_count++;
+
+            residual[i] = residual[i] + S_phi_component[i] - A_phi_component[i] * phi_component[i];
+        }
+
+        A_spmatrix.makeCompressed();
+
+        // Questions
+        // 1. What do the diagonal values represent? A cell doesn't have a face with itself with itself?]
+        //      - A[cell, cell] = (A_Phi[cell] - face_value[0:num_faces]) / URFactor
+        // 2. What does A_phi represent? 
+        // 3. What does Res represent?
+
+        if ((timestep % 100) == 0 && mpi_config->particle_flow_rank == 0 && A_spmatrix.nonZeros() < 50 )
+        {
+            printf("\nFlow Rank %d SpmatrixA (rows %lu cols %lu nnz %lu) \n", mpi_config->particle_flow_rank, A_spmatrix.rows(), A_spmatrix.cols(), A_spmatrix.nonZeros() );
+            cout << "A Matrix : " << endl << Eigen::MatrixXd(A_spmatrix) << endl;
+
+            cout << "Phi   : " << endl;
+            for ( uint64_t i = 0; i < mesh->local_mesh_size; i++ )  cout << phi_component[i] << " ";
+            cout << endl;
+
+            cout << "S_phi : " << endl;
+            for ( uint64_t i = 0; i < mesh->local_mesh_size; i++ )  cout << S_phi_component[i] << " ";
+            cout << endl << endl;
+        }
+
+        timestep++;
+
+        // if( face_count /= NNZ ) write(*,*)'+ error: SetUpMatrixA: NNZ =',ia,' =/=',NNZ
+
+        // T res0 = sqrt(sum(dble(abs(Res(1:Ncel)**2)))) * ResiNorm(iVar)
+
+        // !   if( Res0 > 1.e8 ) Res0 = 10.0
+    }
+
+    template<typename T> void FlowSolver<T>::solve_sparse_matrix ( T *A_phi_component, T *phi_component, T *old_phi_component, T *S_phi_component )
+    {
+        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_sparse_matrix.\n", mpi_config->rank);
         
+        Eigen::Map<Eigen::VectorXd>    S_phi_vector(S_phi_component, mesh->local_mesh_size);
+        Eigen::Map<Eigen::VectorXd>      phi_vector(phi_component,   mesh->local_mesh_size + 1);
+        // Eigen::Map<Eigen::VectorXd> phi_grad_vector(phi_component,   mesh->local_mesh_size + 1);
+
+        eigen_solver.compute(A_spmatrix);
+
+        // phi_vector = eigen_solver.solveWithGuess(S_phi_vector, phi_grad_vector);
+        phi_vector = eigen_solver.solve(S_phi_vector);
+
+    }
+
+    template<typename T> void FlowSolver<T>::calculate_flux_UVW()
+    {
+        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_flux_UVW.\n", mpi_config->rank);
+
+        T pe0 =  9999.;
+        T pe1 = -9999.;
+        // TotalForce = 0.0
+
+        T GammaBlend = 0.0; // NOTE: Change when implemented other differencing schemes.
+
+        for ( uint64_t face = 0; face < mesh->faces_size; face++ )
+        {
+            uint64_t cell0 = mesh->faces[face].cell0 - mesh->local_cells_disp;
+            uint64_t cell1 = mesh->faces[face].cell1 - mesh->local_cells_disp;
+
+            if ( cell1 == MESH_BOUNDARY )  continue; // Skip boundary faces.
+            if ( cell0 > mesh->local_mesh_size || cell1 > mesh->local_mesh_size ) continue; // Skip faces between blocks.
+
+            // Also need condition to deal boundary cases
+            T lambda0 = face_lambdas[face];    // dist(cell_center0, face_center) / dist(cell_center0, cell_center1)
+            T lambda1 = 1.0 - lambda0;         // dist(face_center,  cell_center1) / dist(cell_center0, cell_center1)
+
+            // T Uac     = phi.U[cell0] * lambda0 + phi.U[ip] * lambda1;
+            // T Vac     = phi.V[cell0] * lambda0 + phi.V[ip] * lambda1;
+            // T Wac     = phi.W[cell0] * lambda0 + phi.W[ip] * lambda1;
+
+            vec<T> dUdXac  =   phi_grad.U[cell0] * lambda0 + phi_grad.U[cell1] * lambda1;
+            vec<T> dVdXac  =   phi_grad.V[cell0] * lambda0 + phi_grad.V[cell1] * lambda1;
+            vec<T> dWdXac  =   phi_grad.W[cell0] * lambda0 + phi_grad.W[cell1] * lambda1;
+
+            T Visac   = effective_viscosity * lambda0 + effective_viscosity * lambda1;
+            T VisFace = Visac * face_rlencos[face];
+            
+            vec<T> Xpn     = mesh->cell_centers[mesh->faces[face].cell1 - mesh->shmem_cell_disp] - mesh->cell_centers[mesh->faces[face].cell0 - mesh->shmem_cell_disp];
+            
+
+            // NOTE: ADD other differencing schemes. For now we just use Upwind Differencing Scheme (UDS)
+
+            // call SelectDiffSchemeVector(i,iScheme,iP,iN,     &
+            //                             U,V,W,               &
+            //                             dUdX,dVdX,dWdX,      &
+            //                             UFace,VFace,Wface);
+
+            T UFace, VFace, WFace;
+            if ( face_mass_fluxes[face] >= 0.0 )
+            {
+                UFace  = phi.U[cell0];
+                VFace  = phi.V[cell0];
+                WFace  = phi.W[cell0];
+            }
+            else
+            {
+                UFace  = phi.U[cell1];
+                VFace  = phi.V[cell1];
+                WFace  = phi.W[cell1];
+            }
+
+            //
+            // explicit higher order convective flux (see eg. eq. 8.16)
+            //
+
+            T fuce = face_mass_fluxes[face] * UFace;
+            T fvce = face_mass_fluxes[face] * VFace;
+            T fwce = face_mass_fluxes[face] * WFace;
+
+            T sx = face_normals[face].x;
+            T sy = face_normals[face].y;
+            T sz = face_normals[face].z;
+
+            //
+            // explicit higher order diffusive flux based on simple uncorrected
+            // interpolated cell centred gradients(see eg. eq. 8.19)
+            //
+
+            T fude1 = (dUdXac.x+dUdXac.x)*sx + (dUdXac.y+dVdXac.x)*sy + (dUdXac.z+dWdXac.x)*sz;
+            T fvde1 = (dUdXac.y+dVdXac.x)*sx + (dVdXac.y+dVdXac.y)*sy + (dVdXac.z+dWdXac.y)*sz;
+            T fwde1 = (dUdXac.z+dWdXac.x)*sx + (dWdXac.y+dVdXac.z)*sy + (dWdXac.z+dWdXac.z)*sz;
+
+            //
+            // expliciete diffusieve flux/gecorrigeerde diffusie
+            // Jasaks over-relaxed approach (thesis).
+            //
+
+            T fude = Visac * fude1;
+            T fvde = Visac * fvde1;
+            T fwde = Visac * fwde1;
+
+            // !
+            // ! implicit lower order (simple upwind)
+            // ! convective and diffusive fluxes
+            // !
+
+            T fmin = min( face_mass_fluxes[face], 0.0 );
+            T fmax = max( face_mass_fluxes[face], 0.0 );
+
+            T fuci = fmin * phi.U[cell0] + fmax * phi.U[cell1];
+            T fvci = fmin * phi.V[cell0] + fmax * phi.V[cell1];
+            T fwci = fmin * phi.W[cell0] + fmax * phi.W[cell1];
+
+            T fudi = VisFace * dot_product( dUdXac , Xpn );
+            T fvdi = VisFace * dot_product( dVdXac , Xpn );
+            T fwdi = VisFace * dot_product( dWdXac , Xpn );
+
+            // !
+            // ! convective coefficients with deferred correction with
+            // ! gamma as the blending factor (0.0 <= gamma <= 1.0)
+            // !
+            // !      low            high    low  OLD
+            // ! F = F    + gamma ( F     - F    )
+            // !     ----   -------------------------
+            // !      |                  |
+            // !  implicit           explicit (dump into source term)
+            // !
+            // !            diffusion       convection
+            // !                v               v
+            
+            face_fields[face].cell0 = -VisFace - max( face_mass_fluxes[face] , 0.0 );  // P (e);
+            face_fields[face].cell1 = -VisFace + min( face_mass_fluxes[face] , 0.0 );  // N (w);
+
+            T blend_u = GammaBlend * ( fuce - fuci );
+            T blend_v = GammaBlend * ( fvce - fvci );
+            T blend_w = GammaBlend * ( fwce - fwci );
+
+            // !
+            // ! assemble the two source terms
+            // !
+
+            S_phi.U[cell0] = S_phi.U[cell0] - blend_u + fude - fudi;
+            S_phi.U[cell1] = S_phi.U[cell1] + blend_u - fude + fudi;
+
+            S_phi.V[cell0] = S_phi.V[cell0] - blend_v + fvde - fvdi;
+            S_phi.V[cell1] = S_phi.V[cell1] + blend_v - fvde + fvdi;
+
+            S_phi.W[cell0] = S_phi.W[cell0] - blend_w + fwde - fwdi;
+            S_phi.W[cell1] = S_phi.W[cell1] + blend_w - fwde + fwdi;
+
+            const T small_epsilon = 1.e-20;
+            T peclet = face_mass_fluxes[face] / face_areas[face] * magnitude(Xpn) / (Visac+small_epsilon);
+            pe0 = min( pe0 , peclet );
+            pe1 = max( pe1 , peclet );
+        }
+    }
+
+    // integer :: IMoni  =   1          !! monitor cell for pressure ( material 1 )
+    // integer :: Iter   =   0          !! iteration counter
+    // real    :: Time   =   0.0        !! current time (if applicable)
+
+    // real :: Tref      = 273.         !! ref. cell for temperature (material 1)
+    // real :: Pref      =   0.0        !! ref. cell for pressure (material 1)
+
+    // real :: DensRef   =   1.2        !! ref. density <= later lucht op 20C
+    // real :: VisLam    =   0.001      !! lam. viscosity <= later lucht op 20C
+
+    // real :: Prandtl   =   0.6905     !! Prandtl number (air 20C)
+    // real :: Schmidt   =   0.9        !! Schmidt number
+
+    // real :: Sigma_T   =   0.9        !! turb. model coefficient
+    // real :: Sigma_k   =   1.0        !! turbulence diff. coef. factors
+    // real :: Sigma_e   =   1.219      !! ie. turbulent Prandtl numbers
+    // real :: Sigma_s   =   0.9        !! Schmidt number
+
+    // real :: Gravity(3) =     0.0     !! gravity vector
+    // real :: Beta       =     0.0     !! expansie coef.
+    // real :: CpStd      =  1006.0     !! Cp
+    // real :: CvStd      =  1006.0     !! Cv
+    // real :: Lambda     =     0.02637 !! warmtegeleiding lucht
+
+    // real :: Qtransfer  = 0.0
+    // !                   u    v    w    p     k    e      T    Sc    Den  PP
+    // real :: URF(10) =(/0.5, 0.5, 0.5, 0.2,  0.5, 0.5,   0.95, 0.95, 1.0, 0.8 /) !! underrelaxation factors
+    // real :: RTOL(8) =(/0.1, 0.1, 0.1, 0.05, 0.1, 0.1,   0.1 , 0.1            /) !! rel. tolerance
+    // real :: ATOL(8) =(/0.0, 0.0, 0.0, 0.0,  0.0, 0.0,   0.0 , 0.0            /) !! abs. tolerance
+    // real :: Guess(8)=(/0.0, 0.0, 0.0, 0.0,  0.0, 0.0, 293.0 , 0.0            /) !! initial guess
+
+    // real    :: ResMax   = 1.e-4      !! target maximum residual
+    // integer :: MaxPCOR  =    4       !! maximum number of pressure correction iterations
+    // real    :: FactDPP  = 0.25       !! reduction in pressure correction
+
+
+    template<typename T> void FlowSolver<T>::calculate_UVW()
+    {
+        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_UVW.\n", mpi_config->rank);
+
+
+        static double init_time  = 0.0;
+        static double grad_time  = 0.0;
+        static double flux_time  = 0.0;
+        static double setup_time = 0.0;
+        static double solve_time = 0.0;
+
+
+        MPI_Barrier(mpi_config->particle_flow_world);
+        init_time -= MPI_Wtime(); 
+
+        // Initialise A_phi.U, S_phi.U and Aval vectors to 0.
+        #pragma ivdep 
+        for ( uint64_t i = 0; i < mesh->local_mesh_size; i++ )
+        {
+            A_phi.U[i] = 0.0;
+            A_phi.V[i] = 0.0;
+            A_phi.W[i] = 0.0;
+
+            S_phi.U[i] = 0.0;
+            S_phi.V[i] = 0.0;
+            S_phi.W[i] = 0.0;
+        }
+
+        ptr_swap(&phi.U, &old_phi.U);
+        ptr_swap(&phi.V, &old_phi.V);
+        ptr_swap(&phi.W, &old_phi.W);
+        ptr_swap(&phi.P, &old_phi.P);
+
+        init_time += MPI_Wtime();
+        grad_time -= MPI_Wtime();
+
+        get_phi_gradient ( phi.U, phi_grad.U );
+        get_phi_gradient ( phi.V, phi_grad.V );
+        get_phi_gradient ( phi.W, phi_grad.W );
+
+        grad_time += MPI_Wtime();
+        flux_time -= MPI_Wtime();
+
+        // calculate fluxes through all inner faces
+        calculate_flux_UVW ();
+
+        // Solve for Enthalpy
+        // Use patches
+        // Pressure force
+
+        // If Transient and Euler
+        if ( true )
+        {
+            double rdelta = 1.0 / delta;
+
+            #pragma ivdep
+            for ( uint64_t i = 0 ; i < mesh->local_mesh_size; i++ )
+            {
+                double f = cell_densities[i] * cell_volumes[i] * rdelta;
+
+                S_phi.U[i] += f * old_phi.U[i];
+                S_phi.V[i] += f * old_phi.V[i];
+                S_phi.W[i] += f * old_phi.W[i];
+
+                A_phi.U[i] += f;
+                A_phi.V[i] += f;
+                A_phi.W[i] += f;
+            }
+        }
+
+        const double UVW_URFactor = 0.5;
+
+        flux_time  += MPI_Wtime();
+        setup_time -= MPI_Wtime();
+        setup_sparse_matrix (UVW_URFactor, A_phi.U, phi.U, S_phi.U);   
+        setup_time  += MPI_Wtime();
+        solve_time  -= MPI_Wtime();     
+        solve_sparse_matrix (A_phi.U, phi.U, old_phi.U, S_phi.U);
+
+
+
+
+        setup_time  -= MPI_Wtime();
+        solve_time  += MPI_Wtime();  
+        setup_sparse_matrix (UVW_URFactor, A_phi.V, phi.V, S_phi.V); 
+        setup_time  += MPI_Wtime();
+        solve_time  -= MPI_Wtime();         
+        solve_sparse_matrix (A_phi.V, phi.V, old_phi.V, S_phi.V);
+
+
+
+
+        setup_time  -= MPI_Wtime();
+        solve_time  += MPI_Wtime();  
+        setup_sparse_matrix (UVW_URFactor, A_phi.W, phi.W, S_phi.W);
+        setup_time  += MPI_Wtime();
+        solve_time  -= MPI_Wtime();  
+        solve_sparse_matrix (A_phi.W, phi.W, old_phi.W, S_phi.W);
+
+
+
+        
+        MPI_Barrier(mpi_config->particle_flow_world);
+        solve_time += MPI_Wtime();
+
+        static int timestep = 0; 
+
+        if ((timestep++ == 1499) && mpi_config->particle_flow_rank == 0)
+        {
+            printf("Init  time: %7.2fs\n", init_time  );
+            printf("Grad  time: %7.2fs\n", grad_time  );
+            printf("Flux  time: %7.2fs\n", flux_time  );
+            printf("Setup time: %7.2fs\n", setup_time );
+            printf("Solve time: %7.2fs\n", solve_time );
+
+        }
     }
     
     template<typename T> void FlowSolver<T>::solve_combustion_equations()
@@ -615,6 +1100,8 @@ namespace minicombust::flow
 
             }
         }
+
+        calculate_UVW();
 
         // solve_combustion_equations();
         // update_combustion_fields();
