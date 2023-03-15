@@ -14,6 +14,7 @@ namespace minicombust::geometry
 
     enum FACE_DIRECTIONS  { NOFACE_ERROR = -1, FRONT_FACE = 0, BACK_FACE = 1, LEFT_FACE = 2, RIGHT_FACE = 3, DOWN_FACE = 4, UP_FACE = 5};
     enum CUBE_VERTEXES    { A_VERTEX = 0, B_VERTEX = 1, C_VERTEX = 2, D_VERTEX = 3, E_VERTEX = 4, F_VERTEX = 5, G_VERTEX = 6, H_VERTEX = 7};
+    enum BOUNDARY_TYPES   { NOT_BOUNDARY = 0, WALL = 1, INLET = 2, OUTLET = 3 };
 
 
     static const uint64_t CUBE_FACE_VERTEX_MAP[6][4] = 
@@ -98,12 +99,19 @@ namespace minicombust::geometry
             uint64_t     *shmem_point_disps;
             uint64_t     *block_element_disp;
             vec<uint64_t> flow_block_dim;
+
+
+            uint64_t  boundary_cells_size;
+            uint64_t *boundary_cells;
+            uint64_t  boundary_points_size;
+            vec<T>   *boundary_points;
+            uint64_t *boundary_types;
             
  
             uint64_t *particles_per_point; // Number of particles in each cell
 
             // Flow source terms
-            const vec<T> dummy_gas_vel = {12., 0.00, 0.00};
+            const vec<T> dummy_gas_vel = {50., 0.00, 0.00};
             const T      dummy_gas_pre = 4000.;
             const T      dummy_gas_tem = 2000.;
             const flow_aos<T> dummy_flow_field      = {dummy_gas_vel, dummy_gas_pre, dummy_gas_tem};
@@ -129,8 +137,8 @@ namespace minicombust::geometry
             size_t flow_term_size                  = 0;
             size_t particle_term_size              = 0;
 
-            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<uint64_t> *faces, uint64_t *cell_faces, uint64_t *cell_neighbours, uint8_t *cells_per_point, uint64_t num_blocks, uint64_t *shmem_cell_disps, uint64_t *shmem_point_disps, uint64_t *block_element_disp, vec<uint64_t> flow_block_dim) 
-            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_faces(cell_faces), cell_neighbours(cell_neighbours), cells_per_point(cells_per_point), num_blocks(num_blocks), shmem_cell_disps(shmem_cell_disps), shmem_point_disps(shmem_point_disps), block_element_disp(block_element_disp), flow_block_dim(flow_block_dim)
+            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<uint64_t> *faces, uint64_t *cell_faces, uint64_t *cell_neighbours, uint8_t *cells_per_point, uint64_t num_blocks, uint64_t *shmem_cell_disps, uint64_t *shmem_point_disps, uint64_t *block_element_disp, vec<uint64_t> flow_block_dim, uint64_t num_boundary_cells, uint64_t *boundary_cells, uint64_t num_boundary_points, vec<T> *boundary_points, uint64_t *boundary_types) 
+            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_faces(cell_faces), cell_neighbours(cell_neighbours), cells_per_point(cells_per_point), num_blocks(num_blocks), shmem_cell_disps(shmem_cell_disps), shmem_point_disps(shmem_point_disps), block_element_disp(block_element_disp), flow_block_dim(flow_block_dim), boundary_cells_size(num_boundary_cells), boundary_cells(boundary_cells), boundary_points_size(num_boundary_points), boundary_points(boundary_points), boundary_types(boundary_types)
             {
                 
                 shmem_cell_disp   = shmem_cell_disps[mpi_config->node_rank];

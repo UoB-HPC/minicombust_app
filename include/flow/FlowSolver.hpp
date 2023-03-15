@@ -15,6 +15,8 @@ namespace minicombust::flow
 
         private:
 
+            uint64_t timestep_count = 0;
+
             Mesh<T> *mesh;
 
             double delta;
@@ -56,8 +58,11 @@ namespace minicombust::flow
             phi_vector<T>  old_phi;
             phi_vector<T>  S_phi;
             phi_vector<vec<T>> phi_grad;
+            
             Eigen::SparseMatrix<T, RowMajor> A_spmatrix;
-            Eigen::BiCGSTAB<Eigen::SparseMatrix<T>> eigen_solver;
+            Eigen::ConjugateGradient<Eigen::SparseMatrix<T, RowMajor>> eigen_solver;
+            // Eigen::BiCGSTAB<Eigen::SparseMatrix<T, RowMajor>> eigen_solver;
+            // Eigen::LeastSquaresConjugateGradient<Eigen::SparseMatrix<T, RowMajor>> eigen_solver;
 
             T effective_viscosity;
 
@@ -68,13 +73,21 @@ namespace minicombust::flow
             int      *elements;
             uint64_t *element_disps;
 
+            uint64_t nboundaries = 0, nhalos = 0;
+            vector<int> halo_ranks;
+            vector<int> halo_sizes;
+            vector<int> halo_disps;
+            vector<MPI_Datatype> halo_mpi_double_datatypes;
+            vector<MPI_Datatype> halo_mpi_vec_double_datatypes;
+            vector<vector<uint64_t>> halo_rank_recv_indexes;
+            unordered_map<uint64_t, uint64_t> boundary_map;
+
             MPI_Request bcast_request;
             vector<MPI_Status>  statuses;
             vector<MPI_Request> send_requests;
             vector<MPI_Request> recv_requests;
 
             Flow_Logger logger;
-
 
         public:
             MPI_Config *mpi_config;
@@ -171,10 +184,11 @@ namespace minicombust::flow
                 face_lambdas     = (T *)       malloc( face_lambdas_array_size     );   
                 face_rlencos     = (T *)       malloc( face_rlencos_array_size     );   
 
-                uint64_t nboundaries = 1;
-                phi_array_size        = (mesh->local_mesh_size + nboundaries) * sizeof(T);
-                phi_grad_array_size   = (mesh->local_mesh_size + nboundaries) * sizeof(vec<T>);
-                source_phi_array_size =  mesh->local_mesh_size                * sizeof(T);
+                setup_halos();
+
+                phi_array_size        = (mesh->local_mesh_size + nhalos + nboundaries) * sizeof(T);
+                phi_grad_array_size   = (mesh->local_mesh_size + nhalos + nboundaries) * sizeof(vec<T>);
+                source_phi_array_size = (mesh->local_mesh_size + nhalos)               * sizeof(T);
                 phi.U           = (T *)malloc(phi_array_size);
                 phi.V           = (T *)malloc(phi_array_size);
                 phi.W           = (T *)malloc(phi_array_size);
@@ -205,16 +219,17 @@ namespace minicombust::flow
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up face data.\n", mpi_config->particle_flow_rank);
 
 
+
                 #pragma ivdep
                 for ( uint64_t face = 0; face < mesh->faces_size; face++ )  
                 {
-                    uint64_t cell0 = mesh->faces[face].cell0 - mesh->shmem_cell_disp;
-                    uint64_t cell1 = mesh->faces[face].cell1 - mesh->shmem_cell_disp;
+                    uint64_t shmem_cell0 = mesh->faces[face].cell0 - mesh->shmem_cell_disp;
+                    uint64_t shmem_cell1 = mesh->faces[face].cell1 - mesh->shmem_cell_disp;
 
-                    if ( mesh->faces[face].cell1 == MESH_BOUNDARY )  continue;
+                    if ( mesh->faces[face].cell1 >= mesh->mesh_size )  continue;
 
-                    uint64_t *cell_nodes0 = &mesh->cells[cell0 * mesh->cell_size];
-                    uint64_t *cell_nodes1 = &mesh->cells[cell1 * mesh->cell_size];
+                    // uint64_t *cell_nodes0 = &mesh->cells[shmem_cell0 * mesh->cell_size];
+                    // uint64_t *cell_nodes1 = &mesh->cells[shmem_cell1 * mesh->cell_size];
 
                     uint64_t node_count = 0;
                     uint64_t face_node_ids[4];
@@ -223,8 +238,8 @@ namespace minicombust::flow
                     {
                         for ( uint64_t n1 = 0; n1 < mesh->cell_size; n1++ )
                         {
-                            if ( cell_nodes0[n0] == cell_nodes1[n1] )
-                                face_node_ids[node_count++] = cell_nodes0[n0];
+                            if ( mesh->cells[shmem_cell0 * mesh->cell_size + n0] == mesh->cells[shmem_cell1 * mesh->cell_size + n1] )
+                                face_node_ids[node_count++] = mesh->cells[shmem_cell0 * mesh->cell_size + n0];
                         }
                     }
 
@@ -233,13 +248,13 @@ namespace minicombust::flow
                     face_nodes[2] = &mesh->points[face_node_ids[2] - mesh->shmem_point_disp];
                     face_nodes[3] = &mesh->points[face_node_ids[3] - mesh->shmem_point_disp];
 
-                    vec<T> cell0_cell1_vec = mesh->cell_centers[cell1] - mesh->cell_centers[cell0];
+                    vec<T> cell0_cell1_vec = mesh->cell_centers[shmem_cell1] - mesh->cell_centers[shmem_cell0];
                     
-                    face_mass_fluxes[face] = 0.0;
-                    face_areas[face]       = magnitude(*face_nodes[2] - *face_nodes[0]) * magnitude(*face_nodes[1] - *face_nodes[0]);
-                    face_centers[face]     = (*face_nodes[0] + *face_nodes[1] + *face_nodes[2] + *face_nodes[3]) / 4.0;
-                    face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[cell0]) / magnitude(cell0_cell1_vec) ;
-                    face_normals[face]     = normalise(cross_product(*face_nodes[2] - *face_nodes[0], *face_nodes[1] - *face_nodes[0])); 
+                    face_mass_fluxes[face] = 0.5 * rand()/RAND_MAX;
+                    face_areas[face]       = magnitude(*(face_nodes[2]) - *(face_nodes[0])) * magnitude(*(face_nodes[1]) - *(face_nodes[0]));
+                    face_centers[face]     = (*(face_nodes[0]) + *(face_nodes[1]) + *(face_nodes[2]) + *(face_nodes[3])) / 4.0;
+                    face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
+                    face_normals[face]     = normalise(cross_product(*(face_nodes[2]) - *(face_nodes[0]), *(face_nodes[1]) - *(face_nodes[0]))); 
                     face_rlencos[face]     = face_areas[face] / magnitude(cell0_cell1_vec) / vector_cosangle(face_normals[face], cell0_cell1_vec);
                 }
 
@@ -247,6 +262,7 @@ namespace minicombust::flow
                 effective_viscosity = visc_lambda; // NOTE: Localise this to cells and boundaries when implementing Turbulence model
 
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up cell data.\n", mpi_config->particle_flow_rank);
+
 
                 #pragma ivdep
                 for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
@@ -258,13 +274,37 @@ namespace minicombust::flow
                     A_phi.V[block_cell]   = mesh->dummy_gas_vel.y;
                     A_phi.W[block_cell]   = mesh->dummy_gas_vel.z;
 
-                    phi.U[block_cell]     = mesh->dummy_gas_vel.x;
-                    phi.V[block_cell]     = mesh->dummy_gas_vel.y;
-                    phi.W[block_cell]     = mesh->dummy_gas_vel.z;
+                    const vec<T> injector_position           = {0.005, 0.025, 0.025};
+                    const vec<T> injector_cell_centre_vector = (mesh->cell_centers[shmem_cell] - injector_position) / vec<T> {0.1, 0.1, 0.1};
+                    T vel_factor = 1.0 - magnitude(injector_cell_centre_vector);
 
-                    old_phi.U[block_cell] = mesh->dummy_gas_vel.x;
-                    old_phi.V[block_cell] = mesh->dummy_gas_vel.y;
-                    old_phi.W[block_cell] = mesh->dummy_gas_vel.z;
+                    if ( mesh->cell_centers[shmem_cell].x > 0.02 ) 
+                        vel_factor = 0.001;
+
+                    phi.U[block_cell]     = mesh->dummy_gas_vel.x * vel_factor; // * rand()/RAND_MAX;
+                    phi.V[block_cell]     = mesh->dummy_gas_vel.y + vel_factor * (4.0 * rand()/RAND_MAX - 2.0);
+                    phi.W[block_cell]     = mesh->dummy_gas_vel.z + vel_factor * (4.0 * rand()/RAND_MAX - 2.0);
+                    phi.P[block_cell]     = mesh->dummy_gas_pre   + vel_factor * (4.0 * rand()/RAND_MAX - 2.0);
+
+
+                    // cout << print_vec(mesh->cell_centers[shmem_cell])  << " vel factor " << vel_factor << " U " << phi.U[block_cell] << " V " << phi.V[block_cell] << " W " << phi.W[block_cell] << endl;
+
+                    old_phi.U[block_cell] = mesh->dummy_gas_vel.x * vel_factor; // * rand()/RAND_MAX;
+                    old_phi.V[block_cell] = mesh->dummy_gas_vel.y + 4.0 * rand()/RAND_MAX - 2.0;
+                    old_phi.W[block_cell] = mesh->dummy_gas_vel.z + 4.0 * rand()/RAND_MAX - 2.0;
+                    old_phi.P[block_cell] = mesh->dummy_gas_pre   + 4.0 * rand()/RAND_MAX - 2.0;
+ 
+                    // old_phi.U[block_cell] = mesh->dummy_gas_vel.x + 0.5 * rand()/RAND_MAX ;
+                    // old_phi.V[block_cell] = mesh->dummy_gas_vel.y + 0.5 * rand()/RAND_MAX ;
+                    // old_phi.W[block_cell] = mesh->dummy_gas_vel.z + 0.5 * rand()/RAND_MAX ;
+                    // old_phi.P[block_cell] = mesh->dummy_gas_pre   + 0.5 * rand()/RAND_MAX ;
+
+                    phi_grad.U[block_cell] = {0.1, 0.2, 0.3};
+                    phi_grad.V[block_cell] = {0.1, 0.2, 0.3};
+                    phi_grad.W[block_cell] = {0.1, 0.2, 0.3};
+                    phi_grad.P[block_cell] = {0.1, 0.2, 0.3};
+
+
 
                     cell_densities[block_cell] = 1.2;
 
@@ -275,12 +315,9 @@ namespace minicombust::flow
 
                     for ( uint64_t f = 0; f < mesh->faces_per_cell; f++ )
                     {
-                        if ( mesh->cell_neighbours[shmem_cell * mesh->faces_per_cell + f] == MESH_BOUNDARY )
+                        if ( mesh->cell_neighbours[shmem_cell * mesh->faces_per_cell + f] >= mesh->mesh_size )
                         {
                             const uint64_t face = mesh->cell_faces[block_cell * mesh->faces_per_cell + f];
-
-                            const uint64_t shmem_cell0 = mesh->faces[face].cell0 - mesh->shmem_cell_disp;
-                            const uint64_t shmem_cell1 = mesh->faces[face].cell1 - mesh->shmem_cell_disp;
 
                             vec<T>  *face_nodes[4];
                             face_nodes[0] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][0]] - mesh->shmem_point_disp];
@@ -288,22 +325,23 @@ namespace minicombust::flow
                             face_nodes[2] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][2]] - mesh->shmem_point_disp];
                             face_nodes[3] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][3]] - mesh->shmem_point_disp];
 
-                            face_mass_fluxes[face] = 0.0;
+                            face_mass_fluxes[face] = 0.5 * rand()/RAND_MAX - 0.25;
                             face_lambdas[face]     = 1.0;
                             face_areas[face]       = magnitude(*face_nodes[2] - *face_nodes[0]) * magnitude(*face_nodes[1] - *face_nodes[0]);
                             face_centers[face]     = (*face_nodes[0] + *face_nodes[1] + *face_nodes[2] + *face_nodes[3]) / 4.0;
                             face_normals[face]     = normalise(cross_product(*face_nodes[2] - *face_nodes[0], *face_nodes[1] - *face_nodes[0])); 
 
-                            vec<T> cell0_center_vec = mesh->cell_centers[shmem_cell1] - mesh->cell_centers[shmem_cell0];
-                            face_rlencos[face]     = face_areas[face] / magnitude(cell0_center_vec) / vector_cosangle(face_normals[face], cell0_center_vec);
+                            vec<T> cell0_facecenter_vec = face_centers[face] - mesh->cell_centers[shmem_cell];
+                            face_rlencos[face]          = face_areas[face] / magnitude(cell0_facecenter_vec) / vector_cosangle(face_normals[face], cell0_facecenter_vec);
                         }
                     }
                 }
 
+
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
 
 
-                Eigen::SparseMatrix<T, RowMajor> new_matrix( mesh->local_mesh_size, mesh->local_mesh_size + 1 );
+                Eigen::SparseMatrix<T, RowMajor> new_matrix( mesh->local_mesh_size + nhalos, mesh->local_mesh_size + nhalos + nboundaries );
                 new_matrix.reserve( mesh->faces_size );
                 A_spmatrix = new_matrix;
 
@@ -459,6 +497,8 @@ namespace minicombust::flow
 
                 MPI_Barrier(mpi_config->world);
 
+
+
                 // for (uint64_t b = 0; b < mesh->num_blocks; b++)
                 // {
                 //     if ((uint64_t)mpi_config->particle_flow_rank == b)
@@ -477,42 +517,190 @@ namespace minicombust::flow
                 performance_logger.load_papi_events(mpi_config->rank);
             }
 
-            // void resize_cell_indexes(uint64_t *elements, uint64_t ***new_cell_indexes)
-            // {
-            //     while ( cell_index_array_size < ((uint64_t) *elements * sizeof(uint64_t)) )
-            //     {
-            //         cell_index_array_size     *= 2;
 
-            //         neighbour_indexes     = (uint64_t*) realloc(neighbour_indexes, cell_index_array_size);
-            //     }
+            void process_halo_neighbour ( set<uint64_t>& unique_neighbours, uint64_t neighbour )
+            {
+                if ( neighbour == MESH_BOUNDARY )                                       // Boundary on edge of entire mesh
+                {
+                    // mesh_edge_boundaries = 1;
+                }
+                else if ( neighbour - mesh->local_cells_disp >= mesh->local_mesh_size ) // Boundary with other flow blocks.
+                {
+                    const uint64_t flow_rank = mesh->get_block_id( neighbour );
 
-            //     if (new_cell_indexes != NULL) **new_cell_indexes = neighbour_indexes;
-            // }
+                    vector<int>::iterator it = find(halo_ranks.begin(), halo_ranks.end(), flow_rank) ;
 
-            // void resize_cell_flow (uint64_t elements)
-            // {
-            //     resize_cell_indexes(elements, NULL);
-            //     while ( cell_flow_array_size < ((size_t) elements * sizeof(flow_aos<T>)) )
-            //     {
-            //         cell_flow_array_size *= 2;
+                    if ( it == halo_ranks.end() ) // Neighbour flow block not in halo ranks
+                    {
+                        // Add flow rank and init recv sizes as 1
+                        halo_ranks.push_back(flow_rank);
+                        halo_rank_recv_indexes.push_back(vector<uint64_t>());
+                        halo_rank_recv_indexes[halo_ranks.size()-1].push_back(neighbour);
 
-            //         neighbour_flow_aos_buffer      = (flow_aos<T> *)realloc(neighbour_flow_aos_buffer,      cell_flow_array_size);
-            //         neighbour_flow_grad_aos_buffer = (flow_aos<T> *)realloc(neighbour_flow_grad_aos_buffer, cell_flow_array_size);
-            //     }
-            // }
+                        // Record neighbour as seen, record index in phi arrays in map for later accesses.
+                        unique_neighbours.insert(neighbour);
+                        boundary_map[neighbour]  = mesh->local_mesh_size + nhalos++;
+                    }
+                    else if ( !unique_neighbours.contains(neighbour) )
+                    {
+                        // Record neighbour as seen, record index in phi arrays in map for later accesses. Increment amount of data to recieve later.
+                        uint64_t halo_rank_index = distance(halo_ranks.begin(), it);
+                        unique_neighbours.insert(neighbour);
+                        boundary_map[neighbour]  = mesh->local_mesh_size + nhalos++;
+                        halo_rank_recv_indexes[halo_rank_index].push_back(neighbour);
+                    }
+                }
+            }
 
-            // void resize_cell_particle (uint64_t *elements, uint64_t ***new_cell_indexes, particle_aos<T> ***new_cell_particle)
-            // {
-            //     resize_cell_indexes(elements, new_cell_indexes);
-            //     while ( cell_particle_array_size < ((size_t) *elements * sizeof(particle_aos<T>)) )
-            //     {
-            //         cell_particle_array_size *= 2;
+            void setup_halos ()
+            {
+                uint64_t mesh_edge_boundaries = 0;
 
-            //         cell_particle_aos = (particle_aos<T> *)realloc(cell_particle_aos,  cell_particle_array_size);
-            //     }
+                set<uint64_t> unique_neighbours;
 
-            //     if (new_cell_particle != NULL)  **new_cell_particle = cell_particle_aos;
-            // }
+                for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
+                {
+                    const uint64_t cell       = block_cell + mesh->local_cells_disp;
+                    const uint64_t shmem_cell = cell       - mesh->shmem_cell_disp;
+
+                    // Get 6 immediate neighbours
+                    const uint64_t below_neighbour                = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + DOWN_FACE];
+                    const uint64_t above_neighbour                = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + UP_FACE];
+                    const uint64_t around_left_neighbour          = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + LEFT_FACE];
+                    const uint64_t around_right_neighbour         = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + RIGHT_FACE];
+                    const uint64_t around_front_neighbour         = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + FRONT_FACE];
+                    const uint64_t around_back_neighbour          = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + BACK_FACE];
+
+                    process_halo_neighbour(unique_neighbours, below_neighbour);             // Immediate neighbour cell indexes are correct   
+                    process_halo_neighbour(unique_neighbours, above_neighbour);             // Immediate neighbour cell indexes are correct  
+                    process_halo_neighbour(unique_neighbours, around_left_neighbour);       // Immediate neighbour cell indexes are correct   
+                    process_halo_neighbour(unique_neighbours, around_right_neighbour);      // Immediate neighbour cell indexes are correct   
+                    process_halo_neighbour(unique_neighbours, around_front_neighbour);      // Immediate neighbour cell indexes are correct   
+                    process_halo_neighbour(unique_neighbours, around_back_neighbour);       // Immediate neighbour cell indexes are correct   
+
+                    // Get 8 cells neighbours around
+                    if ( around_left_neighbour != MESH_BOUNDARY  )   // If neighbour isn't edge of mesh and isn't a halo cell
+                    {
+                        const uint64_t around_left_front_neighbour    = mesh->cell_neighbours[ (around_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                        const uint64_t around_left_back_neighbour     = mesh->cell_neighbours[ (around_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                        process_halo_neighbour(unique_neighbours, around_left_front_neighbour);    
+                        process_halo_neighbour(unique_neighbours, around_left_back_neighbour);     
+                    }
+                    if ( around_right_neighbour != MESH_BOUNDARY )
+                    {
+                        const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[ (around_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell + FRONT_FACE] ;
+                        const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[ (around_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell + BACK_FACE]  ;
+                        process_halo_neighbour(unique_neighbours, around_right_front_neighbour);   
+                        process_halo_neighbour(unique_neighbours, around_right_back_neighbour); 
+                    }
+                    if ( below_neighbour != MESH_BOUNDARY )
+                    {
+                        // Get 8 cells around below cell
+                        const uint64_t below_left_neighbour           = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
+                        const uint64_t below_right_neighbour          = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + RIGHT_FACE] ;
+                        const uint64_t below_front_neighbour          = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + FRONT_FACE] ;
+                        const uint64_t below_back_neighbour           = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + BACK_FACE]  ;
+                        process_halo_neighbour(unique_neighbours, below_left_neighbour);           
+                        process_halo_neighbour(unique_neighbours, below_right_neighbour);          
+                        process_halo_neighbour(unique_neighbours, below_front_neighbour);          
+                        process_halo_neighbour(unique_neighbours, below_back_neighbour);           
+                        if ( below_left_neighbour != MESH_BOUNDARY )
+                        {
+                            const uint64_t below_left_front_neighbour     = mesh->cell_neighbours[ (below_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
+                            const uint64_t below_left_back_neighbour      = mesh->cell_neighbours[ (below_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
+                            process_halo_neighbour(unique_neighbours, below_left_front_neighbour);     
+                            process_halo_neighbour(unique_neighbours, below_left_back_neighbour);      
+                        }
+                        if ( below_right_neighbour != MESH_BOUNDARY )
+                        {
+                            const uint64_t below_right_front_neighbour    = mesh->cell_neighbours[ (below_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                            const uint64_t below_right_back_neighbour     = mesh->cell_neighbours[ (below_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                            process_halo_neighbour(unique_neighbours, below_right_front_neighbour);    
+                            process_halo_neighbour(unique_neighbours, below_right_back_neighbour); 
+                        }
+                    }
+                    if ( above_neighbour != MESH_BOUNDARY )
+                    {
+                        // Get 8 cells neighbours above
+                        const uint64_t above_left_neighbour           = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
+                        const uint64_t above_right_neighbour          = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + RIGHT_FACE] ;
+                        const uint64_t above_front_neighbour          = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + FRONT_FACE] ;
+                        const uint64_t above_back_neighbour           = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + BACK_FACE]  ;
+                        process_halo_neighbour(unique_neighbours, above_left_neighbour);           
+                        process_halo_neighbour(unique_neighbours, above_right_neighbour);          
+                        process_halo_neighbour(unique_neighbours, above_front_neighbour);          
+                        process_halo_neighbour(unique_neighbours, above_back_neighbour);           
+                        if ( above_left_neighbour != MESH_BOUNDARY )
+                        {
+                            const uint64_t above_left_front_neighbour     = mesh->cell_neighbours[ (above_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
+                            const uint64_t above_left_back_neighbour      = mesh->cell_neighbours[ (above_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
+                            process_halo_neighbour(unique_neighbours, above_left_front_neighbour);     
+                            process_halo_neighbour(unique_neighbours, above_left_back_neighbour);      
+                        }
+                        if ( above_right_neighbour != MESH_BOUNDARY )
+                        {
+                            const uint64_t above_right_front_neighbour    = mesh->cell_neighbours[ (above_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                            const uint64_t above_right_back_neighbour     = mesh->cell_neighbours[ (above_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                            process_halo_neighbour(unique_neighbours, above_right_front_neighbour);    
+                            process_halo_neighbour(unique_neighbours, above_right_back_neighbour);     
+                        }
+                    }
+                }
+
+                if ( halo_ranks.size() == 0 )  return;
+
+                uint64_t current_disp = 0;
+                halo_disps.push_back(current_disp);
+                MPI_Request send_requests[halo_ranks.size()];
+                for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+                {
+                    const int num_indexes = halo_rank_recv_indexes[r].size();
+                    MPI_Isend( halo_rank_recv_indexes[r].data(), num_indexes,  MPI_UINT64_T, halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[r] );
+                    current_disp += num_indexes;
+                    halo_sizes.push_back(num_indexes);
+                    halo_disps.push_back(current_disp);
+                    // printf("Flow %d: Sending %d neighbour indexes to flow rank %d disp %lu dispr %d\n", mpi_config->particle_flow_rank, num_indexes, halo_ranks[r], current_disp, halo_disps[r]);
+                }
+
+                MPI_Status status;
+                int buff_size = halo_rank_recv_indexes[0].size() + 1;
+                int      *buffer      = (int *)      malloc(buff_size * sizeof(int));
+                uint64_t *uint_buffer = (uint64_t *) malloc(buff_size * sizeof(uint64_t));
+                for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+                {
+                    int num_indexes;
+                    MPI_Probe (halo_ranks[r], 0, mpi_config->particle_flow_world, &status );
+                    MPI_Get_count( &status, MPI_UINT64_T, &num_indexes );
+                    if ( num_indexes > buff_size )
+                    {
+                        buff_size = num_indexes;
+                        buffer      = (int *)      realloc(buffer,      (buff_size + 1) * sizeof(int));
+                        uint_buffer = (uint64_t *) realloc(uint_buffer, (buff_size + 1) * sizeof(uint64_t));
+                    }
+
+                    // printf("Flow %d: Recieving %d neighbour indexes from flow rank %d (buff_size %d) \n", mpi_config->particle_flow_rank, num_indexes, halo_ranks[r], buff_size);
+                    MPI_Recv( uint_buffer, num_indexes, MPI_UINT64_T, halo_ranks[r], 0, mpi_config->particle_flow_world, MPI_STATUS_IGNORE );
+
+                    for (int i = 0; i < num_indexes; i++)
+                    {
+                        buffer[i] = (int)(uint_buffer[i] - mesh->local_cells_disp); 
+                        // if (halo_ranks[r] == 0)  printf("Flow %d: Will send local cell %d (real %lu) to flow rank %d \n", mpi_config->particle_flow_rank, buffer[i], uint_buffer[i], halo_ranks[r]);
+                    }
+
+                    MPI_Datatype indexed_type, vec_indexed_type;
+                    MPI_Type_create_indexed_block(num_indexes, 1, buffer, MPI_DOUBLE,                    &indexed_type);
+                    MPI_Type_create_indexed_block(num_indexes, 1, buffer, mpi_config->MPI_VEC_STRUCTURE, &vec_indexed_type);
+                    MPI_Type_commit(&indexed_type);
+                    MPI_Type_commit(&vec_indexed_type);
+                    halo_mpi_double_datatypes.push_back(indexed_type);
+                    halo_mpi_vec_double_datatypes.push_back(vec_indexed_type);
+                }
+
+                MPI_Waitall(halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
+                halo_rank_recv_indexes.clear();
+
+                free(buffer);
+            }
 
 
             void resize_cell_particle (uint64_t elements, uint64_t index)
@@ -605,16 +793,21 @@ namespace minicombust::flow
 
             void print_logger_stats(uint64_t timesteps, double runtime);
             
+            void exchange_phi_halos ();
+            void exchange_A_halos (T *A_phi_component);
+            
             void get_neighbour_cells(const uint64_t recv_id);
             void interpolate_to_nodes();
 
             void update_flow_field();  // Synchronize point with flow solver
 
-            void setup_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component );
-            void solve_sparse_matrix ( T *A_phi_component, T *phi_component, T *old_phi_component, T *S_phi_component );
+            void setup_sparse_matrix  ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component );
+            void update_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component );
+            void solve_sparse_matrix ( T *phi_component, T *S_phi_component );
             void calculate_flux_UVW ();
             void calculate_UVW ();
-            void get_phi_gradient ( T *phi_component, vec<T> *phi_grad_component );
+            void get_phi_gradient  ( T *phi_component, vec<T> *phi_grad_component );
+            void get_phi_gradients ();
 
             void solve_combustion_equations();
             void update_combustion_fields();

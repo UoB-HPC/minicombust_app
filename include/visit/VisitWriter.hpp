@@ -69,6 +69,104 @@ namespace minicombust::visit
                     vtk_file << VTK_VOXEL;
                 }
                 vtk_file << endl;
+                vtk_file.close();
+
+
+                for (int i = 0; i < 6; i++)
+                {
+                    cout << "iiiii" << i << endl;
+                    cout << "out/mesh/" + filename + to_string(i) + "_boundarymesh.vtk" << endl;
+                    // Print VTK Header
+                    vtk_file.open ("out/mesh/" + filename + to_string(i) + "_boundarymesh.vtk");
+                    // vtk_file.open ("out/mesh/" + filename + to_string(mpi_config->rank) + "_boundary_mesh.vtk");
+                    vtk_file << "# vtk DataFile Version 3.0 " << endl;
+                    vtk_file << "MiniCOMBUST " << endl;
+                    vtk_file << "ASCII " << endl;
+                    vtk_file << "DATASET UNSTRUCTURED_GRID " << endl;
+
+                    
+                    // TODO: Allow different datatypes
+                    // Print point data
+                    vtk_file << endl << "POINTS " << mesh->boundary_points_size << " double" << endl;
+                    for(uint64_t p = 0; p < mesh->boundary_points_size; p++)
+                    {
+                        const int data_per_line = 10;
+                        if (p % data_per_line == 0)  vtk_file << endl;
+                        else             vtk_file << "  ";
+                        vtk_file << print_vec(mesh->boundary_points[p]);
+                    }
+                    vtk_file << endl;
+
+                    // Print cell data
+                    vtk_file << endl << "CELLS " << 1 << " " << 1 * (mesh->cell_size + 1) << endl;
+                    // vtk_file << endl << "CELLS " << mesh->boundary_cells_size << " " << mesh->boundary_cells_size * (mesh->cell_size + 1) << endl;
+                    for(uint64_t c = i; c < i+1; c++)
+                    // for(uint64_t c = 0; c < mesh->boundary_cells_size; c++)
+                    {
+                        vtk_file << mesh->cell_size << " ";
+                        for (uint64_t v = 0; v < mesh->cell_size; v++)  vtk_file << mesh->boundary_cells[c*mesh->cell_size + v] << " ";
+                        vtk_file << endl;
+                    }
+
+                    // Print cell types
+                    vtk_file << endl << "CELL_TYPES " << 1;
+                    for(uint64_t c = i; c < i+1; c++)
+                    // for(uint64_t c = 0; c < mesh->boundary_cells_size; c++)
+                    {
+                        const int data_per_line = 30;
+                        if (c % data_per_line == 0)  vtk_file << endl;
+                        else             vtk_file << " ";
+                        vtk_file << VTK_VOXEL;
+                    }
+                    vtk_file << endl;
+                    vtk_file.close();
+
+                }
+            }
+
+            void write_flow_velocities (string filename, int id, phi_vector<T> *phi)
+            {
+                ofstream vtk_file;
+
+                vtk_file.open ("out/cell_flow/" + filename + "_flow" + to_string(mpi_config->rank) + "_timestep" + to_string(id) + ".vtk");
+                vtk_file << "# vtk DataFile Version 3.0 " << endl;
+                vtk_file << "MiniCOMBUST " << endl;
+                vtk_file << "ASCII " << endl;
+                vtk_file << "DATASET POLYDATA " << endl;
+
+                
+                // TODO: Allow different datatypes
+                // Print point data
+                vtk_file << endl << "POINTS " << mesh->local_mesh_size << " float"  << endl;
+                for(int cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    const int data_per_line = 10;
+                    if (cell % data_per_line == 0)  vtk_file << endl;
+                    else             vtk_file << "  ";
+                    vtk_file << print_vec(mesh->cell_centers[cell + mesh->local_cells_disp - mesh->shmem_cell_disp]) << "\t";
+                }
+                vtk_file << endl << endl;
+
+                // Print particle values for points
+                vtk_file << endl << "VERTICES " << mesh->local_mesh_size << " " << mesh->local_mesh_size * 2  << endl;
+                uint64_t count = 0;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << "1 " << count++ << "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << endl << "POINT_DATA " << mesh->local_mesh_size << endl;
+
+                vtk_file << "VECTORS flow_velocity float" << endl;
+                // vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << phi->U[cell]<< " " << phi->V[cell] << " " << phi->W[cell] << " " << "\t";
+                } 
+                vtk_file << endl;
+
+                vtk_file.close();
             }
 
 

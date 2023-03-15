@@ -39,6 +39,7 @@ int main (int argc, char ** argv)
     
     // Create Flow/Particle Datatypes
     MPI_Type_contiguous(sizeof(flow_aos<double>)/sizeof(double),     MPI_DOUBLE, &mpi_config.MPI_FLOW_STRUCTURE);
+    MPI_Type_contiguous(sizeof(vec<double>)/sizeof(double),          MPI_DOUBLE, &mpi_config.MPI_VEC_STRUCTURE);
     MPI_Type_contiguous(sizeof(particle_aos<double>)/sizeof(double), MPI_DOUBLE, &mpi_config.MPI_PARTICLE_STRUCTURE);
     MPI_Type_commit(&mpi_config.MPI_FLOW_STRUCTURE);
     MPI_Type_commit(&mpi_config.MPI_PARTICLE_STRUCTURE);

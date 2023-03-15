@@ -465,6 +465,7 @@ namespace minicombust::utils
         int solver_type;
         MPI_Datatype MPI_FLOW_STRUCTURE;
         MPI_Datatype MPI_PARTICLE_STRUCTURE;
+        MPI_Datatype MPI_VEC_STRUCTURE;
         MPI_Op MPI_PARTICLE_OPERATION;
     };
 
