@@ -370,6 +370,8 @@ namespace minicombust::utils
         return v;
     }
 
+
+
     template <typename T>
     inline void check_flow_field_exit (const char *check_string, const flow_aos<T> *value, const flow_aos<T> *check_value, uint64_t position )
     {
@@ -468,6 +470,25 @@ namespace minicombust::utils
         MPI_Datatype MPI_VEC_STRUCTURE;
         MPI_Op MPI_PARTICLE_OPERATION;
     };
+
+    template<typename T> 
+    inline void check_array_nan (const char *array_name, T *array, uint64_t length, MPI_Config *mpi_config, uint64_t timestep)
+    {
+        bool found_nan = false;
+        for ( uint64_t i = 0; i < length; i++ )
+        {
+            if ( isnan(array[i]) )
+            {
+                found_nan = true;
+                printf("T%lu Rank %d: NAN at %lu in %s\n", timestep, mpi_config->rank, i, array_name);
+                break;
+            }
+        }
+
+        MPI_Barrier(mpi_config->particle_flow_world);
+        if (found_nan)
+            exit(1);
+    }
 
     inline void MPI_GatherSet (MPI_Config *mpi_config, uint64_t num_blocks, vector<unordered_set<uint64_t>>& indexes_sets, uint64_t **indexes, uint64_t *elements, function<void(uint64_t*, uint64_t ***)> resize_fn)
     { 

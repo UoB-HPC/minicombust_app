@@ -476,64 +476,93 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     boundary_types[DOWN_FACE]  = WALL;
     boundary_types[UP_FACE]    = WALL;
 
+
     MPI_Barrier(mpi_config->world);
 
     // Create array of faces, each face is a pointer to two neighbouring cells.
     uint64_t faces_size = 0;
     Face<uint64_t> *faces      = nullptr;
     uint64_t       *cell_faces = nullptr;
+
     if ( mpi_config->solver_type == FLOW )
     {
         vec<uint64_t> local_flow_dim = vec<uint64_t> { flow_block_element_sizes[0][mpi_config->particle_flow_rank % block_dim.x], 
                                                        flow_block_element_sizes[1][(mpi_config->particle_flow_rank / block_dim.x) % block_dim.y],
                                                        flow_block_element_sizes[2][mpi_config->particle_flow_rank / (block_dim.x * block_dim.y)] };
         
+
+
         uint64_t face_count = 0;
         const uint64_t cell_shmem_disp = shmem_cell_disps[mpi_config->node_rank];
         const uint64_t cell_block_disp = block_element_disp[mpi_config->particle_flow_rank];
-        const uint64_t local_flow_size = local_flow_dim.x * local_flow_dim.y * local_flow_dim.z;
+        const uint64_t cell_block_size = block_element_disp[mpi_config->particle_flow_rank+1] - cell_block_disp;
+        
 
         faces_size = (local_flow_dim.x + 1)*local_flow_dim.y*local_flow_dim.z + (local_flow_dim.y + 1)*local_flow_dim.x*local_flow_dim.z + (local_flow_dim.z + 1)*local_flow_dim.x*local_flow_dim.y;
-        faces      = (Face<uint64_t> *)    malloc(faces_size * sizeof(Face<uint64_t>));                        // Faces  = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...}; 
-        cell_faces = (uint64_t *)malloc(local_flow_size * faces_per_cell * sizeof(uint64_t));  // Cfaces = {f0, f1, f2, f3, f4, f5, f1, f2, f4, f5}; 
-        // printf("faces size %lu cell_faces size %lu disp %lu \n", faces_size, local_flow_size * faces_per_cell, cell_shmem_disp);
+        faces      = (Face<uint64_t> *) malloc(faces_size * sizeof(Face<uint64_t>));                  // Faces  = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...}; 
+        cell_faces = (uint64_t *)       malloc(cell_block_size * faces_per_cell * sizeof(uint64_t));  // Cfaces = {f0, f1, f2, f3, f4, f5, f1, f2, f4, f5}; 
+        
 
-        int face_indexes [faces_per_cell * local_flow_size];
-        for (uint64_t i = 0; i < faces_per_cell * local_flow_size; i++)  face_indexes[i] = -1;
-        for ( uint64_t cell = block_element_disp[mpi_config->particle_flow_rank]; cell < block_element_disp[mpi_config->particle_flow_rank+1]; cell++ )
+        uint64_t *face_indexes = (uint64_t *) malloc(faces_per_cell * cell_block_size * sizeof(uint64_t));
+        for (uint64_t i = 0; i < faces_per_cell * cell_block_size; i++)  face_indexes[i] = UINT64_MAX;
+
+        // printf("Rank %d starting faces \n", mpi_config->rank );
+
+
+
+        for ( uint64_t cell = cell_block_disp; cell < cell_block_disp + cell_block_size; cell++ )
         {
+      
+            const uint64_t shmem_cell = cell - cell_shmem_disp;
+            const uint64_t block_cell = cell - cell_block_disp;
+
             for ( uint64_t f_id = 0; f_id < faces_per_cell; f_id++ )
             {
-                // printf("Cell %lu face %lu: Checking if already created\n", cell, f_id);
-                uint64_t face_neighbour_cell = shmem_cell_neighbours[(int)((cell - cell_shmem_disp) * faces_per_cell + f_id)];
+                // printf("Rank %d cell %lu shmem_cell %ld \n", mpi_config->rank, cell, (int64_t)shmem_cell );
+                uint64_t neighbour_cell       = shmem_cell_neighbours[shmem_cell * faces_per_cell + f_id];
+                uint64_t neighbour_block_cell = neighbour_cell - cell_block_disp;
                 
-                if ( face_indexes[ (cell - cell_block_disp) * faces_per_cell + f_id ] == -1 )
-                {  
+                // printf("Rank %d block_cell %lu max %lu \n", mpi_config->rank, block_cell, cell_block_size );
 
-                    if ( face_neighbour_cell == MESH_BOUNDARY )
+                
+                if ( face_indexes[ block_cell * faces_per_cell + f_id ] == UINT64_MAX )
+                {
+                    if ( neighbour_cell == MESH_BOUNDARY )
                     {
-                        face_neighbour_cell = num_cubes + f_id;
+                        neighbour_cell = num_cubes + f_id;
                     }
-
-                    faces [face_count] = Face<uint64_t> ( cell, face_neighbour_cell );
-
-                    if ( face_neighbour_cell >= block_element_disp[mpi_config->particle_flow_rank] && face_neighbour_cell < block_element_disp[mpi_config->particle_flow_rank+1] )
-                            face_indexes[ (face_neighbour_cell - cell_block_disp) * faces_per_cell + (f_id ^ 1) ] = face_count;
-
                     
 
-                    // printf("Cell %lu face %lu: face_id %d new\n", cell, f_id, face_count);
-                    cell_faces [(cell - cell_block_disp) * faces_per_cell + f_id] = face_count;
+                    // printf("Rank %d face_count %lu max_face_count %lu block_cell %lu max %lu \n", mpi_config->rank, face_count, faces_size, block_cell, cell_block_size );
+
+
+                    faces [face_count] = Face<uint64_t> ( cell, neighbour_cell );
+                    
+
+                    if ( neighbour_block_cell < cell_block_size )
+                    {
+                        face_indexes[ neighbour_block_cell * faces_per_cell + (f_id ^ 1) ] = face_count;
+
+                        // if ((neighbour_block_cell * faces_per_cell + (f_id ^ 1)) >= faces_per_cell * cell_block_size )
+                        // printf("Rank %d neighbour_block_cell * faces_per_cell + (f_id ^ 1) %lu max %lu \n", mpi_config->rank, face_count, neighbour_block_cell * faces_per_cell + (f_id ^ 1), faces_per_cell * cell_block_size );
+
+                    }
+
+
+                    // printf("Rank %d Cell %lu face %lu: face_id %lu new\n", mpi_config->rank, cell, f_id, face_count);
+                    cell_faces [block_cell * faces_per_cell + f_id] = face_count;
 
                     face_count++;
                 }
                 else
                 {
-                    // printf("Cell %lu face %lu: face_id %lu\n", cell, f_id, face_indexes[ (cell - cell_block_disp) * faces_per_cell + f_id ]);
-                    cell_faces [(cell - cell_block_disp) * faces_per_cell + f_id] = face_indexes[ (cell - cell_block_disp) * faces_per_cell + f_id ];
+                    // printf("Rank %d Cell %lu face %lu: face_id %lu\n", mpi_config->rank, cell, f_id, face_indexes[ (cell - cell_block_disp) * faces_per_cell + f_id ]);
+                    cell_faces [block_cell * faces_per_cell + f_id] = face_indexes[ block_cell * faces_per_cell + f_id ];
                 }
             }
         }
+
+        free(face_indexes);
     }
     // printf("Rank %d done\n", mpi_config->rank);
 

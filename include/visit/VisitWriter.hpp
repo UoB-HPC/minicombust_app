@@ -72,7 +72,7 @@ namespace minicombust::visit
                 vtk_file.close();
 
 
-                for (int i = 0; i < 6; i++)
+                for (uint64_t i = 0; i < 6; i++)
                 {
                     cout << "iiiii" << i << endl;
                     cout << "out/mesh/" + filename + to_string(i) + "_boundarymesh.vtk" << endl;
@@ -138,7 +138,7 @@ namespace minicombust::visit
                 // TODO: Allow different datatypes
                 // Print point data
                 vtk_file << endl << "POINTS " << mesh->local_mesh_size << " float"  << endl;
-                for(int cell = 0; cell < mesh->local_mesh_size; cell++)
+                for(int cell = 0; cell < (int)mesh->local_mesh_size; cell++)
                 {
                     const int data_per_line = 10;
                     if (cell % data_per_line == 0)  vtk_file << endl;
