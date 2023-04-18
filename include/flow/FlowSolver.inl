@@ -1594,22 +1594,22 @@ namespace minicombust::flow
 
         setup_time  -= MPI_Wtime();
         solve_time  += MPI_Wtime();  
-        // update_sparse_matrix (UVW_URFactor, A_phi.V, phi.V, S_phi.V); 
+        update_sparse_matrix (UVW_URFactor, A_phi.V, phi.V, S_phi.V); 
         setup_time  += MPI_Wtime();
         solve_time  -= MPI_Wtime();     
 
         MPI_Barrier(mpi_config->particle_flow_world); 
-        // solve_sparse_matrix (phi.V, S_phi.V);
+        solve_sparse_matrix (phi.V, S_phi.V);
         MPI_Barrier(mpi_config->particle_flow_world);  
 
         setup_time  -= MPI_Wtime();
         solve_time  += MPI_Wtime();  
-        // update_sparse_matrix (UVW_URFactor, A_phi.W, phi.W, S_phi.W);
+        update_sparse_matrix (UVW_URFactor, A_phi.W, phi.W, S_phi.W);
         setup_time  += MPI_Wtime();
         solve_time  -= MPI_Wtime();  
 
         MPI_Barrier(mpi_config->particle_flow_world); 
-        // solve_sparse_matrix (phi.W, S_phi.W);
+        solve_sparse_matrix (phi.W, S_phi.W);
         MPI_Barrier(mpi_config->particle_flow_world);
 
         
