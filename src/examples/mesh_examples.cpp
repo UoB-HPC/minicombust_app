@@ -523,6 +523,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                 uint64_t neighbour_block_cell = neighbour_cell - cell_block_disp;
                 
                 // printf("Rank %d block_cell %lu max %lu \n", mpi_config->rank, block_cell, cell_block_size );
+                // printf("Rank %d cell %lu f %lu neighbour cell %lu \n", mpi_config->rank, cell, f_id, neighbour_cell );
 
                 
                 if ( face_indexes[ block_cell * faces_per_cell + f_id ] == UINT64_MAX )
@@ -536,7 +537,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
                     // printf("Rank %d face_count %lu max_face_count %lu block_cell %lu max %lu \n", mpi_config->rank, face_count, faces_size, block_cell, cell_block_size );
 
 
-                    faces [face_count] = Face<uint64_t> ( cell, neighbour_cell );
+                    faces [face_count] = Face<uint64_t> ( cell < neighbour_cell ? cell : neighbour_cell, cell < neighbour_cell ? neighbour_cell : cell );
                     
 
                     if ( neighbour_block_cell < cell_block_size )

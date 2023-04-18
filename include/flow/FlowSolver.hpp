@@ -218,10 +218,6 @@ namespace minicombust::flow
                 cell_densities     = (T *)malloc(density_array_size);
                 cell_volumes       = (T *)malloc(volume_array_size);
 
-                if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up face data.\n", mpi_config->particle_flow_rank);
-
-
-
                 #pragma ivdep
                 for ( uint64_t face = 0; face < mesh->faces_size; face++ )  
                 {
@@ -252,12 +248,14 @@ namespace minicombust::flow
 
                     vec<T> cell0_cell1_vec = mesh->cell_centers[shmem_cell1] - mesh->cell_centers[shmem_cell0];
                     
-                    face_mass_fluxes[face] = 0.5 * rand()/RAND_MAX - 0.25;
                     face_areas[face]       = magnitude(*(face_nodes[2]) - *(face_nodes[0])) * magnitude(*(face_nodes[1]) - *(face_nodes[0]));
                     face_centers[face]     = (*(face_nodes[0]) + *(face_nodes[1]) + *(face_nodes[2]) + *(face_nodes[3])) / 4.0;
                     face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
-                    face_normals[face]     = normalise(cross_product(*(face_nodes[2]) - *(face_nodes[0]), *(face_nodes[1]) - *(face_nodes[0]))); 
+                    face_normals[face]     = -1.0 * normalise(cross_product(*(face_nodes[2]) - *(face_nodes[0]), *(face_nodes[1]) - *(face_nodes[0]))); 
                     face_rlencos[face]     = face_areas[face] / magnitude(cell0_cell1_vec) / vector_cosangle(face_normals[face], cell0_cell1_vec);
+                    
+                    face_mass_fluxes[face] = 0.25 * face_normals[face].x;
+                    face_mass_fluxes[face] = 0.0;
                 }
 
                 const T visc_lambda = 0.001;  
@@ -325,7 +323,6 @@ namespace minicombust::flow
                     const T width   = magnitude(mesh->points[cell_nodes[B_VERTEX] - mesh->shmem_point_disp] - mesh->points[cell_nodes[A_VERTEX] - mesh->shmem_point_disp]);
                     const T height  = magnitude(mesh->points[cell_nodes[C_VERTEX] - mesh->shmem_point_disp] - mesh->points[cell_nodes[A_VERTEX] - mesh->shmem_point_disp]);
                     const T length  = magnitude(mesh->points[cell_nodes[E_VERTEX] - mesh->shmem_point_disp] - mesh->points[cell_nodes[A_VERTEX] - mesh->shmem_point_disp]);
-                    printf("Rank %d cell %lu WIDTH %f HEIGHT %f LENGTH %f\n", mpi_config->rank, block_cell + mesh->local_cells_disp, width, height, length);
                     cell_volumes[block_cell] = width * height * length;
 
                     for ( uint64_t f = 0; f < mesh->faces_per_cell; f++ )
@@ -348,14 +345,16 @@ namespace minicombust::flow
                             const uint64_t boundary_cell = mesh->faces[face].cell1 - mesh->mesh_size;
                             if ( mesh->boundary_types[boundary_cell] == INLET )
                             {
-                                face_mass_fluxes[face] = -0.5 * rand()/RAND_MAX;
+                                face_mass_fluxes[face] = 0.25;
+                                face_mass_fluxes[face] = 0.0;
 
-                                if ( dot_product(face_normals[face], mesh->cell_centers[shmem_cell] - face_centers[face]) < 0 )
+                                if ( dot_product(face_normals[face], mesh->cell_centers[shmem_cell] - face_centers[face]) > 0 )
                                     face_normals[face] = -1. * face_normals[face];
                             }
                             else if ( mesh->boundary_types[boundary_cell] == OUTLET )
                             {
-                                face_mass_fluxes[face] = 0.5 * rand()/RAND_MAX;
+                                face_mass_fluxes[face] = 0.25;
+                                face_mass_fluxes[face] = 0.0;
 
                                 if ( dot_product(face_normals[face], mesh->cell_centers[shmem_cell] - face_centers[face]) > 0 )
                                     face_normals[face] = -1. * face_normals[face];
@@ -388,6 +387,29 @@ namespace minicombust::flow
                     phi.V[block_cell]     = 0.0;
                     phi.W[block_cell]     = 0.0;
                     phi.P[block_cell]     = mesh->dummy_gas_pre;
+
+
+                    if ( mesh->boundary_types[boundary_cell] == INLET )
+                    {
+                        phi.U[block_cell]     = 50.0;
+                        phi.V[block_cell]     = 0.0;
+                        phi.W[block_cell]     = 0.0;
+                        phi.P[block_cell]     = mesh->dummy_gas_pre;
+                    }
+                    else if ( mesh->boundary_types[boundary_cell] == OUTLET )
+                    {
+                        phi.U[block_cell]     = 50.0;
+                        phi.V[block_cell]     = 0.0;
+                        phi.W[block_cell]     = 0.0;
+                        phi.P[block_cell]     = mesh->dummy_gas_pre;
+                    }
+                    else if ( mesh->boundary_types[boundary_cell] == WALL )
+                    {
+                        phi.U[block_cell]     = 0.0;
+                        phi.V[block_cell]     = 0.0;
+                        phi.W[block_cell]     = 0.0;
+                        phi.P[block_cell]     = mesh->dummy_gas_pre;
+                    }
 
                     // old_phi.U[block_cell] = 0.0;
                     // old_phi.V[block_cell] = 0.0;
