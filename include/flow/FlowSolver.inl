@@ -714,11 +714,11 @@ namespace minicombust::flow
 
                     dX = mask * ( mesh->cell_centers[shmem_cell1] - mesh->cell_centers[shmem_cell0] );
                     
-                    if (( block_cell == 1 ) && mpi_config->particle_flow_rank == 0)
-                    {
-                        printf("Cell0 %lu Cell1 %lu dX %s dU %f dY %f dZ %f phi0 %f phi1 %f \n ", mesh->faces[face].cell0, mesh->faces[face].cell1, print_vec(dX).c_str(), dU, dV, dW, phi.U[phi_index0], phi.U[phi_index1]);
+                    // if (( block_cell == 1 ) || ( block_cell == 19 ) && mpi_config->particle_flow_rank == 0)
+                    // {
+                    //     printf("Cell0 %lu Cell1 %lu dX %s dU %f dY %f dZ %f phi0 %f phi1 %f normal %s \n ", mesh->faces[face].cell0, mesh->faces[face].cell1, print_vec(dX).c_str(), dU, dV, dW, phi.U[phi_index0], phi.U[phi_index1], print_vec(face_normals[face]).c_str());
 
-                    }
+                    // }
                     // Note: ADD code for porous cells here
                 } 
                 else // Boundary face
@@ -730,7 +730,13 @@ namespace minicombust::flow
                     dW = phi.W[mesh->local_mesh_size + nhalos + boundary_cell] - phi.W[block_cell0];
                     dP = phi.P[mesh->local_mesh_size + nhalos + boundary_cell] - phi.P[block_cell0];
 
+
                     dX = face_centers[face] - mesh->cell_centers[shmem_cell0];
+                    // if (( block_cell == 1 ) || ( block_cell == 19 ) && mpi_config->particle_flow_rank == 0)
+                    // {
+                    //     printf("Cell0 %lu Boundary %lu dX %s dU %f dY %f dZ %f phi0 %f phi1 %f normal %s \n ", mesh->faces[face].cell0, boundary_cell, print_vec(dX).c_str(), dU, dV, dW, phi.U[block_cell0], phi.U[mesh->local_mesh_size + nhalos + boundary_cell], print_vec(face_normals[face]).c_str());
+                    // }
+                    
                 }
 
 
@@ -779,12 +785,12 @@ namespace minicombust::flow
             xW = A_decomposition.solve(bW);
             xP = A_decomposition.solve(bP);
             
-            if ((block_cell == 1) && mpi_config->particle_flow_rank == 0)
-            {
-                cout << "A: " << endl << A << endl;
-                cout << "bU: " << endl << bU << endl;
-                cout << "xU: " << endl << xU << endl;
-            }
+            // if ((block_cell == 1) || ( block_cell == 19 ) && mpi_config->particle_flow_rank == 0)
+            // {
+            //     cout << "A: " << endl << A << endl;
+            //     cout << "bU: " << endl << bU << endl;
+            //     cout << "xU: " << endl << xU << endl;
+            // }
         }
     }
 
@@ -838,10 +844,14 @@ namespace minicombust::flow
             residual[phi_index1] = residual[phi_index1] - face_fields[face].cell0 * phi_component[phi_index0];
 
             face_count += 2;
-            if (phi_index0 == 1 || phi_index1 == 1)
-                printf("phi0 %lu phi1 %lu face0 %f face1 %f\n", phi_index0, phi_index1, face_fields[face].cell0, face_fields[face].cell1);
+            // if (phi_index0 == 1 || phi_index1 == 1)
+            //     printf("phi0 %lu phi1 %lu face0 %f face1 %f\n", phi_index0, phi_index1, face_fields[face].cell0, face_fields[face].cell1);
             A_phi_component[phi_index0] -= face_fields[face].cell1;
             A_phi_component[phi_index1] -= face_fields[face].cell0;
+
+            // printf("A_phi[%lu] adding  %.17f SETUP\n", mesh->faces[face].cell0, -face_fields[face].cell1);
+            // printf("A_phi[%lu] adding  %.17f SETUP\n", mesh->faces[face].cell1, -face_fields[face].cell0);
+
         }
 
         res_phi_time += MPI_Wtime();
@@ -866,9 +876,8 @@ namespace minicombust::flow
             A_phi_component[i] *= RURF;
             S_phi_component[i] = S_phi_component[i] + (1.0 - URFactor) * A_phi_component[i] * phi_component[i];
 
-            if ( (i==1) && mpi_config->particle_flow_rank == 0)
-                printf("Rank %d S_phi at cell %lu %f (added %f) SETUP\n", mpi_config->rank, i, S_phi_component[i], (1.0 - URFactor) * A_phi_component[i] * phi_component[i]); 
-
+            // if ( (i==1) && mpi_config->particle_flow_rank == 0)
+            //     printf("Rank %d S_phi at cell %lu %f (added %f) SETUP\n", mpi_config->rank, i, S_phi_component[i], (1.0 - URFactor) * A_phi_component[i] * phi_component[i]); 
 
             // if (isnan(A_phi_component[i]))
             // {
@@ -1048,14 +1057,6 @@ namespace minicombust::flow
         Eigen::Map<Eigen::VectorXd>   phi_vector(phi_component,   mesh->local_mesh_size + nhalos);
         // Eigen::Map<Eigen::VectorXd>   phi_vector(phi_component,   mesh->local_mesh_size + nhalos + mesh->boundary_cells_size);
 
-        printf("\tRank %d: mesh_size %lu nhalos %lu boundary_cells %lu\n", mpi_config->rank, mesh->local_mesh_size, nhalos, mesh->boundary_cells_size );
-
-
-        printf("\tRank %d: Running function solve_sparse_matrix A = (%lu %lu) x = (%lu %lu) b = (%lu %lu).\n", mpi_config->rank, 
-                                                                                                                                       A_spmatrix.rows(),   A_spmatrix.cols(), 
-                                                                                                                                       phi_vector.rows(),   phi_vector.cols(),
-                                                                                                                                       S_phi_vector.rows(), S_phi_vector.cols());
-
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_sparse_matrix A = (%lu %lu) x = (%lu %lu) b = (%lu %lu).\n", mpi_config->rank, 
                                                                                                                                        A_spmatrix.rows(),   A_spmatrix.cols(), 
                                                                                                                                        phi_vector.rows(),   phi_vector.cols(),
@@ -1090,32 +1091,41 @@ namespace minicombust::flow
 
         phi_vector = eigen_solver.solve(S_phi_vector);
 
-        if (mpi_config->particle_flow_rank == 0  )
-        {
-            printf("Timestep %lu\n", timestep_count);
-            cout << "A Matrix     : " << endl << Eigen::MatrixXd(A_spmatrix) << endl;
-
-            cout << endl << mpi_config->particle_flow_rank << "S_Phi : " << endl << S_phi_vector << endl;
-            cout << endl << mpi_config->particle_flow_rank << "Phi   : " << endl << phi_vector   << endl;
-        }
-
-        MPI_Barrier(mpi_config->particle_flow_world);
-
-
-        if (mpi_config->particle_flow_rank == 1 )
-        {
-            printf("Timestep %lu\n", timestep_count);
-            cout << "A Matrix     : " << endl << Eigen::MatrixXd(A_spmatrix) << endl;
-
-            cout << endl << mpi_config->particle_flow_rank << "S_Phi : " << endl << S_phi_vector << endl;
-            cout << endl << mpi_config->particle_flow_rank << "Phi   : " << endl << phi_vector   << endl;
-        }
-        MPI_Barrier(mpi_config->particle_flow_world);
-
-        // if (timestep_count == 1500)
+        // if (mpi_config->particle_flow_rank == 0  )
         // {
-        //     exit(1);
+        //     printf("Timestep %lu\n", timestep_count);
+        //     // cout << "A Matrix     : " << endl << Eigen::MatrixXd(A_spmatrix) << endl;
+
+        //     // cout << endl << std::setprecision(20) <<  mpi_config->particle_flow_rank << "S_Phi : " << endl << S_phi_vector << endl;
+        //     cout << endl << std::setprecision(20) <<  mpi_config->particle_flow_rank << "Phi   : " << endl << phi_vector   << endl;
         // }
+
+        // MPI_Barrier(mpi_config->particle_flow_world);
+
+        // if (mpi_config->particle_flow_rank == 1 )
+        // {
+        //     printf("Timestep %lu\n", timestep_count);
+        //     // cout << "A Matrix     : " << endl << Eigen::MatrixXd(A_spmatrix) << endl;
+
+        //     // cout << endl << mpi_config->particle_flow_rank << "S_Phi : " << endl << S_phi_vector << endl;
+        //     cout << endl << mpi_config->particle_flow_rank << "Phi   : " << endl << phi_vector   << endl;
+        // }
+        // MPI_Barrier(mpi_config->particle_flow_world);
+
+        // if (timestep_count == 0)
+        // {
+            
+        //     // exit(1);
+        // }
+
+        // if ( timestep_count == 1499  )
+        //     {
+        //         printf("Timestep %lu\n", timestep_count);
+        //         if ( A_spmatrix.cols() < 50 )  cout << "A Matrix     : " << endl << std::setprecision(20) << Eigen::MatrixXd(A_spmatrix) << endl;
+
+        //         cout << endl << std::setprecision(20) <<  mpi_config->particle_flow_rank << "S_Phi : " << endl << S_phi_vector << endl;
+        //         cout << endl << std::setprecision(20) <<  mpi_config->particle_flow_rank << "Phi   : " << endl << phi_vector   << endl;
+        //     }
 
         // MPI_Barrier(mpi_config->particle_flow_world);
 
@@ -1262,6 +1272,9 @@ namespace minicombust::flow
                 face_fields[face].cell0 = -VisFace - max( face_mass_fluxes[face] , 0.0 );  // P (e);
                 face_fields[face].cell1 = -VisFace + min( face_mass_fluxes[face] , 0.0 );  // N (w);
 
+                
+
+
                 const T blend_u = GammaBlend * ( fuce - fuci );
                 const T blend_v = GammaBlend * ( fvce - fvci );
                 const T blend_w = GammaBlend * ( fwce - fwci );
@@ -1283,11 +1296,18 @@ namespace minicombust::flow
                 S_phi.V[phi_index1] = S_phi.V[phi_index1] + blend_v - fvde + fvdi;
                 S_phi.W[phi_index1] = S_phi.W[phi_index1] + blend_w - fwde + fwdi;
 
-                if ((phi_index0==1) && mpi_config->particle_flow_rank ==0)
-                    printf("Rank %d S_phi at phi_index0 %lu %.17f (added %.17f fude %f fudi %f) INNER cell %lu dudx %s dv.x %f dw.z %f normal %s\n", mpi_config->rank, phi_index0, S_phi.U[phi_index0], - blend_u + fude - fudi, fude, fudi, mesh->faces[face].cell1, print_vec(dUdXac).c_str(), dVdXac.x, dWdXac.x, print_vec(face_normals[face]).c_str()  ); 
+                // if ((phi_index0==1) && mpi_config->particle_flow_rank ==0)
+                //     printf("Rank %d S_phi at phi_index0 %lu %.17f (added %.17f fude %f fudi %f) INNER cell %lu dudx %s dv.x %f dw.z %f normal %s\n", mpi_config->rank, phi_index0, S_phi.U[phi_index0], - blend_u + fude - fudi, fude, fudi, mesh->faces[face].cell1, print_vec(dUdXac).c_str(), dVdXac.x, dWdXac.x, print_vec(face_normals[face]).c_str()  ); 
 
-                if ((phi_index1==1 ) && mpi_config->particle_flow_rank ==0)
-                    printf("Rank %d S_phi at phi_index1 %lu %.17f (added %.17f fude %f fudi %f) INNER cell %lu dudx %s dv.x %f dw.z %f normal %s\n", mpi_config->rank, phi_index1, S_phi.U[phi_index1], + blend_u - fude + fudi, fude, fudi, mesh->faces[face].cell0, print_vec(dUdXac).c_str(), dVdXac.x, dWdXac.x, print_vec(face_normals[face]).c_str()  ); 
+                // if ((phi_index1==1 ) && mpi_config->particle_flow_rank ==0)
+                //     printf("Rank %d S_phi at phi_index1 %lu %.17f (added %.17f fude %f fudi %f) INNER cell %lu dudx %s dv.x %f dw.z %f normal %s\n", mpi_config->rank, phi_index1, S_phi.U[phi_index1], + blend_u - fude + fudi, fude, fudi, mesh->faces[face].cell0, print_vec(dUdXac).c_str(), dVdXac.x, dWdXac.x, print_vec(face_normals[face]).c_str()  ); 
+
+                // printf("A_phi[%lu] adding  %f INNER lrlencos %f\n", mesh->faces[face].cell0, VisFace, face_rlencos[face]);
+                // printf("A_phi[%lu] adding  %f INNER\n", mesh->faces[face].cell1, VisFace);
+
+                // printf("S_phi[%lu] adding  %.17f INNER\n", mesh->faces[face].cell0, - blend_u + fude - fudi);
+                // printf("S_phi[%lu] adding  %.17f INNER\n", mesh->faces[face].cell1, + blend_u - fude + fudi);
+
 
                 const T small_epsilon = 1.e-20;
                 const T peclet = face_mass_fluxes[face] / face_areas[face] * magnitude(Xpn) / (Visac+small_epsilon);
@@ -1360,8 +1380,13 @@ namespace minicombust::flow
                     S_phi.W[block_cell0] = S_phi.W[block_cell0] - f * WFace + fwde - fwdi;
                     phi.W[mesh->local_mesh_size + nhalos + boundary_cell] = WFace;
 
-                    if ((block_cell0==1) && mpi_config->particle_flow_rank ==0)
-                        printf("Rank %d S_phi at cell %lu %.17f (minused %.17f) INLET f %f VisFace %f mass %f dUdXac %s Xpn %s\n", mpi_config->rank, block_cell0, S_phi.U[block_cell0], - f * UFace + fude - fudi, f, VisFace, face_mass_fluxes[face], print_vec(dUdXac).c_str(), print_vec(Xpn).c_str()); 
+                    // if ((block_cell0==1) && mpi_config->particle_flow_rank ==0)
+                    //     printf("Rank %d S_phi at cell %lu %.17f (minused %.17f) INLET f %f VisFace %f mass %f dUdXac %s Xpn %s\n", mpi_config->rank, block_cell0, S_phi.U[block_cell0], - f * UFace + fude - fudi, f, VisFace, face_mass_fluxes[face], print_vec(dUdXac).c_str(), print_vec(Xpn).c_str()); 
+
+                    // printf("A_phi[%lu] adding  %f INLET  lrlencos %f \n", block_cell0, -f, face_rlencos[face]);
+
+                    // printf("S_phi[%lu] adding  %.17f INLET t1 %f t2 %f\n", mesh->faces[face].cell0, - f * UFace + fude - fudi, -f * UFace, fude - fudi);
+                    
                 }
                 else if( boundary_type == OUTLET )
                 {
@@ -1429,15 +1454,21 @@ namespace minicombust::flow
                     S_phi.W[block_cell0] = S_phi.W[block_cell0] - f * WFace + fwde - fwdi;
                     phi.W[mesh->local_mesh_size + nhalos + boundary_cell] = WFace;
 
-                    if ((block_cell0==1)  && mpi_config->particle_flow_rank == 0)
-                        printf("Rank %d S_phi at cell %lu %.17f (minused %.17f) OUTLET\n", mpi_config->rank, block_cell0, S_phi.U[block_cell0], - f * UFace + fude - fudi); 
+                    // if ((block_cell0==1)  && mpi_config->particle_flow_rank == 0)
+                    //     printf("Rank %d S_phi at cell %lu %.17f (minused %.17f) OUTLET\n", mpi_config->rank, block_cell0, S_phi.U[block_cell0], - f * UFace + fude - fudi); 
+
+                    // printf("A_phi[%lu] adding  %f OUTLET\n", block_cell0, -f);
+
+                    // printf("S_phi[%lu] adding  %.17f OUTLET t1 %f t2 %f\n", mesh->faces[face].cell0, - f * UFace + fude - fudi, -f * UFace, fude - fudi);
+
+
 
                 }
                 else if( boundary_type == WALL )
                 {
                     // if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Encountered WALL boundary \n", mpi_config->rank);
 
-                    const T UFace = 0.; // Customisable (add regions here later)
+                    const T UFace = 50.; // Customisable (add regions here later)
                     const T VFace = 0.; // Customisable (add regions here later)
                     const T WFace = 0.; // Customisable (add regions here later)
 
@@ -1449,7 +1480,8 @@ namespace minicombust::flow
 
                     const vec<T> Xpn = face_centers[face] - mesh->cell_centers[shmem_cell0];
 
-                    const T coef = Visac * face_areas[face] / magnitude(Xpn);
+                    // const T coef = Visac * face_areas[face] / magnitude(Xpn);
+                    const T coef = Visac * face_rlencos[face];
 
                     vec<T> Up;
                     Up.x = phi.U[block_cell0] - UFace;
@@ -1486,6 +1518,8 @@ namespace minicombust::flow
                         A_phi.U[block_cell0] = A_phi.U[block_cell0] + coef;
                         A_phi.V[block_cell0] = A_phi.V[block_cell0] + coef;
                         A_phi.W[block_cell0] = A_phi.W[block_cell0] + coef;
+                        // printf("A_phi[%lu] adding  %f WALL\n", block_cell0, coef);
+
 
                         // !
                         // !                    corr.                     expliciet
@@ -1499,14 +1533,17 @@ namespace minicombust::flow
 
                     if ((block_cell0==1 )  && mpi_config->particle_flow_rank ==0)
                     {
-                        printf("Rank %d S_phi at cell %lu %.15f (added %.15f) WALL\n", mpi_config->rank, block_cell0, S_phi.U[block_cell0], + coef*phi.U[block_cell0] - force.x); 
-                        printf("Rank %d A_phi at cell %lu %15f (added %15f) WALL\n", mpi_config->rank, block_cell0, A_phi.U[block_cell0], coef); 
+                        // printf("Rank %d S_phi at cell %lu %.15f (added %.15f) WALL\n", mpi_config->rank, block_cell0, S_phi.U[block_cell0], + coef*phi.U[block_cell0] - force.x); 
+                        // printf("Rank %d A_phi at cell %lu %15f (added %15f) WALL\n", mpi_config->rank, block_cell0, A_phi.U[block_cell0], coef); 
 
                     }
 
                     phi.U[mesh->local_mesh_size + nhalos + boundary_cell] = UFace;
                     phi.V[mesh->local_mesh_size + nhalos + boundary_cell] = VFace;
                     phi.W[mesh->local_mesh_size + nhalos + boundary_cell] = WFace;
+
+                    // printf("S_phi[%lu] adding  %.17f WALL coef %f force %f\n", mesh->faces[face].cell0, + coef*phi.U[block_cell0] - force.x, coef, force.x);
+
 
                 }
             }   
@@ -1568,13 +1605,16 @@ namespace minicombust::flow
                 S_phi.V[i] += f * phi.V[i];
                 S_phi.W[i] += f * phi.W[i];
 
-                if ((i==1 )  && mpi_config->particle_flow_rank == 0)
-                    printf("Rank %d S_phi at cell %lu %f (added %f) TRANSIENT\n", mpi_config->rank, i, S_phi.U[i],  f * phi.U[i]); 
+                // if ((i==1 )  && mpi_config->particle_flow_rank == 0)
+                //     printf("Rank %d S_phi at cell %lu %f (added %f) TRANSIENT\n", mpi_config->rank, i, S_phi.U[i],  f * phi.U[i]); 
 
 
                 A_phi.U[i] += f;
                 A_phi.V[i] += f;
                 A_phi.W[i] += f;
+
+                // printf("A_phi[%lu] adding  %.20f TRANSIENT (Total %.20f) cell_volume %.20f density %.20f\n", i, f, A_phi.U[i], cell_densities[i], cell_volumes[i]);
+                // printf("S_phi[%lu] adding  %.20f TRANSIENT\n", i, f * phi.U[i]);
             }
         }
 

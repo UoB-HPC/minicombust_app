@@ -251,14 +251,21 @@ namespace minicombust::flow
                     face_areas[face]       = magnitude(*(face_nodes[2]) - *(face_nodes[0])) * magnitude(*(face_nodes[1]) - *(face_nodes[0]));
                     face_centers[face]     = (*(face_nodes[0]) + *(face_nodes[1]) + *(face_nodes[2]) + *(face_nodes[3])) / 4.0;
                     face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
-                    face_normals[face]     = -1.0 * normalise(cross_product(*(face_nodes[2]) - *(face_nodes[0]), *(face_nodes[1]) - *(face_nodes[0]))); 
+                    face_normals[face]     = normalise(cross_product(*(face_nodes[2]) - *(face_nodes[0]), *(face_nodes[1]) - *(face_nodes[0]))); 
+
+
+
+                    if ( dot_product(face_normals[face], mesh->cell_centers[shmem_cell1] -  mesh->cell_centers[shmem_cell0]) < 0 )
+                                    face_normals[face] = -1. * face_normals[face];
+
                     face_rlencos[face]     = face_areas[face] / magnitude(cell0_cell1_vec) / vector_cosangle(face_normals[face], cell0_cell1_vec);
-                    
+
+
                     face_mass_fluxes[face] = 0.25 * face_normals[face].x;
                     face_mass_fluxes[face] = 0.0;
                 }
 
-                const T visc_lambda = 0.001;  
+                const T visc_lambda = 0.000014;  
                 effective_viscosity = visc_lambda; // NOTE: Localise this to cells and boundaries when implementing Turbulence model
 
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up cell data.\n", mpi_config->particle_flow_rank);
@@ -369,6 +376,7 @@ namespace minicombust::flow
 
                             vec<T> cell0_facecenter_vec = face_centers[face] - mesh->cell_centers[shmem_cell];
                             face_rlencos[face]          = face_areas[face] / magnitude(cell0_facecenter_vec) / vector_cosangle(face_normals[face], cell0_facecenter_vec);
+
                         }
                     }
                 }

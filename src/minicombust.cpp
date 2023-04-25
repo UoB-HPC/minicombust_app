@@ -48,7 +48,7 @@ int main (int argc, char ** argv)
 
     // Run Configuration
     const uint64_t ntimesteps                   = 1500;
-    const double   delta                        = 2.5e-6;
+    const double   delta                        = 1.0e-8;
     const int64_t output_iteration              = (argc > 4) ? atoi(argv[4]) : 10;
     const uint64_t particles_per_timestep       = (argc > 2) ? atoi(argv[2]) : 10;
     
