@@ -2057,7 +2057,7 @@ namespace minicombust::flow
 
         grad_time += MPI_Wtime();
         halo_time -= MPI_Wtime();
-        exchange_phi_halos();
+        //exchange_phi_halos();
         halo_time += MPI_Wtime();
 
         if ((timestep_count % comms_timestep) == 0)  
@@ -2083,7 +2083,7 @@ namespace minicombust::flow
             }
         }
 
-        calculate_UVW();
+        //calculate_UVW();
 
         // calculate_pressure();
 

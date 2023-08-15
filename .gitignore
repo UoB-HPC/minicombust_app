@@ -45,6 +45,7 @@ bin/*
 # VSCode
 .vscode
 
- output.txt
- error.txt
- job.pbs
+# Job files
+output.txt
+error.txt
+*.pbs
