@@ -1,0 +1,23 @@
+
+Lmod is automatically replacing "PrgEnv-cray/8.3.3" with "PrgEnv-gnu/8.3.3".
+
+
+Lmod is automatically replacing "cce/15.0.1" with "gcc/12.2.0".
+
+
+Due to MODULEPATH changes, the following have been reloaded:
+  1) cray-mpich/8.1.25
+
+Lmod has detected the following error: The following module(s) are unknown:
+"IntelOneApi/modulefiles/tbb/latest"
+
+Please check the spelling or version number. Also try "module spider ..."
+It is also possible your cache file is out-of-date; it may help to try:
+  $ module --ignore_cache load "IntelOneApi/modulefiles/tbb/latest"
+
+Also make sure that all modulefiles written in TCL start with the string
+#%Module
+
+
+
+/var/spool/pbs/mom_priv/jobs/28225.p3-pbs.SC: line 12: 307032 Segmentation fault      (core dumped) ./bin/minicombust
