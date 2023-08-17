@@ -1,12 +1,12 @@
 #!/bin/bash
 #PBS -N minicombust
 #PBS -o output.txt
-#PBS -l select=1:ncpus=1:ngpus=1
+#PBS -l select=1:ncpus=10
 #PBS -e error.txt
-#PBS -q ampereq
+#PBS -q romeq
 #PBS -l walltime=0:15:00
 
 echo $PBS_O_WORKDIR
 cd $PBS_O_WORKDIR
 
-./bin/minicombust # emits 10 particles per timestep by default
+mpirun -np 10 ./bin/minicombust 5 # emits 10 particles per timestep by default

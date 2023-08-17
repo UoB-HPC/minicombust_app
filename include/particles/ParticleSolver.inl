@@ -234,6 +234,8 @@ namespace minicombust::particles
                 //         {printf("ERROR RECV VALS : Rank %d Block %lu will write fields  to unallocated memory required size %d max %lu\n", mpi_config->rank, bi, neighbours_size[bi], node_index_array_sizes[bi] / sizeof(uint64_t)); exit(1);}
                 // }
 
+                //TODO callum rewrite with c++ parallel algos
+
                 #pragma ivdep
                 for (int i = 0; i < neighbours_size[bi]; i++)
                 {
