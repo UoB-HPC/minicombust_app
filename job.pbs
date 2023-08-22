@@ -1,12 +1,20 @@
 #!/bin/bash
 #PBS -N minicombust
 #PBS -o output.txt
-#PBS -l select=1:ncpus=10
+#PBS -l select=1:ncpus=10:mpiprocs=10
 #PBS -e error.txt
-#PBS -q romeq
+#PBS -q milanq
 #PBS -l walltime=0:15:00
 
 echo $PBS_O_WORKDIR
 cd $PBS_O_WORKDIR
 
-mpirun -np 10 ./bin/minicombust 5 # emits 10 particles per timestep by default
+echo $PATH
+
+#aprun -n 10 ./bin/minicombust 7 100 20 100 
+
+
+export GMON_OUT_PREFIX=gmon.out-
+#aprun -n 10 ./bin/minicombust 7
+mpirun -np 10 ./bin/minicombust 7
+
