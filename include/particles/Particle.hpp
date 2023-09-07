@@ -119,7 +119,7 @@ namespace minicombust::particles
                 else
                 {
                     bool found_cell     = false;
-                    vec<T> artificial_A = mesh->cell_centres[cell - mesh->shmem_cell_disp];
+                    vec<T> artificial_A = mesh->cell_centers[cell - mesh->shmem_cell_disp];
                     vec<T> *A = &artificial_A;
                     vec<T> *B = &x1;
 
@@ -190,7 +190,7 @@ namespace minicombust::particles
                             // Get random point within unit sphere
                             vec<T> r = vec<T> { static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX), static_cast<double>(rand())/(RAND_MAX) } ;
                             r        = - 1. + (r * 2.);
-                            artificial_A = mesh->cell_centres[cell - mesh->shmem_cell_disp] + 0.4 * r * mesh->cell_size_vector / 2.;
+                            artificial_A = mesh->cell_centers[cell - mesh->shmem_cell_disp] + 0.4 * r * mesh->cell_size_vector / 2.;
 
                             if (PARTICLE_DEBUG)  cout << "\t\t\tMultiple faces, artificial position " <<  print_vec(artificial_A) << endl;
                             if (LOGGER)
@@ -214,7 +214,7 @@ namespace minicombust::particles
 
                         // Test neighbour cell
                         cell = mesh->cell_neighbours[(cell - mesh->shmem_cell_disp)*mesh->faces_per_cell + intercepted_face_id];
-                        artificial_A = mesh->cell_centres[cell - mesh->shmem_cell_disp];
+                        artificial_A = mesh->cell_centers[cell - mesh->shmem_cell_disp];
 
                         if (PARTICLE_DEBUG)  cout << "\t\tMoving to cell " << cell << " " << mesh->get_face_string(intercepted_face_id) << " direction" << endl;  
 

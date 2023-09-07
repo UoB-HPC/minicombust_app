@@ -115,69 +115,6 @@ inline void fill_neighbours( uint64_t c, vec<uint64_t> local_position, vec<uint6
     (*cell_neighbours)[(c - shmem_disp) * faces_per_cell + RIGHT_FACE] = right_index ;
     (*cell_neighbours)[(c - shmem_disp) * faces_per_cell + DOWN_FACE]  = down_index  ;
     (*cell_neighbours)[(c - shmem_disp) * faces_per_cell + UP_FACE]    = up_index    ;
-
-    // // FRONT
-    // if ( c < elements_per_dim.x*elements_per_dim.y )  {
-    //     // faces[faces_count++]                           = Face<double>(MESH_BOUNDARY, c);
-    //     cell_neighbours[c*faces_per_cell + FRONT_FACE] = MESH_BOUNDARY;
-    // }                             
-    // else
-    // {
-    //     cell_neighbours[c*faces_per_cell + FRONT_FACE] = c - elements_per_dim.x*elements_per_dim.y;
-    // }
-
-    // // BACK
-    // if ( c >= (elements_per_dim.z-1)*elements_per_dim.x*elements_per_dim.y )  {
-    //     // faces[faces_count++]                           = Face<double>(MESH_BOUNDARY, c);
-    //     cell_neighbours[c*faces_per_cell + BACK_FACE]  = MESH_BOUNDARY;
-    // }                             
-    // else
-    // {
-    //     // faces[faces_count++]                           = Face<double>(c, c + elements_per_dim.x*elements_per_dim.y);
-    //     cell_neighbours[c*faces_per_cell + BACK_FACE]  = c + elements_per_dim.x*elements_per_dim.y;
-    // }
-
-    // // LEFT
-    // if ( (c % elements_per_dim.x) == 0 )  {
-    //     // faces[faces_count++]                           = Face<double>(MESH_BOUNDARY, c);
-    //     cell_neighbours[c*faces_per_cell + LEFT_FACE]  = MESH_BOUNDARY;
-    // }                             
-    // else
-    // {
-    //     cell_neighbours[c*faces_per_cell + LEFT_FACE]  = c - 1;
-    // }
-
-    // // RIGHT
-    // if ( ((c+1) % elements_per_dim.x) == 0 )  {
-    //     // faces[faces_count++]                           = Face<double>(MESH_BOUNDARY, c);
-    //     cell_neighbours[c*faces_per_cell + RIGHT_FACE] = MESH_BOUNDARY;
-    // }                             
-    // else
-    // {
-    //     // faces[faces_count++]                           = Face<double>(c, c + 1);
-    //     cell_neighbours[c*faces_per_cell + RIGHT_FACE] = c + 1;
-    // }
-
-    // // DOWN
-    // if ( (c % (elements_per_dim.x*elements_per_dim.y)) < elements_per_dim.x )  {
-    //     // faces[faces_count++]                           = Face<double>(MESH_BOUNDARY, c);
-    //     cell_neighbours[c*faces_per_cell + DOWN_FACE]  = MESH_BOUNDARY;
-    // }                             
-    // else
-    // {
-    //     cell_neighbours[c*faces_per_cell + DOWN_FACE]  = c - elements_per_dim.x;
-    // }
-
-    // // UP
-    // if ( ((c+elements_per_dim.x) % (elements_per_dim.x*elements_per_dim.y)) < elements_per_dim.x )  {
-    //     // faces[faces_count++]                           = Face<double>(MESH_BOUNDARY, c);
-    //     cell_neighbours[c*faces_per_cell + UP_FACE]    = MESH_BOUNDARY;
-    // }                             
-    // else
-    // {
-    //     // faces[faces_count++]                           = Face<double>(c, c + elements_per_dim.x);
-    //     cell_neighbours[c*faces_per_cell + UP_FACE]    = c + elements_per_dim.x;
-    // }
 }
 
 Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64_t> elements_per_dim, int flow_ranks)
@@ -250,36 +187,8 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     }
 
     // const uint64_t num_points = (points_per_dim.z + block_dim.z - 1) * (points_per_dim.y + block_dim.y - 1) * (points_per_dim.x + block_dim.x - 1);   
-    const uint64_t num_points = points_per_dim.z * points_per_dim.y * points_per_dim.x;   
+    const uint64_t num_points = points_per_dim.z * points_per_dim.y * points_per_dim.x;
     
-    if ( mpi_config->rank == 0 )
-    {
-        printf("\nMesh dimensions\n");
-        cout << "\tReal dimensions (m)   : " << print_vec(mesh_dim)         << endl;
-        cout << "\tTotal cells           : " << num_cubes                   << endl;
-        cout << "\tTotal points          : " << num_points                  << endl;
-        cout << "\tElement dimensions    : " << print_vec(elements_per_dim) << endl;
-        cout << "\tFlow block dimensions : " << print_vec(block_dim)        << endl;
-        cout << "\tFlow blocks           : " << num_blocks                  << endl;
-        for (int i = 0; i < 3; i++) 
-        {   
-            cout << "\tBlock displacement " << dim_chars[i] << "  : ";
-            for (uint64_t b = 0; b < block_dim[i] + 1; b++)
-                cout << flow_block_displacements[i][b] << " ";
-            cout << endl;
-        }
-        cout << "\tIdle flow ranks       : " << flow_ranks - num_blocks << endl;
-    }
-
-    MPI_Barrier(mpi_config->world);
-    if (mpi_config->solver_type == FLOW && (uint64_t)mpi_config->particle_flow_rank < num_blocks )
-        printf( "\tFlow %5d dimensons : %lu %lu %lu\n", mpi_config->particle_flow_rank, flow_block_element_sizes[0][mpi_config->particle_flow_rank % block_dim.x], 
-                                                                                        flow_block_element_sizes[1][(mpi_config->particle_flow_rank / block_dim.x) % block_dim.y],
-                                                                                        flow_block_element_sizes[2][mpi_config->particle_flow_rank / (block_dim.x * block_dim.y)]);
-    MPI_Barrier(mpi_config->world);
-
-
-
     uint64_t *block_element_disp = (uint64_t *) malloc( (flow_ranks+1) * sizeof(uint64_t) ); 
     uint64_t *block_point_disps  = (uint64_t *) malloc( (flow_ranks+1) * sizeof(uint64_t) ); 
     uint64_t cell_displacement  = 0; 
@@ -301,6 +210,36 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
             }
         }
     }
+
+    if ( mpi_config->rank == 0 )
+    {
+        printf("\nMesh dimensions\n");
+        cout << "\tReal dimensions (m)   : " << print_vec(mesh_dim)         << endl;
+        cout << "\tTotal cells           : " << num_cubes                   << endl;
+        cout << "\tTotal points          : " << num_points                  << endl;
+        cout << "\tElement dimensions    : " << print_vec(elements_per_dim) << endl;
+        cout << "\tFlow block dimensions : " << print_vec(block_dim)        << endl;
+        cout << "\tFlow blocks           : " << num_blocks                  << endl;
+
+        vec<uint64_t> average_block_size = { 0, 0, 0 };
+        for (int i = 0; i < 3; i++) 
+        {   
+            cout << "\tBlock displacement " << dim_chars[i] << "  : ";
+            for (uint64_t b = 0; b < block_dim[i] + 1; b++)
+                cout << flow_block_displacements[i][b] << " ";
+
+            for (uint64_t b = 0; b < block_dim[i]; b++)
+                average_block_size[i] = average_block_size[i] + flow_block_element_sizes[i][b];
+
+            average_block_size[i] = average_block_size[i] / block_dim[i];
+            cout << endl;
+        }
+
+        printf( "\tAvg Flow dimensons    : %lu %lu %lu (%lu cells)\n", average_block_size.x,  average_block_size.y,  average_block_size.z,
+                                                                       average_block_size.x * average_block_size.y * average_block_size.z );
+        cout << "\tIdle flow ranks       : " << flow_ranks - num_blocks << endl;
+    }
+
 
     MPI_Comm_split_type ( mpi_config->world, MPI_COMM_TYPE_SHARED, mpi_config->rank, MPI_INFO_NULL, &mpi_config->node_world );
     MPI_Comm_rank (mpi_config->node_world,  &mpi_config->node_rank);
@@ -340,6 +279,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     MPI_Aint shmem_points_winsize           = (shmem_point_disps[mpi_config->node_rank+1] - shmem_point_disps[mpi_config->node_rank]) * sizeof(vec<double>);
     MPI_Aint shmem_cells_per_points_winsize = (shmem_point_disps[mpi_config->node_rank+1] - shmem_point_disps[mpi_config->node_rank]) * sizeof(uint8_t);
 
+
     MPI_Win_allocate_shared ( shmem_points_winsize,           sizeof(vec<double>), MPI_INFO_NULL, mpi_config->node_world, &shmem_points,          &mpi_config->win_points );
     MPI_Win_allocate_shared ( shmem_cells_per_points_winsize, sizeof(uint8_t),     MPI_INFO_NULL, mpi_config->node_world, &shmem_cells_per_point, &mpi_config->win_cells_per_point );
 
@@ -349,7 +289,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     {
         const uint64_t x = index % points_per_dim.x;
         const uint64_t y = (index / points_per_dim.x) % points_per_dim.y;
-        const uint64_t z = index / (points_per_dim.x * points_per_dim.y);
+        const uint64_t z = index / (points_per_dim.x  * points_per_dim.y);
 
 
         shmem_points[index - shmem_point_disps[mpi_config->node_rank]].x = (double)x * element_dim.x;
@@ -446,22 +386,190 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
 
     } // Outer block z
 
+    // Initialise boundaries
+    const uint64_t num_boundary_points = 32;
+    vec<double> *boundary_points = (vec<double> *) malloc(num_boundary_points * sizeof(vec<double>));
+
+    const uint64_t  num_boundary_cells = 6;
+    uint64_t *boundary_cells = (uint64_t *) malloc(num_boundary_cells * cell_size * sizeof(uint64_t));
+
+    uint64_t *boundary_types = (uint64_t *)malloc(num_boundary_cells * sizeof(uint64_t));
+    
+    const double T = 0.005; // boundary thickness
+    uint64_t boundary_count = 0;
+
+    enum BOUNDARY_TYPES   { NOT_BOUNDARY = 0, WALL = 1, INLET = 2, OUTLET = 3 };
+    enum FACE_DIRECTIONS  { NOFACE_ERROR = -1, FRONT_FACE = 0, BACK_FACE = 1, LEFT_FACE = 2, RIGHT_FACE = 3, DOWN_FACE = 4, UP_FACE = 5};
+    enum CUBE_VERTEXES    { A_VERTEX = 0, B_VERTEX = 1, C_VERTEX = 2, D_VERTEX = 3, E_VERTEX = 4, F_VERTEX = 5, G_VERTEX = 6, H_VERTEX = 7};
+
+    
+    // Create front boundary points
+    boundary_points[boundary_count++] = {             - T,              -T,   -T };             // front_A
+    boundary_points[boundary_count++] = {  mesh_dim.x + T,              -T,   -T };             // front_B
+    boundary_points[boundary_count++] = {             - T,  mesh_dim.y + T,   -T };             // front_C
+    boundary_points[boundary_count++] = {  mesh_dim.x + T,  mesh_dim.y + T,   -T };             // front_D
+    boundary_points[boundary_count++] = {             - T,              -T,  0.0 };             // front_E
+    boundary_points[boundary_count++] = {  mesh_dim.x + T,              -T,  0.0 };             // front_F
+    boundary_points[boundary_count++] = {             - T,  mesh_dim.y + T,  0.0 };             // front_G
+    boundary_points[boundary_count++] = {  mesh_dim.x + T,  mesh_dim.y + T,  0.0 };             // front_H
+
+    // Create back boundary points
+    boundary_points[boundary_count++] = {             - T,              -T,  mesh_dim.z };      // back_A
+    boundary_points[boundary_count++] = {  mesh_dim.x + T,              -T,  mesh_dim.z };      // back_B
+    boundary_points[boundary_count++] = {             - T,  mesh_dim.y + T,  mesh_dim.z };      // back_C
+    boundary_points[boundary_count++] = {  mesh_dim.x + T,  mesh_dim.y + T,  mesh_dim.z };      // back_D
+    boundary_points[boundary_count++] = {             - T,              -T,  mesh_dim.z + T };  // back_E
+    boundary_points[boundary_count++] = {  mesh_dim.x + T,              -T,  mesh_dim.z + T };  // back_F
+    boundary_points[boundary_count++] = {             - T,  mesh_dim.y + T,  mesh_dim.z + T };  // back_G
+    boundary_points[boundary_count++] = {  mesh_dim.x + T,  mesh_dim.y + T,  mesh_dim.z + T };  // back_H
+    
+    // Create left boundary points
+    boundary_points[boundary_count++]  = { -T,         0.0,        0.0 };                       // inner_left_A
+    boundary_points[boundary_count++]  = { 0.0,        0.0,        0.0 };                       // inner_left_B
+    boundary_points[boundary_count++]  = { -T,  mesh_dim.y,        0.0 };                       // inner_left_C
+    boundary_points[boundary_count++]  = { 0.0, mesh_dim.y,        0.0 };                       // inner_left_D
+    boundary_points[boundary_count++]  = { -T,         0.0, mesh_dim.z };                       // inner_left_E
+    boundary_points[boundary_count++]  = { 0.0,        0.0, mesh_dim.z };                       // inner_left_F
+    boundary_points[boundary_count++]  = { -T,  mesh_dim.y, mesh_dim.z };                       // inner_left_G
+    boundary_points[boundary_count++]  = { 0.0, mesh_dim.y, mesh_dim.z };                       // inner_left_H
+
+    // Create right boundary points
+    boundary_points[boundary_count++] = { mesh_dim.x,             0.0,        0.0 };            // inner_right_A
+    boundary_points[boundary_count++] = { mesh_dim.x + T,         0.0,        0.0 };            // inner_right_B
+    boundary_points[boundary_count++] = { mesh_dim.x,      mesh_dim.y,        0.0 };            // inner_right_C
+    boundary_points[boundary_count++] = { mesh_dim.x + T,  mesh_dim.y,        0.0 };            // inner_right_D
+    boundary_points[boundary_count++] = { mesh_dim.x,             0.0, mesh_dim.z };            // inner_right_E
+    boundary_points[boundary_count++] = { mesh_dim.x + T,         0.0, mesh_dim.z };            // inner_right_F
+    boundary_points[boundary_count++] = { mesh_dim.x,      mesh_dim.y, mesh_dim.z };            // inner_right_G
+    boundary_points[boundary_count++] = { mesh_dim.x + T,  mesh_dim.y, mesh_dim.z };            // inner_right_H
+
+    // Create left, right, front and back boundaries
+    for ( uint64_t boundary_node = 0; boundary_node < num_boundary_points; boundary_node++ )
+        boundary_cells[(boundary_node / 8)*8 + (boundary_node % 8)] = boundary_node;
+
+
+    // Create bottom face
+    boundary_cells[4*cell_size + A_VERTEX] = FRONT_FACE*cell_size + E_VERTEX;  // Front E
+    boundary_cells[4*cell_size + B_VERTEX] = FRONT_FACE*cell_size + F_VERTEX;  // Front F
+    boundary_cells[4*cell_size + C_VERTEX] = LEFT_FACE*cell_size  + A_VERTEX;  // Left A
+    boundary_cells[4*cell_size + D_VERTEX] = RIGHT_FACE*cell_size + B_VERTEX;  // Right B
+    boundary_cells[4*cell_size + E_VERTEX] = BACK_FACE*cell_size  + A_VERTEX;  // Back A
+    boundary_cells[4*cell_size + F_VERTEX] = BACK_FACE*cell_size  + B_VERTEX;  // Back B
+    boundary_cells[4*cell_size + G_VERTEX] = LEFT_FACE*cell_size  + E_VERTEX;  // Left E
+    boundary_cells[4*cell_size + H_VERTEX] = RIGHT_FACE*cell_size + F_VERTEX;  // Right F
+    
+    // Create top face
+    boundary_cells[5*cell_size + A_VERTEX] = FRONT_FACE*cell_size + G_VERTEX;  // Front G
+    boundary_cells[5*cell_size + B_VERTEX] = FRONT_FACE*cell_size + H_VERTEX;  // Front H
+    boundary_cells[5*cell_size + C_VERTEX] = LEFT_FACE*cell_size  + C_VERTEX;  // Left C
+    boundary_cells[5*cell_size + D_VERTEX] = RIGHT_FACE*cell_size + D_VERTEX;  // Right D
+    boundary_cells[5*cell_size + E_VERTEX] = BACK_FACE*cell_size  + C_VERTEX;  // Back C
+    boundary_cells[5*cell_size + F_VERTEX] = BACK_FACE*cell_size  + D_VERTEX;  // Back D
+    boundary_cells[5*cell_size + G_VERTEX] = LEFT_FACE*cell_size  + G_VERTEX;  // Left G
+    boundary_cells[5*cell_size + H_VERTEX] = RIGHT_FACE*cell_size + H_VERTEX;  // Right H
+
+
+    boundary_types[FRONT_FACE] = WALL;
+    boundary_types[BACK_FACE]  = WALL;
+    boundary_types[LEFT_FACE]  = INLET; 
+    boundary_types[RIGHT_FACE] = OUTLET;
+    boundary_types[DOWN_FACE]  = WALL;
+    boundary_types[UP_FACE]    = WALL;
+
+
     MPI_Barrier(mpi_config->world);
 
-    // for (uint64_t cube_index = 0; cube_index < num_cubes; cube_index++)
-    // {
-        // if (mpi_config->rank == 0) cout << cube_index <<  " { A" << print_vec(points[cubes[cube_index*cell_size + A_VERTEX]]) << " B" << print_vec(points[cubes[cube_index*cell_size + B_VERTEX]]) << " C" << print_vec(points[cubes[cube_index*cell_size + C_VERTEX]]) << " D" << print_vec(points[cubes[cube_index*cell_size + D_VERTEX]]) << " E" << print_vec(points[cubes[cube_index*cell_size + E_VERTEX]]) << " F" << print_vec(points[cubes[cube_index*cell_size + F_VERTEX]]) << " G" << print_vec(points[cubes[cube_index*cell_size + G_VERTEX]]) << " H" << print_vec(points[cubes[cube_index*cell_size + H_VERTEX]]) << "} " << endl << endl ; 
-        // if (mpi_config->rank == 0) cout << cube_index <<  " { A" << points[cubes[cube_index*cell_size + A_VERTEX]].y << " B" << points[cubes[cube_index*cell_size + B_VERTEX]].y << " C" << points[cubes[cube_index*cell_size + C_VERTEX]].y << " D" << points[cubes[cube_index*cell_size + D_VERTEX]].y << " E" << points[cubes[cube_index*cell_size + E_VERTEX]].y << " F" << points[cubes[cube_index*cell_size + F_VERTEX]].y << " G" << points[cubes[cube_index*cell_size + G_VERTEX]].y << " H" << points[cubes[cube_index*cell_size + H_VERTEX]].y << "} " << endl << endl ; 
-
-    // }
-    
     // Create array of faces, each face is a pointer to two neighbouring cells.
-    // const uint64_t faces_size = elements_per_dim.x*elements_per_dim.y*points_per_dim.z + elements_per_dim.y*elements_per_dim.z*points_per_dim.x + elements_per_dim.z*elements_per_dim.x*points_per_dim.y;
-    // Face<double>  *faces      = (Face<double> *)malloc(faces_size*sizeof(Face<double>));                      // Faces         = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...}; 
-    const uint64_t faces_size = 0;
-    Face<double>  *faces      = nullptr;                               
+    uint64_t faces_size = 0;
+    Face<uint64_t> *faces      = nullptr;
+    uint64_t       *cell_faces = nullptr;
 
-    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, shmem_points, shmem_cells, faces, shmem_cell_neighbours, shmem_cells_per_point, num_blocks, shmem_cell_disps, shmem_point_disps, block_element_disp, block_dim);
+    if ( mpi_config->solver_type == FLOW )
+    {
+        vec<uint64_t> local_flow_dim = vec<uint64_t> { flow_block_element_sizes[0][mpi_config->particle_flow_rank % block_dim.x], 
+                                                       flow_block_element_sizes[1][(mpi_config->particle_flow_rank / block_dim.x) % block_dim.y],
+                                                       flow_block_element_sizes[2][mpi_config->particle_flow_rank / (block_dim.x * block_dim.y)] };
+        
+
+
+        uint64_t face_count = 0;
+        const uint64_t cell_shmem_disp = shmem_cell_disps[mpi_config->node_rank];
+        const uint64_t cell_block_disp = block_element_disp[mpi_config->particle_flow_rank];
+        const uint64_t cell_block_size = block_element_disp[mpi_config->particle_flow_rank+1] - cell_block_disp;
+        
+
+        faces_size = (local_flow_dim.x + 1)*local_flow_dim.y*local_flow_dim.z + (local_flow_dim.y + 1)*local_flow_dim.x*local_flow_dim.z + (local_flow_dim.z + 1)*local_flow_dim.x*local_flow_dim.y;
+        faces      = (Face<uint64_t> *) malloc(faces_size * sizeof(Face<uint64_t>));                  // Faces  = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...}; 
+        cell_faces = (uint64_t *)       malloc(cell_block_size * faces_per_cell * sizeof(uint64_t));  // Cfaces = {f0, f1, f2, f3, f4, f5, f1, f2, f4, f5}; 
+        
+
+        uint64_t *face_indexes = (uint64_t *) malloc(faces_per_cell * cell_block_size * sizeof(uint64_t));
+        for (uint64_t i = 0; i < faces_per_cell * cell_block_size; i++)  face_indexes[i] = UINT64_MAX;
+
+        // printf("Rank %d starting faces \n", mpi_config->rank );
+
+
+
+        for ( uint64_t cell = cell_block_disp; cell < cell_block_disp + cell_block_size; cell++ )
+        {
+      
+            const uint64_t shmem_cell = cell - cell_shmem_disp;
+            const uint64_t block_cell = cell - cell_block_disp;
+
+            for ( uint64_t f_id = 0; f_id < faces_per_cell; f_id++ )
+            {
+                // printf("Rank %d cell %lu shmem_cell %ld \n", mpi_config->rank, cell, (int64_t)shmem_cell );
+                uint64_t neighbour_cell       = shmem_cell_neighbours[shmem_cell * faces_per_cell + f_id];
+                uint64_t neighbour_block_cell = neighbour_cell - cell_block_disp;
+                
+                // printf("Rank %d block_cell %lu max %lu \n", mpi_config->rank, block_cell, cell_block_size );
+                // printf("Rank %d cell %lu f %lu neighbour cell %lu \n", mpi_config->rank, cell, f_id, neighbour_cell );
+
+                
+                if ( face_indexes[ block_cell * faces_per_cell + f_id ] == UINT64_MAX )
+                {
+                    if ( neighbour_cell == MESH_BOUNDARY )
+                    {
+                        neighbour_cell = num_cubes + f_id;
+                    }
+                    
+
+                    // printf("Rank %d face_count %lu max_face_count %lu block_cell %lu max %lu \n", mpi_config->rank, face_count, faces_size, block_cell, cell_block_size );
+
+
+                    faces [face_count] = Face<uint64_t> ( cell < neighbour_cell ? cell : neighbour_cell, cell < neighbour_cell ? neighbour_cell : cell );
+                    
+
+                    if ( neighbour_block_cell < cell_block_size )
+                    {
+                        face_indexes[ neighbour_block_cell * faces_per_cell + (f_id ^ 1) ] = face_count;
+
+                        // if ((neighbour_block_cell * faces_per_cell + (f_id ^ 1)) >= faces_per_cell * cell_block_size )
+                        // printf("Rank %d neighbour_block_cell * faces_per_cell + (f_id ^ 1) %lu max %lu \n", mpi_config->rank, face_count, neighbour_block_cell * faces_per_cell + (f_id ^ 1), faces_per_cell * cell_block_size );
+
+                    }
+
+
+                    // printf("Rank %d Cell %lu face %lu: face_id %lu new\n", mpi_config->rank, cell, f_id, face_count);
+                    cell_faces [block_cell * faces_per_cell + f_id] = face_count;
+
+                    face_count++;
+                }
+                else
+                {
+                    // printf("Rank %d Cell %lu face %lu: face_id %lu\n", mpi_config->rank, cell, f_id, face_indexes[ (cell - cell_block_disp) * faces_per_cell + f_id ]);
+                    cell_faces [block_cell * faces_per_cell + f_id] = face_indexes[ block_cell * faces_per_cell + f_id ];
+                }
+            }
+        }
+
+        free(face_indexes);
+    }
+    // printf("Rank %d done\n", mpi_config->rank);
+
+    MPI_Barrier(mpi_config->world);
+
+    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, shmem_points, shmem_cells, faces, cell_faces, shmem_cell_neighbours, shmem_cells_per_point, num_blocks, shmem_cell_disps, shmem_point_disps, block_element_disp, block_dim, num_boundary_cells, boundary_cells, num_boundary_points, boundary_points, boundary_types);
 
     return mesh;
 }

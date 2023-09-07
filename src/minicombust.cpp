@@ -39,6 +39,7 @@ int main (int argc, char ** argv)
     
     // Create Flow/Particle Datatypes
     MPI_Type_contiguous(sizeof(flow_aos<double>)/sizeof(double),     MPI_DOUBLE, &mpi_config.MPI_FLOW_STRUCTURE);
+    MPI_Type_contiguous(sizeof(vec<double>)/sizeof(double),          MPI_DOUBLE, &mpi_config.MPI_VEC_STRUCTURE);
     MPI_Type_contiguous(sizeof(particle_aos<double>)/sizeof(double), MPI_DOUBLE, &mpi_config.MPI_PARTICLE_STRUCTURE);
     MPI_Type_commit(&mpi_config.MPI_FLOW_STRUCTURE);
     MPI_Type_commit(&mpi_config.MPI_PARTICLE_STRUCTURE);
@@ -47,7 +48,7 @@ int main (int argc, char ** argv)
 
     // Run Configuration
     const uint64_t ntimesteps                   = 1500;
-    const double   delta                        = 2.5e-6;
+    const double   delta                        = 1.0e-8;
     const int64_t output_iteration              = (argc > 4) ? atoi(argv[4]) : 10;
     const uint64_t particles_per_timestep       = (argc > 2) ? atoi(argv[2]) : 10;
     
@@ -98,7 +99,7 @@ int main (int argc, char ** argv)
     }
     else
     {
-        flow_solver     = new FlowSolver<double>(&mpi_config, mesh);
+        flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta);
     }
 
     if (mpi_config.rank == 0)   cout << endl;
