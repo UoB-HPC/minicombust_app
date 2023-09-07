@@ -9,26 +9,20 @@ Tested with GCC, Cray and Intel compilers, Intel is most tested compiler at the 
 
 Without PAPI:
 ```bash
-make clean all
+make clean notest
 ```
 
 With PAPI:
 ```bash
-PAPI=1 make clean all
+PAPI=1 make clean notest
 ```
 
 ## Run 
-```bash
-./bin/minicombust # emits 10 particles per timestep by default
-```
 
 ```bash
-./bin/minicombust NUM_PARTICLES_PER_TIMESTEP
-```
+mpirun -np 10 ./bin/minicombust PARTICLE_RANKS NUM_PARTICLES_PER_TIMESTEP CELLS_SCALE_FACTOR WRITE_TIMESTEP
 
-## Run tests 
-```bash
-./bin/minicombust_tests
+mpirun -np 10 ./bin/minicombust 9 100 100 20
 ```
 
 ## Output
