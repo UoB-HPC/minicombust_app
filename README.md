@@ -21,7 +21,10 @@ PAPI=1 make clean notest
 
 
 ```bash
-./bin/minicombust PARTICLE_RANKS NUM_PARTICLES_PER_TIMESTEP CELLS_SCALE_FACTOR_PER_DIM WRITE_TIMESTEP
+mpirun -np 10 ./bin/minicombust PARTICLE_RANKS NUM_PARTICLES_PER_TIMESTEP CELLS_SCALE_FACTOR WRITE_TIMESTEP
+
+mpirun -np 10 ./bin/minicombust 9 100 100 20
+
 ```
 
 
