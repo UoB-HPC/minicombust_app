@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include "particles/ParticleSolver.hpp"
 #include "visit/VisitWriter.hpp"
+#include <algorithm>
+#include <execution>
+#include <ranges>
 
 
 
@@ -236,14 +239,21 @@ namespace minicombust::particles
 
                 //TODO callum rewrite with c++ parallel algos
 
-                #pragma ivdep
-                for (int i = 0; i < neighbours_size[bi]; i++)
-                {
-                    node_to_field_address_map[all_interp_node_indexes[bi][i]] = &all_interp_node_flow_fields[bi][i];
+                // #pragma ivdep
+                // for (int i = 0; i < neighbours_size[bi]; i++)
+                // {
+                //     node_to_field_address_map[all_interp_node_indexes[bi][i]] = &all_interp_node_flow_fields[bi][i];
 
-                    // if (PARTICLE_SOLVER_DEBUG && all_interp_node_indexes[bi][i] > mesh->points_size )
-                    //     {printf("ERROR RECV VALS : Rank %d Flow block %lu Value %lu out of range at %d\n", mpi_config->rank, bi, all_interp_node_indexes[bi][i], i); exit(1);}
-                }
+                //     // if (PARTICLE_SOLVER_DEBUG && all_interp_node_indexes[bi][i] > mesh->points_size )
+                //     //     {printf("ERROR RECV VALS : Rank %d Flow block %lu Value %lu out of range at %d\n", mpi_config->rank, bi, all_interp_node_indexes[bi][i], i); exit(1);}
+                // }
+               
+                auto ids = std::views::common(std::views::iota(0, (int)neighbours_size[bi]));
+                std::for_each(std::execution::par_unseq, ids.begin(), ids.end() , [=](int idx) 
+                { 
+                    node_to_field_address_map[all_interp_node_indexes[bi][idx]] = &all_interp_node_flow_fields[bi][idx]; 
+                });
+
 
                 // if (PARTICLE_SOLVER_DEBUG && size_before != node_to_field_address_map.size())
                 //     {printf("\tRank %d: Recieving wrong amount of data(+%lu). Block %lu Node map size %ld sent size %d.\n", mpi_config->rank, node_to_field_address_map.size() - size_before, bi, node_to_field_address_map.size(), neighbours_size[bi] ); exit(1);};
@@ -291,55 +301,116 @@ namespace minicombust::particles
 
         performance_logger.my_papi_start();
 
-        // Solve spray equations
-        #pragma ivdep
-        for (uint64_t p = 0; p < particles_size; p++)
-        {
-            vec<T> total_vector_weight   = {0.0, 0.0, 0.0};
-            T total_scalar_weight        = 0.0;
+        //Solve spray equations
+        // #pragma ivdep
+        // for (uint64_t p = 0; p < particles_size; p++)
+        // {
+        //     vec<T> total_vector_weight   = {0.0, 0.0, 0.0};
+        //     T total_scalar_weight        = 0.0;
 
-            vec<T> interp_gas_vel = {0.0, 0.0, 0.0};
-            T interp_gas_pre      = 0.0;
-            T interp_gas_tem      = 0.0;
+        //     vec<T> interp_gas_vel = {0.0, 0.0, 0.0};
+        //     T interp_gas_pre      = 0.0;
+        //     T interp_gas_tem      = 0.0;
             
 
-            #pragma ivdep
-            for (uint64_t n = 0; n < cell_size; n++)
+        //     #pragma ivdep
+        //     for (uint64_t n = 0; n < cell_size; n++)
+        //     {
+        //         if (PARTICLE_SOLVER_DEBUG && (particles[p].cell >= mesh->mesh_size))
+        //             {printf("ERROR::: RANK %d Cell %lu out of range\n", mpi_config->rank, particles[p].cell); exit(1);
+        //             }
+
+        //         uint64_t node = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n];
+        //         const uint64_t block_id = mesh->get_block_id(particles[p].cell);
+
+
+        //         if (PARTICLE_SOLVER_DEBUG && (node >= mesh->points_size))
+        //             {printf("ERROR::: RANK %d Node %lu out of range\n", mpi_config->rank, node); exit(1);
+        //             }
+        //         if (PARTICLE_SOLVER_DEBUG && (node_to_field_address_map[node] < (flow_aos<T> *)5))
+        //             {printf("Rank %d Block %lu cell %lu node %lu flow_pointer %p block_flow_pointer %p size %lu\n", mpi_config->rank, block_id, particles[p].cell, node, node_to_field_address_map[node], all_interp_node_flow_fields[block_id], node_flow_array_sizes[block_id] ); exit(1);
+        //             };
+
+        //         const vec<T> node_to_particle = particles[p].x1 - mesh->points[node - mesh->shmem_point_disp];
+
+        //         vec<T> weight      = 1.0 / ((node_to_particle * node_to_particle) + vec<T> {__DBL_MIN__, __DBL_MIN__, __DBL_MIN__});
+        //         T weight_magnitude = magnitude(weight);
+
+        //         total_vector_weight   += weight;
+        //         total_scalar_weight   += weight_magnitude;
+
+        //         // if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Node value", node_to_field_address_map[node], &mesh->dummy_flow_field, node );
+
+        //         interp_gas_vel        += weight           * node_to_field_address_map[node]->vel;
+        //         interp_gas_pre        += weight_magnitude * node_to_field_address_map[node]->pressure;
+        //         interp_gas_tem        += weight_magnitude * node_to_field_address_map[node]->temp;
+        //     }
+
+        //     particles[p].local_flow_value.vel           = interp_gas_vel / total_vector_weight;
+        //     particles[p].local_flow_value.pressure      = interp_gas_pre / total_scalar_weight;
+        //     particles[p].local_flow_value.temp          = interp_gas_tem / total_scalar_weight;
+
+        //     // if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Interpolated particle value ", &particles[p].local_flow_value, &mesh->dummy_flow_field, p );
+        // }
+
+        // Solve spray equations practice
+        auto ids = std::views::common(std::views::iota(0, (int)particles_size));
+    
+        std::for_each(std::execution::par_unseq,ids.begin(), ids.end(), [=](int p)
+        {
+            vec<T> total_vector_weight = {0.0, 0.0, 0.0};
+            T total_scalar_weight = 0.0;
+
+            vec<T> interp_gas_vel = {0.0, 0.0, 0.0};
+            T interp_gas_pre = 0.0;
+            T interp_gas_tem = 0.0;
+
+            auto ids2 = std::views::common(std::views::iota(0, (int)cell_size));
+            std::for_each(ids2.begin(), ids2.end(), [=,&total_vector_weight, &total_scalar_weight, &interp_gas_pre, &interp_gas_pre ,&interp_gas_tem, &interp_gas_vel](int n)
             {
                 if (PARTICLE_SOLVER_DEBUG && (particles[p].cell >= mesh->mesh_size))
-                    {printf("ERROR::: RANK %d Cell %lu out of range\n", mpi_config->rank, particles[p].cell); exit(1);}
-                
+                {
+                    printf("ERROR::: RANK %d Cell %lu out of range\n", mpi_config->rank, particles[p].cell);
+                    exit(1);
+                }
+
                 uint64_t node = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n];
                 const uint64_t block_id = mesh->get_block_id(particles[p].cell);
 
-
                 if (PARTICLE_SOLVER_DEBUG && (node >= mesh->points_size))
-                    {printf("ERROR::: RANK %d Node %lu out of range\n", mpi_config->rank, node); exit(1);}
+                {
+                    printf("ERROR::: RANK %d Node %lu out of range\n", mpi_config->rank, node);
+                    exit(1);
+                }
                 if (PARTICLE_SOLVER_DEBUG && (node_to_field_address_map[node] < (flow_aos<T> *)5))
-                    {printf("Rank %d Block %lu cell %lu node %lu flow_pointer %p block_flow_pointer %p size %lu\n", mpi_config->rank, block_id, particles[p].cell, node, node_to_field_address_map[node], all_interp_node_flow_fields[block_id], node_flow_array_sizes[block_id] ); exit(1);};
-
+                {
+                    printf("Rank %d Block %lu cell %lu node %lu flow_pointer %p block_flow_pointer %p size %lu\n", mpi_config->rank, block_id, particles[p].cell, node, node_to_field_address_map[node], all_interp_node_flow_fields[block_id], node_flow_array_sizes[block_id]);
+                    exit(1);
+                };
 
                 const vec<T> node_to_particle = particles[p].x1 - mesh->points[node - mesh->shmem_point_disp];
 
-                vec<T> weight      = 1.0 / ((node_to_particle * node_to_particle) + vec<T> {__DBL_MIN__, __DBL_MIN__, __DBL_MIN__});
+                vec<T> weight = 1.0 / ((node_to_particle * node_to_particle) + vec<T>{__DBL_MIN__, __DBL_MIN__, __DBL_MIN__});
                 T weight_magnitude = magnitude(weight);
 
-                total_vector_weight   += weight;
-                total_scalar_weight   += weight_magnitude;
+                total_vector_weight += weight;
+                total_scalar_weight += weight_magnitude;
 
                 // if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Node value", node_to_field_address_map[node], &mesh->dummy_flow_field, node );
 
-                interp_gas_vel        += weight           * node_to_field_address_map[node]->vel;
-                interp_gas_pre        += weight_magnitude * node_to_field_address_map[node]->pressure;
-                interp_gas_tem        += weight_magnitude * node_to_field_address_map[node]->temp;
-            }
+                interp_gas_vel += weight * node_to_field_address_map[node]->vel;
+                interp_gas_pre += weight_magnitude * node_to_field_address_map[node]->pressure;
+                interp_gas_tem += weight_magnitude * node_to_field_address_map[node]->temp;
+            });
 
-            particles[p].local_flow_value.vel           = interp_gas_vel / total_vector_weight;
-            particles[p].local_flow_value.pressure      = interp_gas_pre / total_scalar_weight;
-            particles[p].local_flow_value.temp          = interp_gas_tem / total_scalar_weight;
+            particles[p].local_flow_value.vel = interp_gas_vel / total_vector_weight;
+            particles[p].local_flow_value.pressure = interp_gas_pre / total_scalar_weight;
+            particles[p].local_flow_value.temp = interp_gas_tem / total_scalar_weight;
 
             // if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Interpolated particle value ", &particles[p].local_flow_value, &mesh->dummy_flow_field, p );
-        }
+        });
+
+    
 
         if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Finished interpolation. Starting spray computation.\n", mpi_config->rank);
 
@@ -356,10 +427,17 @@ namespace minicombust::particles
         #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
         {
-            particles[p].solve_spray( delta, &logger, particles );
+            particles[p].solve_spray(delta, &logger, particles);
 
-            if (particles[p].decayed)  decayed_particles.push_back(p);
+            if (particles[p].decayed) decayed_particles.push_back(p);
         }
+
+        // auto ids = std::views::common(std::views::iota(0, (int)particles_size));
+        // std::for_each(std::execution::par_unseq, ids.begin(), ids.end(), [=](int p)
+        // {
+        //     particles[p].solve_spray(delta, &logger, particles);
+        //     if (particles[p].decayed) decayed_particles.push_back(p);
+        // });
 
         const uint64_t decayed_particles_size = decayed_particles.size();
         #pragma ivdep
@@ -367,7 +445,7 @@ namespace minicombust::particles
         {
             particles[decayed_particles[i]] = particles.back();
             particles.pop_back();
-        }
+        } 
 
         performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_time);
     }
@@ -381,47 +459,100 @@ namespace minicombust::particles
         const uint64_t particles_size  = particles.size();
 
         uint64_t elements [mesh->num_blocks];
-        for (uint64_t i = 0; i < mesh->num_blocks; i++)
-            elements[i] = 0;
+        //for (uint64_t i = 0; i < mesh->num_blocks; i++) elements[i] = 0;
+
+        std::fill(std::execution::par_unseq, &elements[0], &elements[0] + mesh->num_blocks, 0);
 
         // Update particle positions
         vector<uint64_t> decayed_particles;
-        #pragma ivdep
-        for (uint64_t p = 0; p < particles_size; p++)
-        {   
+        // #pragma ivdep
+        // for (uint64_t p = 0; p < particles_size; p++)
+        // {   
+        //     // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
+        //     particles[p].update_cell(mesh, &logger);
+
+        //     if (particles[p].decayed)  decayed_particles.push_back(p);
+        //     else
+        //     {
+        //         const uint64_t cell     = particles[p].cell;
+        //         const uint64_t block_id = mesh->get_block_id(particles[p].cell);
+
+        //         if ( cell_particle_field_map[block_id].count(cell) ) 
+        //         {
+        //             const uint64_t index = cell_particle_field_map[block_id][cell];
+
+        //             cell_particle_aos[block_id][index].momentum += particles[p].particle_cell_fields.momentum;
+        //             cell_particle_aos[block_id][index].energy   += particles[p].particle_cell_fields.energy;
+        //             cell_particle_aos[block_id][index].fuel     += particles[p].particle_cell_fields.fuel;
+        //         }
+        //         else
+        //         {
+
+        //             const uint64_t index = cell_particle_field_map[block_id].size();
+        //             elements[block_id]   = cell_particle_field_map[block_id].size() + 1;
+
+        //             resize_cell_particle(elements, NULL, NULL);
+
+        //             cell_particle_indexes[block_id][index]   = cell;
+        //             cell_particle_aos[block_id][index]       = particles[p].particle_cell_fields;
+
+        //             cell_particle_field_map[block_id][cell]  = index;
+
+
+        //             #pragma ivdep
+        //             for (uint64_t n = 0; n < mesh->cell_size; n++)
+        //             {
+        //                 const uint64_t node_id = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
+
+        //                 if (!node_to_field_address_map.count(node_id))
+        //                 {
+        //                     node_to_field_address_map[node_id] = (flow_aos<T> *)2;
+        //                 }
+        //             }
+                    
+
+        //         }
+        //     }
+
+        // }
+
+        //capturing by reference is not recommended for parallel execution - current error "array of runtime bound cannot be captured by copy, only by reference"
+        //this is just an example of how the for_each loop can be used
+        auto ids = std::views::common(std::views::iota(0, (int)particles_size));
+        std::for_each(std::execution::par_unseq, ids.begin(), ids.end(), [&](uint64_t p)
+        {
             // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
             particles[p].update_cell(mesh, &logger);
 
             if (particles[p].decayed)  decayed_particles.push_back(p);
             else
             {
-                const uint64_t cell     = particles[p].cell;
+                const uint64_t cell = particles[p].cell;
                 const uint64_t block_id = mesh->get_block_id(particles[p].cell);
 
-                if ( cell_particle_field_map[block_id].count(cell) ) 
+                if (cell_particle_field_map[block_id].count(cell))
                 {
                     const uint64_t index = cell_particle_field_map[block_id][cell];
 
                     cell_particle_aos[block_id][index].momentum += particles[p].particle_cell_fields.momentum;
-                    cell_particle_aos[block_id][index].energy   += particles[p].particle_cell_fields.energy;
-                    cell_particle_aos[block_id][index].fuel     += particles[p].particle_cell_fields.fuel;
+                    cell_particle_aos[block_id][index].energy += particles[p].particle_cell_fields.energy;
+                    cell_particle_aos[block_id][index].fuel += particles[p].particle_cell_fields.fuel;
                 }
                 else
                 {
 
                     const uint64_t index = cell_particle_field_map[block_id].size();
-                    elements[block_id]   = cell_particle_field_map[block_id].size() + 1;
+                    elements[block_id] = cell_particle_field_map[block_id].size() + 1;
 
                     resize_cell_particle(elements, NULL, NULL);
 
-                    cell_particle_indexes[block_id][index]   = cell;
-                    cell_particle_aos[block_id][index]       = particles[p].particle_cell_fields;
+                    cell_particle_indexes[block_id][index] = cell;
+                    cell_particle_aos[block_id][index] = particles[p].particle_cell_fields;
 
-                    cell_particle_field_map[block_id][cell]  = index;
-
-
-                    #pragma ivdep
-                    for (uint64_t n = 0; n < mesh->cell_size; n++)
+                    cell_particle_field_map[block_id][cell] = index;
+                    //do the same with the innner loop using for_each
+                    auto ids2 = std::views::common(std::views::iota(0, (int)mesh->cell_size));
+                    std::for_each(std::execution::par_unseq, ids2.begin(), ids2.end(), [=](uint64_t n)
                     {
                         const uint64_t node_id = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
 
@@ -429,20 +560,26 @@ namespace minicombust::particles
                         {
                             node_to_field_address_map[node_id] = (flow_aos<T> *)2;
                         }
-                    }
-
+                    });
                 }
             }
+        });
 
-        }
 
         const uint64_t decayed_particles_size = decayed_particles.size();
-        #pragma ivdep
-        for (int128_t i = decayed_particles_size - 1; i >= 0; i--)
+        // #pragma ivdep
+        // for (int128_t i = decayed_particles_size - 1; i >= 0; i--)
+        // {
+        //     particles[decayed_particles[i]] = particles.back();
+        //     particles.pop_back();
+        // }
+        //repalce previous loop with for_each
+        ids = std::views::common(std::views::iota(0, (int)decayed_particles_size));
+        std::for_each(std::execution::par_unseq, ids.begin(), ids.end(), [=](int128_t i)
         {
             particles[decayed_particles[i]] = particles.back();
             particles.pop_back();
-        }
+        });
 
         performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_time);
     }
@@ -503,7 +640,6 @@ namespace minicombust::particles
 
             }
         }
-
 
         particle_release();
 

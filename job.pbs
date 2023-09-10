@@ -9,12 +9,15 @@
 echo $PBS_O_WORKDIR
 cd $PBS_O_WORKDIR
 
-echo $PATH
+echo runnnig mpirun
+module load IntelOneApi/modulefiles/tbb/2021.10.0
 
-#aprun -n 10 ./bin/minicombust 7 100 20 100 
+aprun -n 10 ./bin/minicombust 5 100 20 100 
+#aprun -n 10 ./bin/minicombust 5
+#mpirun -np 10 ./bin/minicombust 5 100 20 100
+#mpirun -np 10 ./bin/minicombust 5
 
-
-export GMON_OUT_PREFIX=gmon.out-
+#export GMON_OUT_PREFIX=gmon.out-
 #aprun -n 10 ./bin/minicombust 7
-mpirun -np 10 ./bin/minicombust 7
+
 
