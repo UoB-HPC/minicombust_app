@@ -28,6 +28,12 @@ int main (int argc, char ** argv)
     MPI_Comm_rank(mpi_config.world,  &mpi_config.rank);
     MPI_Comm_size(mpi_config.world,  &mpi_config.world_size);
 
+    std::cout << "Rank: " << mpi_config.rank << " World size: " << mpi_config.world_size  <<std::endl;
+
+    // if (mpi_config.rank == 0) {
+    //     std::cout << "World size: " << mpi_config.world_size << std::endl;
+    // }
+
     int particle_ranks = atoi(argv[1]);
     int flow_ranks     = mpi_config.world_size - particle_ranks;
 

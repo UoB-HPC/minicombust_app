@@ -1,0 +1,23 @@
+#!/bin/bash
+#PBS -N minicombust
+#PBS -o output.txt
+#PBS -l select=1:ncpus=10:mpiprocs=10
+#PBS -e error.txt
+#PBS -q milanq
+#PBS -l walltime=0:15:00
+
+echo $PBS_O_WORKDIR
+cd $PBS_O_WORKDIR
+
+echo runnnig mpirun
+module load IntelOneApi/modulefiles/tbb/2021.10.0
+
+aprun -n 10 ./bin/minicombust 5 100 20 100 
+#aprun -n 10 ./bin/minicombust 5
+#mpirun -np 10 ./bin/minicombust 5 100 20 100
+#mpirun -np 10 ./bin/minicombust 5
+
+#export GMON_OUT_PREFIX=gmon.out-
+#aprun -n 10 ./bin/minicombust 7
+
+

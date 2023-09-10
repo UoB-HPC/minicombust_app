@@ -1,12 +1,29 @@
 ## Compilers and Flags
 CC := CC 
-#CC := mpic++ 
-CFLAGS := -g -Wall -Wextra -std=c++20  -O3 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+#CC := mpic++
+CFLAGS := -g -w -std=c++20  -O3 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion 
+#CFLAGS := -g -w -std=c++20  -O3 -march=native  #nvc++
+#CFLAGS := -g -std=c++20  -O0 -l -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion -fno-inline -pg #profiling
 #CFLAGS := -g -Wall -Wextra -std=c++17 -O3 -Wno-unknown-pragmas 
 #CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
-LIB := -Lbuild/
-EIGEN=-I/home/br-hwaugh/repos/eigen/
+LIB := -Lbuild/ -ltbb 
+EIGEN=-I/lustre/home/br-cward/repos/eigen
 INC := -Iinclude/ $(EIGEN)
+
+
+# Nvidia compiler 22.9 only supports up to C++17 - range support was added in C++20
+# std::execution port: https://github.com/nvidia/stdexec
+# std::mdspan port: https://github.com/kokkos/mdspan
+# std::ranges port: https://github.com/ericniebler/range-v3.git
+
+# Set the include directories
+INCLUDE_DIRS := $(HOME)/repos/range-v3/ 
+
+# Find all subdirectories of the include directories
+SUBDIRS := $(shell find $(INCLUDE_DIRS) -type d)
+
+# Generate the necessary -I flags for all the subdirectories
+INCLUDES += $(addprefix -I,$(SUBDIRS))
 
 
 
@@ -51,6 +68,9 @@ clean:
 	@echo "Cleaning..."
 	rm -rf build/* $(EXE)
 	@echo ""
+	rm output.txt error.txt callgrind.out.*
 
+cleant:
+	rm output.txt error.txt callgrind.out.*
 
 .PHONY: clean
