@@ -151,6 +151,13 @@ namespace minicombust::utils
         T *V;
         T *W;
         T *P;
+		T *PP;
+		T *TE;
+		T *ED;
+		T *TP;
+		T *TEM;
+		T *FUL;
+		T *PRO;
     };
 
     template<typename T>
