@@ -127,6 +127,8 @@ namespace minicombust::flow
 
             const MPI_Status empty_mpi_status = { 0, 0, 0, 0, 0};
 
+			T FGM_table[100][100][100][100];
+
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh, double delta) : mesh(mesh), delta(delta), mpi_config(mpi_config)
             {
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Entered FlowSolver constructor.\n", mpi_config->particle_flow_rank);
@@ -203,6 +205,8 @@ namespace minicombust::flow
                 phi.TEM         = (T *)malloc(phi_array_size);
 				phi.FUL			= (T *)malloc(phi_array_size);
 				phi.PRO			= (T *)malloc(phi_array_size);
+				phi.VARF		= (T *)malloc(phi_array_size);
+				phi.VARP		= (T *)malloc(phi_array_size);
 				old_phi.U       = (T *)malloc(phi_array_size);
                 old_phi.V       = (T *)malloc(phi_array_size);
                 old_phi.W       = (T *)malloc(phi_array_size);
@@ -219,6 +223,8 @@ namespace minicombust::flow
 				phi_grad.TEM    = (vec<T> *)malloc(phi_grad_array_size);
 				phi_grad.FUL	= (vec<T> *)malloc(phi_grad_array_size);
 				phi_grad.PRO	= (vec<T> *)malloc(phi_grad_array_size);
+				phi_grad.VARF   = (vec<T> *)malloc(phi_grad_array_size);
+				phi_grad.VARP   = (vec<T> *)malloc(phi_grad_array_size);
 				A_phi.U         = (T *)malloc(source_phi_array_size);
                 A_phi.V         = (T *)malloc(source_phi_array_size);
                 A_phi.W         = (T *)malloc(source_phi_array_size);
@@ -318,6 +324,8 @@ namespace minicombust::flow
 					phi.TEM[block_cell]   = mesh->dummy_gas_tem;
 					phi.FUL[block_cell]   = mesh->dummy_gas_fuel;
 					phi.PRO[block_cell]   = mesh->dummy_gas_pro;
+					phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
+					phi.VARP[block_cell]  = mesh->dummy_gas_pro;
 
                     // old_phi.U[block_cell] = mesh->dummy_gas_vel.x * vel_factor; // * rand()/RAND_MAX;
                     // old_phi.V[block_cell] = mesh->dummy_gas_vel.y + 4.0 * rand()/RAND_MAX - 2.0;
@@ -330,16 +338,18 @@ namespace minicombust::flow
                     // old_phi.W[block_cell] = mesh->dummy_gas_vel.z + 0.5 * rand()/RAND_MAX ;
                     // old_phi.P[block_cell] = mesh->dummy_gas_pre   + 0.5 * rand()/RAND_MAX ;
 
-                    phi_grad.U[block_cell]   = {0.0, 0.0, 0.0};
-                    phi_grad.V[block_cell]   = {0.0, 0.0, 0.0};
-                    phi_grad.W[block_cell]   = {0.0, 0.0, 0.0};
-                    phi_grad.P[block_cell]   = {0.0, 0.0, 0.0};
-					phi_grad.PP[block_cell]  = {0.0, 0.0, 0.0};
-					phi_grad.TE[block_cell]  = {0.0, 0.0, 0.0};
-					phi_grad.ED[block_cell]  = {0.0, 0.0, 0.0};
-					phi_grad.TEM[block_cell] = {0.0, 0.0, 0.0};
-					phi_grad.FUL[block_cell] = {0.0, 0.0, 0.0};
-					phi_grad.PRO[block_cell] = {0.0, 0.0, 0.0};
+                    phi_grad.U[block_cell]    = {0.0, 0.0, 0.0};
+                    phi_grad.V[block_cell]    = {0.0, 0.0, 0.0};
+                    phi_grad.W[block_cell]    = {0.0, 0.0, 0.0};
+                    phi_grad.P[block_cell]    = {0.0, 0.0, 0.0};
+					phi_grad.PP[block_cell]   = {0.0, 0.0, 0.0};
+					phi_grad.TE[block_cell]   = {0.0, 0.0, 0.0};
+					phi_grad.ED[block_cell]   = {0.0, 0.0, 0.0};
+					phi_grad.TEM[block_cell]  = {0.0, 0.0, 0.0};
+					phi_grad.FUL[block_cell]  = {0.0, 0.0, 0.0};
+					phi_grad.PRO[block_cell]  = {0.0, 0.0, 0.0};
+					phi_grad.VARF[block_cell] = {0.0, 0.0, 0.0};
+					phi_grad.VARP[block_cell] = {0.0, 0.0, 0.0};
 
                     cell_densities[block_cell] = 1.2;
 
@@ -418,6 +428,8 @@ namespace minicombust::flow
 					phi.TEM[block_cell]     = mesh->dummy_gas_tem;
 					phi.FUL[block_cell]   = mesh->dummy_gas_fuel;
                     phi.PRO[block_cell]   = mesh->dummy_gas_pro;
+					phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
+                    phi.VARP[block_cell]  = mesh->dummy_gas_pro;
 
 					T velmag2 = pow(mesh->dummy_gas_vel.x,2) + pow(mesh->dummy_gas_vel.y,2) + pow(mesh->dummy_gas_vel.z,2);
 					inlet_effective_viscosity = effective_viscosity + 1.2*0.09*(3.0/2.0*((0.1*0.1)*velmag2))/((pow(0.09,0.75) * pow((3.0/2.0*((0.1*0.1)*velmag2)),1.5)) + 0.00000000000000000001);
@@ -435,6 +447,8 @@ namespace minicombust::flow
 						phi.TEM[block_cell]   = mesh->dummy_gas_tem;
 						phi.FUL[block_cell]   = mesh->dummy_gas_fuel;
 						phi.PRO[block_cell]   = 0.0;
+						phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
+						phi.VARP[block_cell]  = 0.0;
 					}
                     else if ( mesh->boundary_types[boundary_cell] == OUTLET )
                     {
@@ -449,6 +463,8 @@ namespace minicombust::flow
 						phi.TEM[block_cell]   = mesh->dummy_gas_tem;
 						phi.FUL[block_cell]   = mesh->dummy_gas_fuel;
 						phi.PRO[block_cell]   = mesh->dummy_gas_pro;
+						phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
+						phi.VARP[block_cell]  = mesh->dummy_gas_pro;
 					}
                     else if ( mesh->boundary_types[boundary_cell] == WALL )
                     {
@@ -463,6 +479,8 @@ namespace minicombust::flow
 						phi.TEM[block_cell]   = 293.0;
 						phi.FUL[block_cell]   = 0.0;
 						phi.PRO[block_cell]   = 0.0;
+						phi.VARF[block_cell]  = 0.0;
+						phi.VARP[block_cell]  = 0.0;
 					}
 
                     // old_phi.U[block_cell] = 0.0;
@@ -470,16 +488,18 @@ namespace minicombust::flow
                     // old_phi.W[block_cell] = 0.0;
                     // old_phi.P[block_cell] = mesh->dummy_gas_pre;
  
-                    phi_grad.U[block_cell] = {0.0, 0.0, 0.0};
-                    phi_grad.V[block_cell] = {0.0, 0.0, 0.0};
-                    phi_grad.W[block_cell] = {0.0, 0.0, 0.0};
-                    phi_grad.P[block_cell] = {0.0, 0.0, 0.0};
-					phi_grad.PP[block_cell] = {0.0, 0.0, 0.0};
-					phi_grad.TE[block_cell] = {0.0, 0.0, 0.0};
-					phi_grad.ED[block_cell] = {0.0, 0.0, 0.0};                    
-					phi_grad.TEM[block_cell] = {0.0, 0.0, 0.0};
-					phi_grad.FUL[block_cell] = {0.0, 0.0, 0.0};
-                    phi_grad.PRO[block_cell] = {0.0, 0.0, 0.0};
+                    phi_grad.U[block_cell]    = {0.0, 0.0, 0.0};
+                    phi_grad.V[block_cell]    = {0.0, 0.0, 0.0};
+                    phi_grad.W[block_cell]    = {0.0, 0.0, 0.0};
+                    phi_grad.P[block_cell]    = {0.0, 0.0, 0.0};
+					phi_grad.PP[block_cell]   = {0.0, 0.0, 0.0};
+					phi_grad.TE[block_cell]   = {0.0, 0.0, 0.0};
+					phi_grad.ED[block_cell]   = {0.0, 0.0, 0.0};                    
+					phi_grad.TEM[block_cell]  = {0.0, 0.0, 0.0};
+					phi_grad.FUL[block_cell]  = {0.0, 0.0, 0.0};
+                    phi_grad.PRO[block_cell]  = {0.0, 0.0, 0.0};
+					phi_grad.VARF[block_cell] = {0.0, 0.0, 0.0};
+					phi_grad.VARP[block_cell] = {0.0, 0.0, 0.0}; 
 					// cell_densities[block_cell] = 1.2;
 
                     // const T width   = magnitude(mesh->boundary_points[cell_nodes[B_VERTEX]] - mesh->boundary_points[cell_nodes[A_VERTEX]]);
@@ -492,7 +512,7 @@ namespace minicombust::flow
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
 
 
-                Eigen::SparseMatrix<T, RowMajor> new_matrix( mesh->local_mesh_size + nhalos, mesh->local_mesh_size + nhalos );
+                Eigen::SparseMatrix<T, RowMajor> new_matrix( mesh->local_mesh_size + nhalos, mesh->local_mesh_size + nhalos);
                 // Eigen::SparseMatrix<T, RowMajor> new_matrix( mesh->local_mesh_size + nhalos, mesh->local_mesh_size + nhalos + mesh->boundary_cells_size );
                 new_matrix.reserve( mesh->faces_size );
                 A_spmatrix = new_matrix;
@@ -956,13 +976,13 @@ namespace minicombust::flow
 			void set_up_field();
 			void precomp_AU();
 			void precomp_mass_flux();
-
+			void set_up_fgm_table();
+			
             void setup_sparse_matrix  ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component );
             void update_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component );
             void solve_sparse_matrix ( T *phi_component, T *S_phi_component );
             void calculate_flux_UVW ();
             void calculate_UVW ();
-
 
             void calculate_mass_flux ();
             void setup_pressure_matrix  ( );
@@ -980,17 +1000,9 @@ namespace minicombust::flow
 			void FluxScalar(int type, T *phi_component, vec<T> *phi_grad_component);
 			void solveTurbulenceModels(int type);
 
-            void solve_combustion_equations();
-            void update_combustion_fields();
-
-            void solve_turbulence_equations();
-            void update_turbulence_fields();
-
-            void solve_flow_equations();
+			void FGM_loop_up();
 
             void timestep();
-
-
     }; // class FlowSolver
 
 }   // namespace minicombust::flow 
