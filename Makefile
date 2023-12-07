@@ -1,12 +1,12 @@
 ## Compilers and Flags
 CC := CC 
 #CC := mpic++ 
-CFLAGS := -g -Wall -Wextra -std=c++20  -O3 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+CFLAGS := -g -Wall -Wextra -std=c++20  -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 #CFLAGS := -g -Wall -Wextra -std=c++17 -O3 -Wno-unknown-pragmas 
 #CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
-LIB := -Lbuild/
-EIGEN=-I/home/br-hwaugh/repos/eigen/
-INC := -Iinclude/ $(EIGEN)
+LIB := -Lbuild/ -L/work/e609/e609/scu/fenicsx/install/gnu/0.6.0/petsc/arch-linux-c/lib -lpetsc
+PETSC= -I/work/e609/e609/scu/fenicsx/install/gnu/0.6.0/petsc/include -I/work/e609/e609/scu/fenicsx/install/gnu/0.6.0/petsc/arch-linux-c/include
+INC := -Iinclude/ $(PETSC)
 
 
 

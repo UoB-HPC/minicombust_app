@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <ctime>
 #include <inttypes.h>
+#include <petscksp.h>
 
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"
@@ -47,16 +48,17 @@ int main (int argc, char ** argv)
     MPI_Op_create(&sum_particle_aos<double>, 1, &mpi_config.MPI_PARTICLE_OPERATION);
 
     // Run Configuration
-    const uint64_t ntimesteps                   = 1500;
-    const double   delta                        = 1.0e-8;
+    const uint64_t ntimesteps                   = (argc > 5) ? atoi(argv[5]) : 1500; //5 1500;
+    const double   delta                        = 1.0e-3; //-8
     const int64_t output_iteration              = (argc > 4) ? atoi(argv[4]) : 10;
     const uint64_t particles_per_timestep       = (argc > 2) ? atoi(argv[2]) : 10;
-    
+   
+
     // Mesh Configuration
     const uint64_t modifier                = (argc > 3) ? atoi(argv[3]) : 10;
-    vec<double>    box_dim                 = {0.10, 0.05, 0.05};
+    vec<double>    box_dim                 = {0.05, 0.05,0.05};//{0.0008, 0.0008, 0.0008}; //1,1,1
     vec<uint64_t>  elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
-    
+												//*1
     if (mpi_config.rank == 0)  
     {
         printf("Starting miniCOMBUST..\n");
@@ -70,8 +72,6 @@ int main (int argc, char ** argv)
     MPI_Barrier(mpi_config.world); setup_time  -= MPI_Wtime(); mesh_time  -= MPI_Wtime(); 
     Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks);
     MPI_Barrier(mpi_config.world); mesh_time   += MPI_Wtime();
-
-
 
     mpi_config.one_flow_rank             = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.every_one_flow_rank       = (int *)     malloc(flow_ranks * sizeof(int));
@@ -88,17 +88,19 @@ int main (int argc, char ** argv)
     FlowSolver<double>     *flow_solver     = nullptr;
     if (mpi_config.solver_type == PARTICLE)
     {
-        uint64_t       local_particles_per_timestep   = particles_per_timestep / mpi_config.particle_flow_world_size;
+        /*uint64_t       local_particles_per_timestep   = particles_per_timestep / mpi_config.particle_flow_world_size;
         int            remainder_particles            = particles_per_timestep % mpi_config.particle_flow_world_size;
 
         const uint64_t reserve_particles_size         = 2 * (local_particles_per_timestep + 1) * ntimesteps;
 
         ParticleDistribution<double> *particle_dist = load_injector_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
         // ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
-        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
+        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size);*/ 
     }
     else
     {
+		PETSC_COMM_WORLD = mpi_config.particle_flow_world;
+		PetscInitialize(&argc, &argv, nullptr, nullptr);
         flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta);
     }
 
@@ -113,33 +115,42 @@ int main (int argc, char ** argv)
     if ( output_iteration != -1 )
     {
         VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, &mpi_config);
-        vtk_writer->write_mesh("minicombust");
+        vtk_writer->write_mesh("out/minicombust");
     }
     output_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
+
+	/*int num_faces = mesh->faces_size;
+    if(mpi_config.rank == 0){
+        for(int i = 0; i < num_faces; i++){
+            printf("face number %d is %lu %lu normal is (%f,%f,%f)\n", i, mesh->faces[i].cell0, mesh->faces[i].cell1,face_normals[i].x,face_normals[i].y,face_normals[i].z);
+        }
+        int num_cel = mesh->mesh_size;
+        for(int i = 0; i < num_cel; i++){
+            printf("cell center %d is (%f,%f,%f)\n", i, mesh->cell_centers[i-mesh->shmem_cell_disp].x, mesh->cell_centers[i-mesh->shmem_cell_disp].y, mesh->cell_centers[i-mesh->shmem_cell_disp].z);
+        }
+    }*/
 
     // Main loop
     if (mpi_config.rank == 0)  printf("Starting simulation..\n");
     MPI_Barrier(mpi_config.world);
     program_time -= MPI_Wtime();
 
-    for(uint64_t t = 0; t < ntimesteps; t++)
+	for(uint64_t t = 0; t < ntimesteps; t++)
     {
         if (mpi_config.solver_type == PARTICLE)
         {
-            particle_solver->timestep();
+            /*particle_solver->timestep();
             
             if (((int64_t)(t % output_iteration) == output_iteration - 1))  
             {
                 output_time -= MPI_Wtime();
                 particle_solver->output_data(t+1);
                 output_time += MPI_Wtime();
-            }
-        }
-        else
+            }*/
+        }else
+		{
             flow_solver->timestep();
-
-        
-        
+		}
     }
     program_time += MPI_Wtime();
     MPI_Barrier(mpi_config.world);
@@ -182,6 +193,11 @@ int main (int argc, char ** argv)
         cout << "Program Time:  " << setw(precision) << program_time_avg << "s  (min " << setw(precision) << program_time_min << "s) " << "(max " << setw(precision) << program_time_max  << "s)\n";
         cout << "Output Time:   " << setw(precision) << output_time_avg  << "s  (min " << setw(precision) << output_time_min  << "s) " << "(max " << setw(precision) << output_time_max   << "s)\n";
     }
+
+	if (mpi_config.solver_type != PARTICLE)
+	{
+		PetscFinalize();
+	}
     MPI_Finalize();
 
     

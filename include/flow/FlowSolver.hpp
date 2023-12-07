@@ -2,18 +2,13 @@
 
 #include "utils/utils.hpp"
 
-#include <Eigen/SparseCore>
-#include <Eigen/Dense>
-#include <Eigen/IterativeLinearSolvers>
-#include <unsupported/Eigen/IterativeSolvers>
+//#include <Eigen/Dense>
 
 namespace minicombust::flow 
 {
     template<class T>
     class FlowSolver 
     {
-        using Eigen::RowMajor;
-
         private:
 
             uint64_t timestep_count = 0;
@@ -53,21 +48,24 @@ namespace minicombust::flow
             T             *face_rlencos;
             vec<T>        *face_normals;
             vec<T>        *face_centers;
-            T             *residual;
             phi_vector<T>  A_phi;
             phi_vector<T>  phi;
             phi_vector<T>  old_phi;
             phi_vector<T>  S_phi;
             phi_vector<vec<T>> phi_grad;
             
-            Eigen::SparseMatrix<T, RowMajor> A_spmatrix;
-            // Eigen::ConjugateGradient<Eigen::SparseMatrix<T, RowMajor>> eigen_solver;
-            // Eigen::BiCGSTAB<Eigen::SparseMatrix<T, RowMajor>> eigen_solver;
-            // Eigen::LeastSquaresConjugateGradient<Eigen::SparseMatrix<T, RowMajor>> eigen_solver;
-            Eigen::GMRES<Eigen::SparseMatrix<T, RowMajor>> eigen_solver;
-
             T effective_viscosity;
 			T inlet_effective_viscosity;
+
+			Mat A;
+			Vec b, u;
+			KSP ksp;
+
+			Mat grad_A;
+			Vec grad_b, grad_u, grad_bU, grad_bV, grad_bW;
+			Vec grad_bP, grad_bTE, grad_bED, grad_bT, grad_bFU;
+			Vec grad_bPR, grad_bVFU, grad_bVPR;
+			KSP grad_ksp;
 
             T *cell_densities;
             T *cell_volumes;
@@ -193,7 +191,8 @@ namespace minicombust::flow
 
                 phi_array_size        = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
                 phi_grad_array_size   = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(vec<T>);
-                source_phi_array_size = (mesh->local_mesh_size + nhalos)               * sizeof(T);
+                source_phi_array_size = (mesh->local_mesh_size + nhalos) * sizeof(T);
+
                 phi.U           = (T *)malloc(phi_array_size);
                 phi.V           = (T *)malloc(phi_array_size);
                 phi.W           = (T *)malloc(phi_array_size);
@@ -219,7 +218,6 @@ namespace minicombust::flow
                 phi_grad.PP     = (vec<T> *)malloc(phi_grad_array_size);
 				phi_grad.TE     = (vec<T> *)malloc(phi_grad_array_size);
                 phi_grad.ED     = (vec<T> *)malloc(phi_grad_array_size);
-                phi_grad.TP     = (vec<T> *)malloc(phi_grad_array_size); //TODO: do we need this 
 				phi_grad.TEM    = (vec<T> *)malloc(phi_grad_array_size);
 				phi_grad.FUL	= (vec<T> *)malloc(phi_grad_array_size);
 				phi_grad.PRO	= (vec<T> *)malloc(phi_grad_array_size);
@@ -228,12 +226,9 @@ namespace minicombust::flow
 				A_phi.U         = (T *)malloc(source_phi_array_size);
                 A_phi.V         = (T *)malloc(source_phi_array_size);
                 A_phi.W         = (T *)malloc(source_phi_array_size);
-                A_phi.P         = (T *)malloc(source_phi_array_size);
-                S_phi.U         = (T *)malloc(source_phi_array_size);
+				S_phi.U         = (T *)malloc(source_phi_array_size);
                 S_phi.V         = (T *)malloc(source_phi_array_size);
                 S_phi.W         = (T *)malloc(source_phi_array_size);
-                S_phi.P         = (T *)malloc(source_phi_array_size);
-                residual        = (T *)malloc(source_phi_array_size);
 
                 density_array_size = (mesh->local_mesh_size + nhalos) * sizeof(T);
                 volume_array_size  = (mesh->local_mesh_size + nhalos) * sizeof(T);
@@ -511,11 +506,48 @@ namespace minicombust::flow
 
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
 
+				//Mat, Vec and ksp for sparse linear solve
+				MatCreate(PETSC_COMM_WORLD, &A);
+				MatSetSizes(A, mesh->local_mesh_size, mesh->local_mesh_size, mesh->mesh_size, mesh->mesh_size);
+				MatSetFromOptions(A);
 
-                Eigen::SparseMatrix<T, RowMajor> new_matrix( mesh->local_mesh_size + nhalos, mesh->local_mesh_size + nhalos);
-                // Eigen::SparseMatrix<T, RowMajor> new_matrix( mesh->local_mesh_size + nhalos, mesh->local_mesh_size + nhalos + mesh->boundary_cells_size );
-                new_matrix.reserve( mesh->faces_size );
-                A_spmatrix = new_matrix;
+				//TODO: See https://github.com/petsc/petsc/blob/main/src/ksp/ksp/tutorials/ex2.c
+				//we should probably pre specifiy the number of entries like lines 43-48
+				VecCreate(PETSC_COMM_WORLD, &b);
+				VecSetSizes(b, mesh->local_mesh_size, mesh->mesh_size);
+				VecSetFromOptions(b);
+				VecDuplicate(b, &u);
+
+				KSPCreate(PETSC_COMM_WORLD, &ksp);
+				KSPSetOperators(ksp, A, A);
+				//TODO: Do we want to set some tolerarnces like in https://github.com/petsc/petsc/blob/main/src/ksp/ksp/tutorials/ex2.c
+				KSPSetTolerances(ksp, 1.e-50, 1.e-50, PETSC_DEFAULT, PETSC_DEFAULT);			
+				KSPSetFromOptions(ksp);
+
+				//Mat, Vec and ksp for dense gradient solve
+				MatCreate(MPI_COMM_SELF, &grad_A);
+				MatSetSizes(grad_A, 3, 3, 3, 3);
+				MatSetFromOptions(grad_A);
+
+				VecCreate(MPI_COMM_SELF, &grad_b);
+				VecSetSizes(grad_b, 3, 3);
+				VecSetFromOptions(grad_b);
+				VecDuplicate(grad_b, &grad_u);
+				VecDuplicate(grad_b, &grad_bU);				
+				VecDuplicate(grad_b, &grad_bV);
+				VecDuplicate(grad_b, &grad_bW);
+				VecDuplicate(grad_b, &grad_bP);
+				VecDuplicate(grad_b, &grad_bTE);
+				VecDuplicate(grad_b, &grad_bED);
+				VecDuplicate(grad_b, &grad_bT);
+				VecDuplicate(grad_b, &grad_bFU);
+				VecDuplicate(grad_b, &grad_bPR);
+				VecDuplicate(grad_b, &grad_bVFU);
+				VecDuplicate(grad_b, &grad_bVPR);
+
+				KSPCreate(MPI_COMM_SELF, &grad_ksp);
+				KSPSetOperators(grad_ksp, grad_A, grad_A);
+				KSPSetFromOptions(grad_ksp);
 
                 send_requests.push_back ( MPI_REQUEST_NULL );
                 send_requests.push_back ( MPI_REQUEST_NULL );
@@ -541,7 +573,6 @@ namespace minicombust::flow
                 uint64_t total_phi_grad_array_size                = 4 * phi_grad_array_size; //TODO: is this now 5* due to PP
                 uint64_t total_source_phi_array_size              = 4 * source_phi_array_size; //TODO: is this now 5* due to PP
                 uint64_t total_A_array_size                       = 4 * source_phi_array_size; //TODO: is this now 5* due to PP
-                uint64_t total_residual_size                      = source_phi_array_size;
                 uint64_t total_volume_array_size                  = volume_array_size;
                 uint64_t total_density_array_size                 = density_array_size;
 
@@ -596,7 +627,6 @@ namespace minicombust::flow
                     MPI_Reduce(MPI_IN_PLACE, &total_phi_grad_array_size,                    1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_source_phi_array_size,                  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_A_array_size,                           1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(MPI_IN_PLACE, &total_residual_size,                          1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_volume_array_size,                      1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(MPI_IN_PLACE, &total_density_array_size,                     1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
@@ -619,7 +649,6 @@ namespace minicombust::flow
                     printf("\ttotal_phi_grad_array_size                                 (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_phi_grad_array_size                / 1000000.0, (float) total_phi_grad_array_size                / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_S_phi_array_size                                    (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_source_phi_array_size              / 1000000.0, (float) total_source_phi_array_size              / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_A_array_size                                        (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_A_array_size                       / 1000000.0, (float) total_A_array_size                       / (1000000.0 * mpi_config->particle_flow_world_size));
-                    printf("\ttotal_residual_size                                       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_residual_size                      / 1000000.0, (float) total_residual_size                      / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_volume_array_size                                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_volume_array_size                  / 1000000.0, (float) total_volume_array_size                  / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_density_array_size                                  (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_density_array_size                 / 1000000.0, (float) total_density_array_size                 / (1000000.0 * mpi_config->particle_flow_world_size));
                     printf("\ttotal_unordered_neighbours_set_size       (STL set)       (TOTAL %8.2f MB) (AVG %8.2f MB) \n"    , (float) total_unordered_neighbours_set_size      / 1000000.0, (float) total_unordered_neighbours_set_size      / (1000000.0 * mpi_config->particle_flow_world_size));
@@ -662,7 +691,6 @@ namespace minicombust::flow
                     MPI_Reduce(&total_phi_grad_array_size,                nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_source_phi_array_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_A_array_size,                       nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
-                    MPI_Reduce(&total_residual_size,                      nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_volume_array_size,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                     MPI_Reduce(&total_density_array_size,                 nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                 }
@@ -964,7 +992,10 @@ namespace minicombust::flow
             void print_logger_stats(uint64_t timesteps, double runtime);
             
             void exchange_cell_info_halos ();
-            void exchange_phi_halos ();
+            void exchange_grad_halos();
+			void exchange_phi_halos();
+			void exchange_single_phi_halo(T *phi_component);
+			void exchange_single_grad_halo(vec<T> *phi_grad_component);	
             void exchange_A_halos (T *A_phi_component);
             void exchange_S_halos (T *A_phi_component);
             
