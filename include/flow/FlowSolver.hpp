@@ -49,7 +49,7 @@ namespace minicombust::flow
             vec<T>        *face_centers;
             phi_vector<T>  A_phi;
             phi_vector<T>  phi;
-            phi_vector<T>  old_phi;
+            //phi_vector<T>  old_phi;
             phi_vector<T>  S_phi;
             phi_vector<vec<T>> phi_grad;
             
@@ -205,11 +205,11 @@ namespace minicombust::flow
 				phi.PRO			= (T *)malloc(phi_array_size);
 				phi.VARF		= (T *)malloc(phi_array_size);
 				phi.VARP		= (T *)malloc(phi_array_size);
-				old_phi.U       = (T *)malloc(phi_array_size);
-                old_phi.V       = (T *)malloc(phi_array_size);
-                old_phi.W       = (T *)malloc(phi_array_size);
-                old_phi.P       = (T *)malloc(phi_array_size);
-				old_phi.PP      = (T *)malloc(phi_array_size);
+				//old_phi.U       = (T *)malloc(phi_array_size);
+                //old_phi.V       = (T *)malloc(phi_array_size);
+                //old_phi.W       = (T *)malloc(phi_array_size);
+                //old_phi.P       = (T *)malloc(phi_array_size);
+				//old_phi.PP      = (T *)malloc(phi_array_size);
                 phi_grad.U      = (vec<T> *)malloc(phi_grad_array_size);
                 phi_grad.V      = (vec<T> *)malloc(phi_grad_array_size);
                 phi_grad.W      = (vec<T> *)malloc(phi_grad_array_size);
@@ -553,10 +553,10 @@ namespace minicombust::flow
                 uint64_t total_face_areas_array_size              = face_areas_array_size;
                 uint64_t total_face_lambdas_array_size            = face_lambdas_array_size;
                 uint64_t total_face_rlencos_array_size            = face_rlencos_array_size;
-                uint64_t total_phi_array_size                     = 8 * phi_array_size;  //TODO: is this now 10* due to PP
-                uint64_t total_phi_grad_array_size                = 4 * phi_grad_array_size; //TODO: is this now 5* due to PP
-                uint64_t total_source_phi_array_size              = 4 * source_phi_array_size; //TODO: is this now 5* due to PP
-                uint64_t total_A_array_size                       = 4 * source_phi_array_size; //TODO: is this now 5* due to PP
+                uint64_t total_phi_array_size                     = 13 * phi_array_size;
+                uint64_t total_phi_grad_array_size                = 12 * phi_grad_array_size;
+                uint64_t total_source_phi_array_size              = 3 * source_phi_array_size; 
+                uint64_t total_A_array_size                       = 3 * source_phi_array_size;
                 uint64_t total_volume_array_size                  = volume_array_size;
                 uint64_t total_density_array_size                 = density_array_size;
 
@@ -905,9 +905,10 @@ namespace minicombust::flow
                 uint64_t total_send_buffers_node_index_array_size = send_buffers_node_index_array_size;
                 uint64_t total_send_buffers_node_flow_array_size  = send_buffers_node_flow_array_size;
                 uint64_t total_face_field_array_size              = face_field_array_size;
-                uint64_t total_phi_array_size                     = 8 * phi_array_size; //TODO: is this now 10* due to PP
-                uint64_t total_phi_grad_array_size                = 4 * phi_grad_array_size; //TODO: is this now 5* due to PP
-                uint64_t total_source_phi_array_size              = 4 * source_phi_array_size; //TODO: is this now 5* due to PP
+                uint64_t total_phi_array_size                     = 13 * phi_array_size;
+                uint64_t total_phi_grad_array_size                = 12 * phi_grad_array_size;
+                uint64_t total_source_phi_array_size              = 3 * source_phi_array_size;
+				uint64_t total_A_array_size						  = 3 * source_phi_array_size;
 
                 uint64_t total_face_centers_array_size            = face_centers_array_size;
                 uint64_t total_face_normals_array_size            = face_normals_array_size;
@@ -928,7 +929,8 @@ namespace minicombust::flow
                        total_send_buffers_node_index_array_size + total_send_buffers_node_flow_array_size + total_face_field_array_size + 
                        total_phi_array_size + total_source_phi_array_size + total_phi_grad_array_size +
                        total_face_centers_array_size + total_face_normals_array_size + total_face_mass_fluxes_array_size +
-                       total_face_areas_array_size + total_face_lambdas_array_size + total_face_rlencos_array_size;
+                       total_face_areas_array_size + total_face_lambdas_array_size + total_face_rlencos_array_size +
+					   total_A_array_size;
             }
 
             size_t get_stl_memory_usage ()
