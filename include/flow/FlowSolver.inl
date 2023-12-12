@@ -429,9 +429,6 @@ namespace minicombust::flow
         
         performance_logger.my_papi_start();
 
-        // MPI_Barrier(mpi_config->world);
-        if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Completed Barrrier.\n", mpi_config->rank);
-
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
         static double time0=0., time1=0., time2=0.;
@@ -617,7 +614,6 @@ namespace minicombust::flow
 
         if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Processed cell particle fields .\n", mpi_config->rank);
 
-        // MPI_Barrier(mpi_config->world);
         MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //6
@@ -1779,8 +1775,6 @@ namespace minicombust::flow
 		//calculate fluxes through all inner faces
 		calculate_flux_UVW ();
 
-        MPI_Barrier(mpi_config->particle_flow_world);
-			
         // Gravity force (enthalpy)
 		for ( uint64_t i = 0 ; i < mesh->local_mesh_size; i++)
 		{
@@ -1825,9 +1819,7 @@ namespace minicombust::flow
         setup_time  += MPI_Wtime();
         solve_time  -= MPI_Wtime();
 		
-		MPI_Barrier(mpi_config->particle_flow_world);
 		solve_sparse_matrix(phi.U);
-		MPI_Barrier(mpi_config->particle_flow_world);
 
         setup_time  -= MPI_Wtime();
         solve_time  += MPI_Wtime();  
@@ -1835,10 +1827,7 @@ namespace minicombust::flow
         setup_time  += MPI_Wtime();
         solve_time  -= MPI_Wtime();     
 
-        MPI_Barrier(mpi_config->particle_flow_world);
 		solve_sparse_matrix (phi.V);
-		MPI_Barrier(mpi_config->particle_flow_world);  
-
 		
         setup_time  -= MPI_Wtime();
         solve_time  += MPI_Wtime();  
@@ -1846,9 +1835,7 @@ namespace minicombust::flow
         setup_time  += MPI_Wtime();
         solve_time  -= MPI_Wtime();  
 
-        MPI_Barrier(mpi_config->particle_flow_world); 
         solve_sparse_matrix (phi.W);
-        MPI_Barrier(mpi_config->particle_flow_world);
         solve_time += MPI_Wtime();
 		
 
@@ -2105,7 +2092,6 @@ namespace minicombust::flow
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_pressure_matrix.\n", mpi_config->rank);
 
 		MatZeroEntries(A);
-        VecZeroEntries(b);
 
         #pragma ivdep 
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
@@ -2128,8 +2114,6 @@ namespace minicombust::flow
 
 		}
 
-        MPI_Barrier(mpi_config->particle_flow_world);
-
         // Add A matrix diagonal after exchanging halos
         #pragma ivdep
         for (uint64_t i = 0; i < mesh->local_mesh_size; i++)
@@ -2145,6 +2129,9 @@ namespace minicombust::flow
     {
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_pressure_matrix.\n", mpi_config->rank);
 
+		VecZeroEntries(b);
+		VecZeroEntries(u);
+
         for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 		{
 			VecSetValue(b, i+mesh->local_cells_disp, S_phi.U[i], INSERT_VALUES);
@@ -2152,10 +2139,6 @@ namespace minicombust::flow
 	
 		VecAssemblyBegin(b);
         VecAssemblyEnd(b);
-
-        VecZeroEntries(u);
-
-		MPI_Barrier(mpi_config->particle_flow_world);
 
 		KSPSolve(ksp, b, u);
         PetscInt indx[mesh->local_mesh_size];
@@ -2755,7 +2738,6 @@ namespace minicombust::flow
 	
 		setup_sparse_matrix (underrelax, A_phi.V, phi_component, S_phi.U);
 
-        MPI_Barrier(mpi_config->particle_flow_world);
         solve_sparse_matrix (phi_component);
 
 		if(type == TERBTE or type == TERBED)
@@ -2945,8 +2927,6 @@ namespace minicombust::flow
 
 		//Look up results from the FGM look-up table
 		FGM_loop_up();
-
-		MPI_Barrier(mpi_config->particle_flow_world);
 
         if ((timestep_count == 1499) && mpi_config->particle_flow_rank == 0)
         {
