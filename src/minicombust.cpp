@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <ctime>
 #include <inttypes.h>
-#include <petscksp.h>
 
 #include "examples/mesh_examples.hpp"
 #include "examples/particle_examples.hpp"

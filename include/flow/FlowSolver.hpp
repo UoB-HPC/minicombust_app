@@ -1,8 +1,7 @@
 #pragma once
 
 #include "utils/utils.hpp"
-
-//#include <Eigen/Dense>
+#include <petscksp.h>
 
 namespace minicombust::flow 
 {
