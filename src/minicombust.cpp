@@ -119,17 +119,6 @@ int main (int argc, char ** argv)
     }
     output_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
 
-	/*int num_faces = mesh->faces_size;
-    if(mpi_config.rank == 0){
-        for(int i = 0; i < num_faces; i++){
-            printf("face number %d is %lu %lu normal is (%f,%f,%f)\n", i, mesh->faces[i].cell0, mesh->faces[i].cell1,face_normals[i].x,face_normals[i].y,face_normals[i].z);
-        }
-        int num_cel = mesh->mesh_size;
-        for(int i = 0; i < num_cel; i++){
-            printf("cell center %d is (%f,%f,%f)\n", i, mesh->cell_centers[i-mesh->shmem_cell_disp].x, mesh->cell_centers[i-mesh->shmem_cell_disp].y, mesh->cell_centers[i-mesh->shmem_cell_disp].z);
-        }
-    }*/
-
     // Main loop
     if (mpi_config.rank == 0)  printf("Starting simulation..\n");
     MPI_Barrier(mpi_config.world);
