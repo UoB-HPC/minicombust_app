@@ -734,6 +734,7 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::limit_phi_gradients ()
     {
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function limit_phi_gradients.\n", mpi_config->rank);
 		T Umax, Umin, Vmax, Vmin, Wmax, Wmin, Pmax, Pmin;
 		T Udeltamax, Udeltamin, Vdeltamax, Vdeltamin, Wdeltamax, Wdeltamin, Pdeltamax, Pdeltamin;
 
@@ -1082,6 +1083,7 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::precomp_mass_flux()
 	{
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function precomp_mass_flux.\n", mpi_config->rank);
 		/*we need the value of mass flux at the inlets and outlets to caculate AU*/
 		for ( uint64_t face = 0; face < mesh->faces_size; face++ )
         {
@@ -1209,6 +1211,7 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::precomp_AU()
 	{
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function precomp_AU.\n", mpi_config->rank);	
 		/*Compute AU needed for the first calculation of mass flux*/
 		#pragma ivdep
         for ( uint64_t i = 0; i < mesh->local_mesh_size + nhalos; i++ )
@@ -1249,6 +1252,7 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::set_up_field()
 	{
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function set_up_field.\n", mpi_config->rank);
 		/*We need inital values for mass_flux and AU for the first iteration*/
 		precomp_mass_flux();
 		precomp_AU();
@@ -1257,6 +1261,7 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::set_up_fgm_table()
 	{
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function set_up_fgm_table.\n", mpi_config->rank);
 		/* Set up some data for the FGM look up table*/
 		//TODO: take into account to memory requirement of this table.
 		//Should we reduce this table to 2-d and compute the PDFs of the two variables
@@ -1279,6 +1284,7 @@ namespace minicombust::flow
 	
 	template<typename T> void FlowSolver<T>::FGM_loop_up()
 	{
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function FGM_look_up.\n", mpi_config->rank);
 		/*Look up the result in the FGM table for each local cell
 		  this would be the source term in the progress variable 
 		  calculation*/
@@ -1328,13 +1334,8 @@ namespace minicombust::flow
 
         T RURF = 1. / URFactor;
 
-        static double res_phi_time  = 0.0;
-        static double diagonal_time = 0.0;
-
 		MatZeroEntries(A);
 		VecZeroEntries(b);
-
-        res_phi_time -= MPI_Wtime();
 
         #pragma ivdep 
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
@@ -1355,10 +1356,6 @@ namespace minicombust::flow
 
         }
 
-        res_phi_time += MPI_Wtime();
-
-        diagonal_time -= MPI_Wtime();
-
         // Add A matrix diagonal after exchanging halos
         #pragma ivdep 
         for (uint64_t i = 0; i < mesh->local_mesh_size; i++)
@@ -1375,31 +1372,16 @@ namespace minicombust::flow
 		
 		VecAssemblyBegin(b);
 		VecAssemblyEnd(b);
-
-        diagonal_time += MPI_Wtime();
-
-        if ( mpi_config->particle_flow_rank == 0 && timestep_count == 1499)
-        {
-            printf("SETUP res_phi_time  time: %7.2fs\n", res_phi_time  );
-            printf("SETUP Diagonal time:      %7.2fs\n", diagonal_time );
-        }
     }
 
     template<typename T> void FlowSolver<T>::update_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component )
     {
-        // The idea for this function is to reduce the number of insertions into the sparse A matrix, 
-        // given that face_fields (RFace) is constant for U, V and W. Possible to write app to seperate array and then only do one halo exchange here.
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function update_sparse_matrix.\n", mpi_config->rank);
+        /*This function is to reduce the number of insertions into 
+		  the sparse A matrix, given that face_fields (RFace) is 
+		  constant for U, V and W.*/
 
         T RURF = 1. / URFactor;
-
-        static double init_time     = 0.0;
-        static double res_phi_time  = 0.0;
-        static double diagonal_time = 0.0;
-
-        init_time -= MPI_Wtime();
-
-        init_time    += MPI_Wtime();
-        res_phi_time -= MPI_Wtime();
 
         #pragma ivdep 
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
@@ -1417,9 +1399,6 @@ namespace minicombust::flow
             A_phi_component[phi_index1] -= face_fields[face].cell0;
         }
 
-        res_phi_time += MPI_Wtime();
-        diagonal_time -= MPI_Wtime();
-
         // Add A matrix diagonal after exchanging halos
         #pragma ivdep 
         for (uint64_t i = 0; i < mesh->local_mesh_size; i++)
@@ -1435,23 +1414,12 @@ namespace minicombust::flow
 
         VecAssemblyBegin(b);
         VecAssemblyEnd(b);
-
-        diagonal_time += MPI_Wtime();
-
-        if (mpi_config->particle_flow_rank == 0 && timestep_count == 1499)
-        {
-            printf("UPDATE Init  time:         %7.2fs\n", init_time  );
-            printf("UPDATE res_phi_time  time: %7.2fs\n", res_phi_time  );
-            printf("UPDATE Diagonal time:      %7.2fs\n", diagonal_time );
-        }
     }
 
     template<typename T> void FlowSolver<T>::solve_sparse_matrix ( T *phi_component)
     {
-        static double solve_time     = 0.0;
-        solve_time -= MPI_Wtime();
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_sparse_matrix.\n", mpi_config->rank);
         VecZeroEntries(u);
-        solve_time += MPI_Wtime();
 
 		KSPSolve(ksp, b, u);
 		PetscInt indx[mesh->local_mesh_size];
@@ -1461,11 +1429,6 @@ namespace minicombust::flow
 			indx[i] = i+mesh->local_cells_disp;
 		}
 		VecGetValues(u, mesh->local_mesh_size, indx, phi_component);
-        
-		if (mpi_config->particle_flow_rank == 0 && timestep_count == 1499)
-        {
-            printf("SOLVE solve time:          %7.2fs\n", solve_time );
-        }
     }
 
     template<typename T> void FlowSolver<T>::calculate_flux_UVW()
@@ -1748,13 +1711,10 @@ namespace minicombust::flow
     {
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_UVW.\n", mpi_config->rank);
 
-
-        static double init_time  = 0.0;
-        static double flux_time  = 0.0;
-        static double setup_time = 0.0;
-        static double solve_time = 0.0;
+		static double total_time = 0.0, flux_time = 0.0;
+        static double setup_time = 0.0, solve_time = 0.0;
 		
-        init_time -= MPI_Wtime(); 
+        total_time -= MPI_Wtime(); 
 
         // Initialise A_phi and S_phi vectors to 0.
         #pragma ivdep 
@@ -1769,11 +1729,10 @@ namespace minicombust::flow
             S_phi.W[i] = 0.0;
         }
 
-        init_time += MPI_Wtime();
-        flux_time -= MPI_Wtime();
-
 		//calculate fluxes through all inner faces
+		flux_time -= MPI_Wtime();
 		calculate_flux_UVW ();
+		flux_time += MPI_Wtime();
 
         // Gravity force (enthalpy)
 		for ( uint64_t i = 0 ; i < mesh->local_mesh_size; i++)
@@ -1786,7 +1745,6 @@ namespace minicombust::flow
 			S_phi.W[i] += gravity[2]*BodyForce;
 		}
         
-		
         // Pressure force
 		for ( uint64_t i = 0 ; i < mesh->local_mesh_size; i++)
 		{
@@ -1813,46 +1771,45 @@ namespace minicombust::flow
 
 		const double UVW_URFactor = 0.5;
 		
-        flux_time  += MPI_Wtime();
         setup_time -= MPI_Wtime();
-        setup_sparse_matrix (UVW_URFactor, A_phi.U, phi.U, S_phi.U);   
+        setup_sparse_matrix(UVW_URFactor, A_phi.U, phi.U, S_phi.U);   
         setup_time  += MPI_Wtime();
-        solve_time  -= MPI_Wtime();
-		
+
+        solve_time  -= MPI_Wtime();		
 		solve_sparse_matrix(phi.U);
+		solve_time += MPI_Wtime();
 
         setup_time  -= MPI_Wtime();
-        solve_time  += MPI_Wtime();  
         update_sparse_matrix (UVW_URFactor, A_phi.V, phi.V, S_phi.V); 
         setup_time  += MPI_Wtime();
-        solve_time  -= MPI_Wtime();     
-
+        
+		solve_time  -= MPI_Wtime();     
 		solve_sparse_matrix (phi.V);
-		
+		solve_time += MPI_Wtime();
+
         setup_time  -= MPI_Wtime();
-        solve_time  += MPI_Wtime();  
         update_sparse_matrix (UVW_URFactor, A_phi.W, phi.W, S_phi.W);
         setup_time  += MPI_Wtime();
-        solve_time  -= MPI_Wtime();  
-
+        
+		solve_time  -= MPI_Wtime();  
         solve_sparse_matrix (phi.W);
         solve_time += MPI_Wtime();
-		
+		total_time += MPI_Wtime();
 
-        if (mpi_config->particle_flow_rank == 0 && timestep_count == 1499)
+		if(FLOW_SOLVER_TIME)
         {
-            printf("TOTAL Init  time: %7.2fs\n", init_time  );
-            printf("TOTAL Flux  time: %7.2fs\n", flux_time  );
-            printf("TOTAL Setup time: %7.2fs\n", setup_time );
-            printf("TOTAL Solve time: %7.2fs\n", solve_time );
+            printf("\nFlow Rank %d timings for Velocity solve:\nTotal time: %f\n"
+                    "Flux time: %f\nMatrix setup time: %f\nMatrix solve time: %f\n\n",
+                    mpi_config->rank, total_time, flux_time, setup_time, solve_time);
         }
     }
 
 	template<typename T> void FlowSolver<T>::update_mass_flux()
 	{
-	/*Update the mass flux for the internal faces. Used for the incremental
-	update of the velocity and pressure fields*/
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function update_mass_flux.\n", mpi_config->rank);
+		/*Update the mass flux for the internal faces. Used for the incremental
+		update of the velocity and pressure fields*/
+		
 		exchange_phi_halos();
 		MPI_Barrier(mpi_config->particle_flow_world);
 
@@ -2151,9 +2108,10 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::Update_P_at_boundaries(T *phi_component)
 	{
-	/*Update the value of a Pressure phi component at the boundaries, with
-	the value of phi for the internal side of the face. Used in the progressive update 
-	of Pressure and Velocity fields in compute pressure.*/ 
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function Update_P_at_boundaries.\n", mpi_config->rank);
+		/*Update the value of a Pressure phi component at the boundaries, with
+		the value of phi for the internal side of the face. Used in the progressive update 
+		of Pressure and Velocity fields in compute pressure.*/ 
 		#pragma ivdep 
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
 		{
@@ -2167,7 +2125,8 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::update_P(T *phi_component, vec<T> *phi_grad_component)
 	{
-	/*Final update of the value of P at each boundary*/
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function update_P.\n", mpi_config->rank);
+		/*Final update of the value of P at each boundary*/
 		#pragma ivdep
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
         {
@@ -2191,19 +2150,24 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::calculate_pressure()
     {
-    /*Solve and update pressure using the SIMPLE alogrithm
-		1. Solve the pressure correction equation.
-		2. Update the pressure field
-		3. Update the boundary pressure corrections
-		4. Correct the face mass fluxes
-		5. Correct the cell velocities
-	*/
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
+		/*Solve and update pressure using the SIMPLE alogrithm
+			1. Solve the pressure correction equation.
+			2. Update the pressure field
+			3. Update the boundary pressure corrections
+			4. Correct the face mass fluxes
+			5. Correct the cell velocities
+		*/
+
+		static double total_time = 0.0, flux_time = 0.0;
+        static double setup_time = 0.0, solve_time = 0.0;
+        static double halo_time = 0.0;
 		
+		total_time -= MPI_Wtime();
 		T Loop_num = 0;
 		bool Loop_continue = true;
 		T Pressure_correction_max = 0;
 		T Pressure_correction_ref = 0;
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
         
 		#pragma ivdep 
         for ( uint64_t i = 0; i < mesh->local_mesh_size + nhalos; i++ )
@@ -2220,18 +2184,26 @@ namespace minicombust::flow
 			face_fields[face].cell1 = 0.0;		
 		}
 
+		halo_time -= MPI_Wtime();
 		exchange_A_halos(A_phi.U);
+		halo_time += MPI_Wtime();
        
+		flux_time -= MPI_Wtime();
 		calculate_mass_flux();  //Compute the uncorrected mass fluxes at every faces
-
+		flux_time += MPI_Wtime();
+	
+		setup_time -= MPI_Wtime();
 		setup_pressure_matrix(); //Set up Sp and Ap for the initial pressure solve.
+		setup_time += MPI_Wtime();
 
 		while(Loop_continue)  //conduct a number of improvements to the pressure and velocity fields.
 		{
 			Loop_num++;
 			
+			solve_time -= MPI_Wtime();
 			solve_pressure_matrix(); //Compute pressure correction
-			
+			solve_time += MPI_Wtime();
+
 			Pressure_correction_max = phi.PP[0];
 			for ( uint64_t i = 1; i < mesh->local_mesh_size; i++ )
 			{
@@ -2248,13 +2220,17 @@ namespace minicombust::flow
 				Pressure_correction_ref = Pressure_correction_max;
 			}
 
+			halo_time -= MPI_Wtime();
 			exchange_single_phi_halo(phi.PP); //exchange to phi.PP is correct at halos.
+			halo_time += MPI_Wtime();
 
 			Update_P_at_boundaries(phi.PP); //Update boundary pressure
    
 			get_phi_gradient(phi.PP, phi_grad.PP, true); //Compute gradient of correction.
 			
+			halo_time -= MPI_Wtime();
 			exchange_single_grad_halo(phi_grad.PP); //exchange so phi_grad.PP is correct at halos 
+			halo_time += MPI_Wtime();
 
 			for ( uint64_t face = 0; face < mesh->faces_size; face++ ){
 				const uint64_t block_cell0 = mesh->faces[face].cell0 - mesh->local_cells_disp;
@@ -2270,8 +2246,11 @@ namespace minicombust::flow
 			{	
 				Pref = phi.PP[0];
 			}
-			MPI_Bcast(&Pref, 1, MPI_DOUBLE, 0, mpi_config->particle_flow_world);
 			
+			halo_time -= MPI_Wtime();
+			MPI_Bcast(&Pref, 1, MPI_DOUBLE, 0, mpi_config->particle_flow_world);
+			halo_time += MPI_Wtime();			
+
 			/*halos values of phi.PP correct so updating halo values of phi.P here avoids
 			  a halo exchange later*/
 			for ( uint64_t cell = 0; cell < mesh->local_mesh_size + nhalos; cell++ )
@@ -2299,7 +2278,9 @@ namespace minicombust::flow
 				phi.P[0] = 0.0; //in dolfyn we set P(0) to 0.0 but why????????
 			}
 
+			flux_time -= MPI_Wtime();
 			update_mass_flux(); //Compute the correction for the mass fluxes
+			flux_time += MPI_Wtime();
 
 			//Reset PP for next partial solve
 			for ( uint64_t i = 0; i < mesh->local_mesh_size + nhalos + mesh->boundary_cells_size; i++ )
@@ -2313,9 +2294,21 @@ namespace minicombust::flow
 
 		get_phi_gradient(phi.P, phi_grad.P, true); //Update gradient for Pressure field.
 
+		halo_time -= MPI_Wtime();
 		exchange_single_grad_halo(phi_grad.P); //Exchange so phi_grad.P is correct at halos
-
+		halo_time += MPI_Wtime();
+		
 		update_P(phi.P, phi_grad.P); //Final update of pressure field.
+		total_time += MPI_Wtime();
+
+		if(FLOW_SOLVER_TIME)
+        {
+            printf("\nFlow Rank %d timings for Pressure solve:\nTotal time: %f\n"
+					"Flux time: %f\nMatrix setup time: %f\nMatrix solve time: %f\n"
+                    "Communication time: %f\n\n",
+                    mpi_config->rank, total_time, flux_time, setup_time, solve_time,
+                    halo_time);	
+		}
     }
 
 	template<typename T> void FlowSolver<T>::FluxScalar(int type, T *phi_component, vec<T> *phi_grad_component)
@@ -2325,7 +2318,6 @@ namespace minicombust::flow
         T pe0 =  9999.;
         T pe1 = -9999.;
         T GammaBlend = 0.0; // NOTE: Change when implemented other differencing schemes.
-
 
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
         {
@@ -2497,7 +2489,7 @@ namespace minicombust::flow
                     
 					const T f = -VisFace + min( face_mass_fluxes[face], 0.0 );
                     
-					A_phi.U[block_cell0] = A_phi.U[block_cell0] - f;
+					A_phi.V[block_cell0] = A_phi.V[block_cell0] - f;
                     S_phi.U[block_cell0] = S_phi.U[block_cell0] - f * PhiFace + fde - fdi;
                     
 					phi_component[mesh->local_mesh_size + nhalos + boundary_cell] = PhiFace;;
@@ -2554,8 +2546,9 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::solveTurbulenceModels(int type)
 	{
-	/*compute the effects of the terbulent forces including the effect
-	  at the wall*/
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solveTurbulenceModels.\n", mpi_config->rank);
+		/*compute the effects of the terbulent forces including the effect
+		at the wall*/
 		if(type == TERBTE)
 		{
 			for ( uint64_t i = 0; i < mesh->local_mesh_size; i++ )
@@ -2690,12 +2683,18 @@ namespace minicombust::flow
 
 	template<typename T> void FlowSolver<T>::Scalar_solve(int type, T *phi_component, vec<T> *phi_grad_component, T *old_phi)
 	{
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function Scalar_solve.\n", mpi_config->rank);
 		/*Solve for a general scalar used for most transport equations
 		  Follows the general procedure:
 		  1. Collect face fluxes
 		  2. Compute extra steps for terbulence
 		  3. set-up and solve matrix*/
-			
+
+		static double total_time = 0.0, flux_time = 0.0;
+		static double setup_time = 0.0, solve_time = 0.0;
+		static double terb_time = 0.0; 
+		
+		total_time -= MPI_Wtime();
 		//reuse Au and Su to reduce storage requirements
 		#pragma ivdep
         for ( uint64_t i = 0; i < mesh->local_mesh_size + nhalos; i++ )
@@ -2705,7 +2704,9 @@ namespace minicombust::flow
         }
 
 		//collect face fluxes
+		flux_time -= MPI_Wtime();
 		FluxScalar(type, phi_component, phi_grad_component);
+		flux_time += MPI_Wtime();
 
 		//Unsteady term 
 		double rdelta = 1.0 / delta;
@@ -2719,7 +2720,9 @@ namespace minicombust::flow
 
 		if(type == TERBTE or type == TERBED)
 		{
+			terb_time -= MPI_Wtime();
 			solveTurbulenceModels(type);
+			terb_time += MPI_Wtime();
 		}
 
 		T underrelax = 0.0;
@@ -2736,9 +2739,13 @@ namespace minicombust::flow
 			underrelax = 0.95;
 		}
 	
-		setup_sparse_matrix (underrelax, A_phi.V, phi_component, S_phi.U);
+		setup_time -= MPI_Wtime();
+		setup_sparse_matrix(underrelax, A_phi.V, phi_component, S_phi.U);
+		setup_time += MPI_Wtime();	
 
+		solve_time -= MPI_Wtime();
         solve_sparse_matrix (phi_component);
+		solve_time += MPI_Wtime();
 
 		if(type == TERBTE or type == TERBED)
 		{
@@ -2767,6 +2774,24 @@ namespace minicombust::flow
 					phisum = (phisum/count);
 					phi_component[i] = max(phisum, 0.000000000001);
 				}
+			}
+		}
+		total_time += MPI_Wtime();
+		if(FLOW_SOLVER_TIME)
+		{
+			if(type == TERBTE or type == TERBED)
+			{
+				printf("\nFlow Rank %d timings for Scalar solve:\nTotal time: %f\n"
+                        "Flux time: %f\nMatrix setup time: %f\nMatrix solve time: %f\n"
+						"Terbulence Equation time: %f\n\n",
+                        mpi_config->rank, total_time, flux_time, setup_time, solve_time,
+						terb_time);
+			}
+			else
+			{	
+				printf("\nFlow Rank %d timings for Scalar solve:\nTotal time: %f\n"
+						"Flux time: %f\nMatrix setup time: %f\nMatrix solve time: %f\n\n", 
+						mpi_config->rank, total_time, flux_time, setup_time, solve_time);
 			}
 		}
 	}
@@ -2849,25 +2874,21 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::timestep()
     {
-        if (FLOW_SOLVER_DEBUG)    printf("Start flow timestep\n");
-        if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  printf("\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
 
         int comms_timestep = 1;
-        static double halo_time = 0.0, grad_time = 0.0;
-        // Note: After pointer swap, last iterations phi is now in phi.
+        
+		// Note: After pointer swap, last iterations phi is now in phi.
 		//TODO: should we be doing this?
+		
 		if(mpi_config->particle_flow_rank == 0){
 			printf("timestep %lu\n",timestep_count);
 		}
 
-		halo_time -= MPI_Wtime();	
 		exchange_phi_halos();
-		halo_time += MPI_Wtime();
 
-		grad_time -= MPI_Wtime();
 		get_phi_gradients();
 		//limit_phi_gradients();
-		grad_time += MPI_Wtime();	
 		
 		if(timestep_count == 0)
 		{
@@ -2875,9 +2896,7 @@ namespace minicombust::flow
 			set_up_fgm_table();
 		}
 
-        halo_time -= MPI_Wtime();
         exchange_grad_halos();
-        halo_time += MPI_Wtime();
 
         if ((timestep_count % comms_timestep) == 0)  
             //update_flow_field();
@@ -2899,7 +2918,7 @@ namespace minicombust::flow
 
             }
         }
-	
+
 		calculate_UVW();
 
 		exchange_phi_halos(); //exchange new UVW values.
@@ -2927,12 +2946,6 @@ namespace minicombust::flow
 
 		//Look up results from the FGM look-up table
 		FGM_loop_up();
-
-        if ((timestep_count == 1499) && mpi_config->particle_flow_rank == 0)
-        {
-            printf("Halo time: %7.2fs\n", halo_time );
-            printf("Grad time: %7.2fs\n", grad_time );
-        }
 
         if ((timestep_count % 20) == 0)
         {

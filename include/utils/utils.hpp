@@ -20,6 +20,7 @@
 #define PARTICLE_DEBUG 0
 #define LOGGER 1
 #define FLOW_SOLVER_DEBUG 0
+#define FLOW_SOLVER_TIME 0
 #define PARTICLE_SOLVER_DEBUG 0
 #define FLOW 0
 #define PARTICLE 1

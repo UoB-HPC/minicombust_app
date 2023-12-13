@@ -494,6 +494,15 @@ namespace minicombust::flow
 				MatCreate(PETSC_COMM_WORLD, &A);
 				MatSetSizes(A, mesh->local_mesh_size, mesh->local_mesh_size, mesh->mesh_size, mesh->mesh_size);
 				MatSetFromOptions(A);
+				if(mpi_config->particle_flow_world_size > 1)
+				{
+					MatMPIAIJSetPreallocation(A, 7, NULL, 1, NULL);	
+				}
+				else
+				{
+					MatSeqAIJSetPreallocation(A, 7, NULL);
+				}
+				MatSetUp(A);
 
 				//TODO: See https://github.com/petsc/petsc/blob/main/src/ksp/ksp/tutorials/ex2.c
 				//we should probably pre specifiy the number of entries like lines 43-48
