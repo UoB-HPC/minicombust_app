@@ -87,10 +87,10 @@ namespace minicombust::geometry
             vec<T> cell_size_vector;      // Cell size
             vec<T> *points;               // Mesh points    = {{0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, ...}:
             uint64_t *cells;              // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
-            Face<uint64_t> *faces;        // Faces          = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...};  TODO: Not needed by particle ranks (25% mesh mem) mapping between Cell Id's and faces.
-            uint64_t *cell_faces;         // Cfaces         = {f0, f1, f2, f3, f4, f5, f1, f2, f4, f5}; //mapping into the unique faces. 6*cells long.
+            Face<uint64_t> *faces;        // Faces          = {{0, BOUNDARY}, {0, BOUNDARY}, {0, BOUNDARY}, {0, 1}, ...};  TODO: Not needed by particle ranks (25% mesh mem)
+            uint64_t *cell_faces;         // Cfaces         = {f0, f1, f2, f3, f4, f5, f1, f2, f4, f5};
             vec<T> *cell_centers;         // Cell centres   = {{0.5, 3.0, 4.0}, {2.5, 3.0, 4.0}, ...};
-            uint64_t *cell_neighbours;    // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}} // the neighber to each cell.
+            uint64_t *cell_neighbours;    // Cell faces     = {{0, 1, 2, 3, 4, 5}, {6, 1, 7, 3, 8, 5}}
             uint8_t *cells_per_point;     // Number of neighbouring cells for each point
 
 

@@ -36,7 +36,7 @@ namespace minicombust::particles
         // }
 
         VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
-        vtk_writer->write_particles("minicombust", timestep, particles);
+        vtk_writer->write_particles("out/minicombust", timestep, particles);
     }
 
     template<class T>
@@ -96,10 +96,10 @@ namespace minicombust::particles
             cout << "\tUseful Nodes         (avg per rank):         " << round(logger.useful_nodes_proportion / timesteps)                                                << endl;
             cout << "\tUseful Nodes (%)     (avg per rank):         " << round(10000.*((logger.useful_nodes_proportion) / (logger.nodes_recieved))) / 100. << "% "        << endl;
 
-            cout << endl;
+            //cout << endl;
 
-            cout <<"NOTE: REDUCING RELATIVE GAS VEL by 50\% in Particle.hpp while flow isn't implemented!!!" << endl;
-            cout << endl;
+            //cout <<"NOTE: REDUCING RELATIVE GAS VEL by 50\% in Particle.hpp while flow isn't implemented!!!" << endl;
+            //cout << endl;
         }
 
         performance_logger.print_counters(mpi_config->rank, mpi_config->world_size, runtime);

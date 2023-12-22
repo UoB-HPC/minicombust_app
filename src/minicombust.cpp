@@ -7,7 +7,6 @@
 #include "geometry/Mesh.hpp"
 #include "utils/utils.hpp"
 
-
 #include "particles/ParticleSolver.inl"
 #include "flow/FlowSolver.inl"
 
@@ -18,6 +17,9 @@ using namespace minicombust::visit;
 
 int main (int argc, char ** argv)
 {
+	//TODO:sort out vtk_output.
+	//TODO:sort out timing for particle comp and flow comp
+	
     // MPI Initialisation 
     MPI_Init(NULL, NULL);
     MPI_Config mpi_config;
@@ -72,6 +74,8 @@ int main (int argc, char ** argv)
     Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks);
     MPI_Barrier(mpi_config.world); mesh_time   += MPI_Wtime();
 
+	if (mpi_config.rank == 0)  printf("Mesh built in %6.2fs!\n\n", mesh_time);
+
     mpi_config.one_flow_rank             = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.every_one_flow_rank       = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.one_flow_world_size       = (int *)     malloc(flow_ranks * sizeof(int));
@@ -87,14 +91,14 @@ int main (int argc, char ** argv)
     FlowSolver<double>     *flow_solver     = nullptr;
     if (mpi_config.solver_type == PARTICLE)
     {
-        /*uint64_t       local_particles_per_timestep   = particles_per_timestep / mpi_config.particle_flow_world_size;
+        uint64_t       local_particles_per_timestep   = particles_per_timestep / mpi_config.particle_flow_world_size;
         int            remainder_particles            = particles_per_timestep % mpi_config.particle_flow_world_size;
 
         const uint64_t reserve_particles_size         = 2 * (local_particles_per_timestep + 1) * ntimesteps;
 
         ParticleDistribution<double> *particle_dist = load_injector_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
         // ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
-        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size);*/ 
+        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
     }
     else
     {
@@ -103,7 +107,7 @@ int main (int argc, char ** argv)
         flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta);
     }
 
-    if (mpi_config.rank == 0)   cout << endl;
+	if (mpi_config.rank == 0)   cout << endl;
     setup_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
 
     if (mpi_config.rank == 0)  printf("Mesh built in %6.2fs!\n\n", mesh_time);
@@ -127,17 +131,25 @@ int main (int argc, char ** argv)
     {
         if (mpi_config.solver_type == PARTICLE)
         {
-            /*particle_solver->timestep();
+            particle_solver->timestep();
             
             if (((int64_t)(t % output_iteration) == output_iteration - 1))  
             {
                 output_time -= MPI_Wtime();
                 particle_solver->output_data(t+1);
                 output_time += MPI_Wtime();
-            }*/
-        }else
+            }
+        }
+		else
 		{
             flow_solver->timestep();
+			
+			if (((int64_t)(t % output_iteration) == output_iteration - 1))
+            {
+                output_time -= MPI_Wtime();
+				flow_solver->output_data(t+1);
+                output_time += MPI_Wtime();
+            }	
 		}
     }
     program_time += MPI_Wtime();
@@ -181,14 +193,16 @@ int main (int argc, char ** argv)
         cout << "Program Time:  " << setw(precision) << program_time_avg << "s  (min " << setw(precision) << program_time_min << "s) " << "(max " << setw(precision) << program_time_max  << "s)\n";
         cout << "Output Time:   " << setw(precision) << output_time_avg  << "s  (min " << setw(precision) << output_time_min  << "s) " << "(max " << setw(precision) << output_time_max   << "s)\n";
     }
-
+	
 	if (mpi_config.solver_type != PARTICLE)
 	{
 		PetscFinalize();
 	}
-    MPI_Finalize();
-
     
-
+	//TODO: calling MPI_Finalize on "big" runs throws a 
+	//PMPI_Finalize error for Device or resource busy 
+	//need to look into this and work out what is going on.
+	//can test with 0 7 241 -1 1 with 482 threads
+	MPI_Finalize();
     return 0;
 }

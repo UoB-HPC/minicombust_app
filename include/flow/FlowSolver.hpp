@@ -190,7 +190,7 @@ namespace minicombust::flow
 
                 phi_array_size        = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
                 phi_grad_array_size   = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(vec<T>);
-                source_phi_array_size = (mesh->local_mesh_size + nhalos) * sizeof(T);
+                source_phi_array_size = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
 
                 phi.U           = (T *)malloc(phi_array_size);
                 phi.V           = (T *)malloc(phi_array_size);
@@ -291,14 +291,6 @@ namespace minicombust::flow
                     A_phi.V[block_cell]   = mesh->dummy_gas_vel.y;
                     A_phi.W[block_cell]   = mesh->dummy_gas_vel.z;
 				
-					//TODO: base this on the size of the mesh?
-                    //const vec<T> injector_position           = {0.005, 0.025, 0.025};
-                    //const vec<T> injector_cell_centre_vector = (mesh->cell_centers[shmem_cell] - injector_position) / vec<T> {0.1, 0.1, 0.1};
-                    //T vel_factor = 1.0 - magnitude(injector_cell_centre_vector);
-
-                    //if ( mesh->cell_centers[shmem_cell].x > 0.02 ) 
-                    //    vel_factor = 0.001;
-
                     phi.U[block_cell]     = mesh->dummy_gas_vel.x;
                     phi.V[block_cell]     = mesh->dummy_gas_vel.y;
                     phi.W[block_cell]     = mesh->dummy_gas_vel.z;
@@ -313,16 +305,10 @@ namespace minicombust::flow
 					phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
 					phi.VARP[block_cell]  = mesh->dummy_gas_pro;
 
-                    // old_phi.U[block_cell] = mesh->dummy_gas_vel.x * vel_factor; // * rand()/RAND_MAX;
-                    // old_phi.V[block_cell] = mesh->dummy_gas_vel.y + 4.0 * rand()/RAND_MAX - 2.0;
-                    // old_phi.W[block_cell] = mesh->dummy_gas_vel.z + 4.0 * rand()/RAND_MAX - 2.0;
-                    // old_phi.P[block_cell] = mesh->dummy_gas_pre   + 4.0 * rand()/RAND_MAX - 2.0;
+                    // old_phi.U[block_cell] = mesh->dummy_gas_vel.x;
+                    // old_phi.V[block_cell] = mesh->dummy_gas_vel.y;
+                    // old_phi.W[block_cell] = mesh->dummy_gas_vel.z;
                     // old_phi.P[block_cell] = mesh->dummy_gas_pre;
- 
-                    // old_phi.U[block_cell] = mesh->dummy_gas_vel.x + 0.5 * rand()/RAND_MAX ;
-                    // old_phi.V[block_cell] = mesh->dummy_gas_vel.y + 0.5 * rand()/RAND_MAX ;
-                    // old_phi.W[block_cell] = mesh->dummy_gas_vel.z + 0.5 * rand()/RAND_MAX ;
-                    // old_phi.P[block_cell] = mesh->dummy_gas_pre   + 0.5 * rand()/RAND_MAX ;
 
                     phi_grad.U[block_cell]    = {0.0, 0.0, 0.0};
                     phi_grad.V[block_cell]    = {0.0, 0.0, 0.0};
@@ -496,16 +482,14 @@ namespace minicombust::flow
 				MatSetFromOptions(A);
 				if(mpi_config->particle_flow_world_size > 1)
 				{
-					MatMPIAIJSetPreallocation(A, 7, NULL, 1, NULL);	
+					//MatMPIAIJSetPreallocation(A, 7, NULL, 1, NULL);	
 				}
 				else
 				{
-					MatSeqAIJSetPreallocation(A, 7, NULL);
+					//MatSeqAIJSetPreallocation(A, 7, NULL);
 				}
 				MatSetUp(A);
 
-				//TODO: See https://github.com/petsc/petsc/blob/main/src/ksp/ksp/tutorials/ex2.c
-				//we should probably pre specifiy the number of entries like lines 43-48
 				VecCreate(PETSC_COMM_WORLD, &b);
 				VecSetSizes(b, mesh->local_mesh_size, mesh->mesh_size);
 				VecSetFromOptions(b);
@@ -513,7 +497,7 @@ namespace minicombust::flow
 
 				KSPCreate(PETSC_COMM_WORLD, &ksp);
 				KSPSetOperators(ksp, A, A);
-				KSPSetTolerances(ksp, 1.e-50, 1.e-50, PETSC_DEFAULT, PETSC_DEFAULT);
+				KSPSetTolerances(ksp, 1.e-50, 1.e50, PETSC_DEFAULT, PETSC_DEFAULT);
 				//TODO: play with the tolerances
 				KSPSetFromOptions(ksp);
 
@@ -697,7 +681,10 @@ namespace minicombust::flow
 
             void process_halo_neighbour ( set<uint64_t>& unique_neighbours, uint64_t neighbour )
             {
-                if ( neighbour - mesh->local_cells_disp >= mesh->local_mesh_size ) // Boundary with other flow blocks.
+				if ( neighbour >= mesh->mesh_size){
+					//We don't want boundary nodes	
+				}
+                else if ( neighbour - mesh->local_cells_disp >= mesh->local_mesh_size ) // Boundary with other flow blocks.
                 {
                     const uint64_t flow_rank = mesh->get_block_id( neighbour );
 
@@ -961,6 +948,7 @@ namespace minicombust::flow
 
             bool is_halo( uint64_t cell );
 
+			void output_data(uint64_t timestep);
             void print_logger_stats(uint64_t timesteps, double runtime);
             
             void exchange_cell_info_halos ();
@@ -969,7 +957,6 @@ namespace minicombust::flow
 			void exchange_single_phi_halo(T *phi_component);
 			void exchange_single_grad_halo(vec<T> *phi_grad_component);	
             void exchange_A_halos (T *A_phi_component);
-            void exchange_S_halos (T *A_phi_component);
             
             void get_neighbour_cells(const uint64_t recv_id);
             void interpolate_to_nodes();

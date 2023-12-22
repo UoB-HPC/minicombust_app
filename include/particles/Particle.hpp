@@ -259,7 +259,7 @@ namespace minicombust::particles
 
                 // TODO: Remove DUMMY_VALs
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub7
-                const vec<T> relative_drop_vel           = 0.65 * (local_flow_value.vel - v1);                                         // DUMMY_VAL Relative velocity between droplet and the fluid 
+                const vec<T> relative_drop_vel           = local_flow_value.vel - v1;//0.65 * (local_flow_value.vel - v1);                                         // DUMMY_VAL Relative velocity between droplet and the fluid 
                 const T relative_drop_vel_mag            = magnitude(relative_drop_vel);                         // DUMMY_VAL Relative acceleration between the gas and liquid phase.
                 const vec<T> relative_drop_acc           = a1 * delta ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 
