@@ -18,7 +18,7 @@ using namespace minicombust::visit;
 int main (int argc, char ** argv)
 {
 	//TODO:sort out vtk_output.
-	//TODO:sort out timing for particle comp and flow comp
+	//TODO:ideal flow tanks seem to cause a segfault
 	
     // MPI Initialisation 
     MPI_Init(NULL, NULL);
@@ -169,7 +169,7 @@ int main (int argc, char ** argv)
     double setup_time_avg = 0., program_time_avg = 0., output_time_avg = 0.;
     double setup_time_max = 0., program_time_max = 0., output_time_max = 0.;
     double setup_time_min = 0., program_time_min = 0., output_time_min = 0.;
-    
+    double comp_time_avg = 0., comp_time_max = 0., comp_time_min = 0.;
     MPI_Reduce(&setup_time,    &setup_time_avg,   1, MPI_DOUBLE, MPI_SUM, 0, mpi_config.world);
     MPI_Reduce(&setup_time,    &setup_time_max,   1, MPI_DOUBLE, MPI_MAX, 0, mpi_config.world);
     MPI_Reduce(&setup_time,    &setup_time_min,   1, MPI_DOUBLE, MPI_MIN, 0, mpi_config.world);
@@ -179,6 +179,29 @@ int main (int argc, char ** argv)
     MPI_Reduce(&output_time,   &output_time_avg,  1, MPI_DOUBLE, MPI_SUM, 0, mpi_config.world);
     MPI_Reduce(&output_time,   &output_time_max,  1, MPI_DOUBLE, MPI_MAX, 0, mpi_config.world);
     MPI_Reduce(&output_time,   &output_time_min,  1, MPI_DOUBLE, MPI_MIN, 0, mpi_config.world);
+	if(mpi_config.solver_type == PARTICLE)
+	{
+		MPI_Reduce(&(particle_solver->compute_time), &comp_time_avg, 1,
+                MPI_DOUBLE, MPI_SUM, 0, mpi_config.particle_flow_world);
+        MPI_Reduce(&(particle_solver->compute_time), &comp_time_max, 1,
+                MPI_DOUBLE, MPI_MAX, 0, mpi_config.particle_flow_world);
+        MPI_Reduce(&(particle_solver->compute_time), &comp_time_min, 1,
+                MPI_DOUBLE, MPI_MIN, 0, mpi_config.particle_flow_world);
+	}
+	else
+	{
+		MPI_Reduce(&(flow_solver->compute_time), &comp_time_avg, 1, 
+				MPI_DOUBLE, MPI_SUM, 0, mpi_config.particle_flow_world);
+		MPI_Reduce(&(flow_solver->compute_time), &comp_time_max, 1,
+				MPI_DOUBLE, MPI_MAX, 0, mpi_config.particle_flow_world);
+		MPI_Reduce(&(flow_solver->compute_time), &comp_time_min, 1,
+				MPI_DOUBLE, MPI_MIN, 0, mpi_config.particle_flow_world);
+	}
+
+	double precision = 5+log10(max({setup_time_max, program_time_max, 
+								output_time_max, comp_time_max}));
+    cout.precision(2);
+    cout.setf(ios::fixed);
 
     if (mpi_config.rank == 0)
     {
@@ -186,13 +209,28 @@ int main (int argc, char ** argv)
         program_time_avg  /= (double)mpi_config.world_size;
         output_time_avg   /= (double)mpi_config.world_size;
 
-        double precision = 5+log10(max({setup_time_max, program_time_max, output_time_max}));
-        cout.precision(2);
-        cout.setf(ios::fixed);
-        cout << "Setup Time:    " << setw(precision) << setup_time_avg   << "s  (min " << setw(precision) << setup_time_min   << "s) " << "(max " << setw(precision) << setup_time_max    << "s)\n";
-        cout << "Program Time:  " << setw(precision) << program_time_avg << "s  (min " << setw(precision) << program_time_min << "s) " << "(max " << setw(precision) << program_time_max  << "s)\n";
-        cout << "Output Time:   " << setw(precision) << output_time_avg  << "s  (min " << setw(precision) << output_time_min  << "s) " << "(max " << setw(precision) << output_time_max   << "s)\n";
+        cout << "Setup Time:            " << setw(precision) << setup_time_avg   << "s  (min " << setw(precision) << setup_time_min   << "s) " << "(max " << setw(precision) << setup_time_max    << "s)\n";
+        cout << "Program Time:          " << setw(precision) << program_time_avg << "s  (min " << setw(precision) << program_time_min << "s) " << "(max " << setw(precision) << program_time_max  << "s)\n";
+        cout << "Output Time:           " << setw(precision) << output_time_avg  << "s  (min " << setw(precision) << output_time_min  << "s) " << "(max " << setw(precision) << output_time_max   << "s)\n";
     }
+	MPI_Barrier(mpi_config.world);
+	if(mpi_config.particle_flow_rank == 0)
+	{
+		if(mpi_config.solver_type == PARTICLE)
+		{
+			comp_time_avg /= (double)mpi_config.particle_flow_world_size;
+			cout << "Particle Compute Time: " << setw(precision) << comp_time_avg 
+					<< "s  (min " << setw(precision) << comp_time_min << "s) (max "
+					<< setw(precision) << comp_time_max << "s)\n"; 
+		}
+		else
+		{
+			comp_time_avg /= (double)mpi_config.particle_flow_world_size;
+			cout << "Flow Compute Time:     " << setw(precision) << comp_time_avg
+					<< "s  (min " << setw(precision) << comp_time_min << "s) (max "
+					<< setw(precision) << comp_time_max << "s)\n";
+		}
+	}
 	
 	if (mpi_config.solver_type != PARTICLE)
 	{

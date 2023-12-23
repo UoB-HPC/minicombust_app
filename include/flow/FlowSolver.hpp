@@ -118,6 +118,8 @@ namespace minicombust::flow
             size_t density_array_size;
             size_t volume_array_size;
 
+			double compute_time;
+
             uint64_t max_storage;
 
             double time_stats[11] = {0.0};
@@ -168,6 +170,8 @@ namespace minicombust::flow
 
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
+
+				compute_time = 0;
 
                 // Allocate face data
                 face_field_array_size       = mesh->faces_size * sizeof(Face<T>);

@@ -502,15 +502,18 @@ namespace minicombust::particles
             }
         }
 
-
+		compute_time -= MPI_Wtime();
         particle_release();
+		compute_time += MPI_Wtime();
 
         if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
             update_flow_field();
         
+		compute_time -= MPI_Wtime();
         solve_spray_equations();
 
         update_particle_positions();
+		compute_time += MPI_Wtime();
 
         logger.avg_particles += (double)particles.size() / (double)num_timesteps;
 

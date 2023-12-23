@@ -78,7 +78,7 @@ namespace minicombust::particles
 
         public:
             MPI_Config *mpi_config;
-
+			double compute_time;
             
             template<typename M>
             ParticleSolver(MPI_Config *mpi_config, uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t reserve_particles_size) : 
@@ -139,6 +139,7 @@ namespace minicombust::particles
 
                 memset(&logger,           0, sizeof(Particle_Logger));
 
+				compute_time = 0;
 
                 // Array sizes
                 uint64_t total_node_index_array_size           = 0;

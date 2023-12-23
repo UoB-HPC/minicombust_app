@@ -2908,6 +2908,7 @@ namespace minicombust::flow
 		//TODO: Should we be doing this?
 		//TODO: I am not sure that it matches dolfyn perfectly.		
 		//TODO: remove hardcoded timings - there is one in comms at 1499 its
+		compute_time -= MPI_Wtime();
 		exchange_phi_halos();
 
 		get_phi_gradients();
@@ -2920,6 +2921,7 @@ namespace minicombust::flow
 			set_up_field();
 			set_up_fgm_table();
 		}
+		compute_time += MPI_Wtime();
 
         if ((timestep_count % comms_timestep) == 0)  
             update_flow_field();
@@ -2942,6 +2944,7 @@ namespace minicombust::flow
             }
         }
 
+		compute_time -= MPI_Wtime();
 		calculate_UVW();
 
 		exchange_phi_halos(); //exchange new UVW values.
@@ -2971,6 +2974,7 @@ namespace minicombust::flow
 
 		//Look up results from the FGM look-up table
 		FGM_loop_up();
+		compute_time += MPI_Wtime();
 
         //if ((timestep_count % 20) == 0)
         //{
