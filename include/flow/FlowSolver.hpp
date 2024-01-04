@@ -123,6 +123,18 @@ namespace minicombust::flow
             uint64_t max_storage;
 
             double time_stats[11] = {0.0};
+			double vel_total_time = 0.0, vel_flux_time = 0.0;
+			double vel_setup_time = 0.0, vel_solve_time = 0.0;
+
+			double pres_total_time = 0.0, pres_flux_time = 0.0;
+			double pres_setup_time = 0.0, pres_solve_time = 0.0;
+			double pres_halo_time = 0.0;
+	
+			double sca_total_time[7] = {0.0}, sca_flux_time[7] = {0.0};
+			double sca_setup_time[7] = {0.0}, sca_solve_time[7] = {0.0};
+			double sca_terb_time[2] = {0.0};
+
+			double fgm_lookup_time = 0.0;	
 
             const MPI_Status empty_mpi_status = { 0, 0, 0, 0, 0};
 
@@ -486,11 +498,11 @@ namespace minicombust::flow
 				MatSetFromOptions(A);
 				if(mpi_config->particle_flow_world_size > 1)
 				{
-					//MatMPIAIJSetPreallocation(A, 7, NULL, 1, NULL);	
+					MatMPIAIJSetPreallocation(A, 7, NULL, 3, NULL);	
 				}
 				else
 				{
-					//MatSeqAIJSetPreallocation(A, 7, NULL);
+					MatSeqAIJSetPreallocation(A, 7, NULL);
 				}
 				MatSetUp(A);
 
@@ -501,8 +513,9 @@ namespace minicombust::flow
 
 				KSPCreate(PETSC_COMM_WORLD, &ksp);
 				KSPSetOperators(ksp, A, A);
-				KSPSetTolerances(ksp, 1.e-50, 1.e50, PETSC_DEFAULT, PETSC_DEFAULT);
-				//TODO: play with the tolerances
+				//NOTE: Petsc default is 1.e-6 but -12 seems to give better results,
+				//although this costs for runtime.
+				KSPSetTolerances(ksp, 1.e-12, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
 				KSPSetFromOptions(ksp);
 
 				//Mat, Vec and ksp for dense gradient solve
@@ -988,6 +1001,7 @@ namespace minicombust::flow
 
             void get_phi_gradients ();
             void limit_phi_gradients ();
+			void limit_phi_gradient(T *phi_component, vec<T> *phi_grad_component);
 			void get_phi_gradient ( T *phi_component, vec<T> *phi_grad_component, bool pressure );
 
 			void Scalar_solve(int type, T *phi_component, vec<T> *phi_grad_component, T *old_phi);
