@@ -2,10 +2,12 @@
 
 ## Dependencies
 - Catch++ Unit Testing (Header-only)
+- PETSc:
+  - Set `PETSC_INSTALL_PATH` to the locations of the PETSc folder containing the `include` and `lib` folders.
 
 ## Build
 
-Tested with GCC, Cray and Intel compilers, Intel is most tested compiler at the moment.
+Tested with GCC, Cray and Intel compilers, Intel is the most tested compiler at the moment.
 
 Without PAPI:
 ```bash
@@ -21,16 +23,16 @@ PAPI=1 make clean notest
 
 
 ```bash
-mpirun -np 10 ./bin/minicombust PARTICLE_RANKS NUM_PARTICLES_PER_TIMESTEP CELLS_SCALE_FACTOR WRITE_TIMESTEP
+mpirun -np 10 ./bin/minicombust PARTICLE_RANKS NUM_PARTICLES_PER_TIMESTEP CELLS_SCALE_FACTOR WRITE_TIMESTEP NUM_TIMESTEPS
 
-mpirun -np 10 ./bin/minicombust 9 100 100 20
+mpirun -np 10 ./bin/minicombust 9 100 100 20 100
 
 ```
 
 
 ## Output
 
-Output vtk files for the mesh and particles are written to `out/`
+Output vtk files for the mesh, particles and flow are written to `out/`
 
 ## Get roofline CMD (PAPI Build Required)
 
