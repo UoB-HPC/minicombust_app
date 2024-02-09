@@ -31,7 +31,7 @@ namespace minicombust::visit
 
                 // Print VTK Header
                 ofstream vtk_file;
-                vtk_file.open ("out/mesh/" + filename + to_string(mpi_config->rank) + "_mesh.vtk");
+                vtk_file.open (filename + to_string(mpi_config->rank) + "_mesh.vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
                 vtk_file << "ASCII " << endl;
@@ -77,7 +77,7 @@ namespace minicombust::visit
                     cout << "iiiii" << i << endl;
                     cout << "out/mesh/" + filename + to_string(i) + "_boundarymesh.vtk" << endl;
                     // Print VTK Header
-                    vtk_file.open ("out/mesh/" + filename + to_string(i) + "_boundarymesh.vtk");
+                    vtk_file.open (filename + to_string(i) + "_boundarymesh.vtk");
                     // vtk_file.open ("out/mesh/" + filename + to_string(mpi_config->rank) + "_boundary_mesh.vtk");
                     vtk_file << "# vtk DataFile Version 3.0 " << endl;
                     vtk_file << "MiniCOMBUST " << endl;
@@ -128,7 +128,7 @@ namespace minicombust::visit
             {
                 ofstream vtk_file;
 
-                vtk_file.open ("out/cell_flow/" + filename + "_flow" + to_string(mpi_config->rank) + "_timestep" + to_string(id) + ".vtk");
+                vtk_file.open (filename + "_flow" + to_string(mpi_config->rank) + "_timestep" + to_string(id) + ".vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
                 vtk_file << "ASCII " << endl;
@@ -169,13 +169,57 @@ namespace minicombust::visit
                 vtk_file.close();
             }
 
+			void write_flow_pressure(string filename, int id, phi_vector<T> *phi)
+			{
+				ofstream vtk_file;
+
+                vtk_file.open (filename + "_flow_pressure" + to_string(mpi_config->rank) + "_timestep" + to_string(id) + ".vtk");
+                vtk_file << "# vtk DataFile Version 3.0 " << endl;
+                vtk_file << "MiniCOMBUST " << endl;
+                vtk_file << "ASCII " << endl;
+                vtk_file << "DATASET POLYDATA " << endl;
+
+				// TODO: Allow different datatypes
+                // Print point data
+                vtk_file << endl << "POINTS " << mesh->local_mesh_size << " float"  << endl;
+                for(int cell = 0; cell < (int)mesh->local_mesh_size; cell++)
+                {
+                    const int data_per_line = 10;
+                    if (cell % data_per_line == 0)  vtk_file << endl;
+                    else             vtk_file << "  ";
+                    vtk_file << print_vec(mesh->cell_centers[cell + mesh->local_cells_disp - mesh->shmem_cell_disp]) << "\t";
+                }
+                vtk_file << endl << endl;
+
+                // Print particle values for points
+                vtk_file << endl << "VERTICES " << mesh->local_mesh_size << " " << mesh->local_mesh_size * 2  << endl;
+                uint64_t count = 0;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << "1 " << count++ << "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << endl << "POINT_DATA " << mesh->local_mesh_size << endl;
+
+				vtk_file << "SCALARS flow_pressure float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << phi->P[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file.close();
+			}
+
 
             void write_particles(string filename, int id, vector<Particle<T>>& particles)
             {
                 // Print VTK Header
                 ofstream vtk_file;
 
-                vtk_file.open ("out/particle/" + filename + "_particle" + to_string(mpi_config->rank) + "_timestep" + to_string(id) + ".vtk");
+                vtk_file.open (filename + "_particle" + to_string(mpi_config->rank) + "_timestep" + to_string(id) + ".vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
                 vtk_file << "ASCII " << endl;

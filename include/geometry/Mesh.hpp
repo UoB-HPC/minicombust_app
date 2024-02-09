@@ -52,7 +52,6 @@ namespace minicombust::geometry
             // Calculate the centre point in each cell
             // Computed as the average of all vertex positions
             void calculate_cell_centers(void) {
-
                 for (uint64_t c = 0; c < shmem_mesh_size; ++c) 
                 {
                     // printf("Rank %d calculating cell %lu local_points_disp %lu local_points_size %lu\n", mpi_config->rank, c, local_points_disp, local_points_size);
@@ -60,7 +59,7 @@ namespace minicombust::geometry
                     for (uint64_t i = 0; i < cell_size; ++i) 
                     {
                         // printf("Rank %d %lu point index %lu point index real %lu\n", mpi_config->rank, i, cells[c*cell_size + i] - local_points_disp, cells[c*cell_size + i] );
-                        cell_centers[c] += points[cells[c*cell_size + i] - shmem_point_disp];
+						cell_centers[c] += points[cells[c*cell_size + i] - shmem_point_disp];
                     }
                     cell_centers[c] /= static_cast<T>(cell_size);
                 }

@@ -17,6 +17,7 @@ using namespace minicombust::visit;
 
 int main (int argc, char ** argv)
 {
+	//TODO:reduce mega long lines
 	//TODO:sort out vtk_output.
 	//TODO:ideal flow tanks seem to cause a segfault
 	
@@ -57,9 +58,9 @@ int main (int argc, char ** argv)
 
     // Mesh Configuration
     const uint64_t modifier                = (argc > 3) ? atoi(argv[3]) : 10;
-    vec<double>    box_dim                 = {0.05, 0.05,0.05};//{0.0008, 0.0008, 0.0008}; //1,1,1
-    vec<uint64_t>  elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
-												//*1
+    vec<double>    box_dim                 = {0.05, 0.05, 0.05};
+    vec<uint64_t>  elements_per_dim        = {modifier*1,   modifier*1,  modifier*1};
+												//*2
     if (mpi_config.rank == 0)  
     {
         printf("Starting miniCOMBUST..\n");
@@ -133,7 +134,7 @@ int main (int argc, char ** argv)
         {
             particle_solver->timestep();
             
-            if (((int64_t)(t % output_iteration) == output_iteration - 1))  
+            if (((int64_t)(t % output_iteration) == output_iteration - 1) or t == 0)  
             {
                 output_time -= MPI_Wtime();
                 particle_solver->output_data(t+1);
@@ -144,7 +145,7 @@ int main (int argc, char ** argv)
 		{
             flow_solver->timestep();
 			
-			if (((int64_t)(t % output_iteration) == output_iteration - 1))
+			if (((int64_t)(t % output_iteration) == output_iteration - 1) or t == 0)
             {
                 output_time -= MPI_Wtime();
 				flow_solver->output_data(t+1);
@@ -241,6 +242,6 @@ int main (int argc, char ** argv)
 	//PMPI_Finalize error for Device or resource busy 
 	//need to look into this and work out what is going on.
 	//can test with 0 7 241 -1 1 with 482 threads
-	MPI_Finalize();
+	//MPI_Finalize();
     return 0;
 }
