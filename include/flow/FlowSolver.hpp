@@ -280,7 +280,8 @@ namespace minicombust::flow
                     face_areas[face]       = magnitude(*(face_nodes[2]) - *(face_nodes[0])) * magnitude(*(face_nodes[1]) - *(face_nodes[0]));
 					face_centers[face]     = (*(face_nodes[0]) + *(face_nodes[1]) + *(face_nodes[2]) + *(face_nodes[3]));
 					face_centers[face]     = face_centers[face] / double(4.0);
-                    //TODO: sort this 
+                    
+					//TODO: sort this 
 					face_lambdas[face]     = 0.5;//magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
                     face_normals[face]     = cross_product(*(face_nodes[2]) - *(face_nodes[0]), *(face_nodes[1]) - *(face_nodes[0])); 
 
@@ -363,7 +364,9 @@ namespace minicombust::flow
                             face_lambdas[face]     = 1.0;
 						
                             face_areas[face]       = magnitude(*face_nodes[2] - *face_nodes[0]) * magnitude(*face_nodes[1] - *face_nodes[0]);
+							
 							face_centers[face]     = (*face_nodes[0] + *face_nodes[1] + *face_nodes[2] + *face_nodes[3]) / 4.0;
+
 							face_normals[face]      = cross_product(*face_nodes[2] - *face_nodes[0], *face_nodes[1] - *face_nodes[0]);
 
                             const uint64_t boundary_cell = mesh->faces[face].cell1 - mesh->mesh_size;
@@ -516,9 +519,9 @@ namespace minicombust::flow
 				KSPCreate(PETSC_COMM_WORLD, &ksp);
 				KSPSetOperators(ksp, A, A);
 				
-
 				//NOTE: Petsc default is 1.e-6 but -12 seems to give better results,
 				//although this costs for runtime.
+				//KSPSetType(ksp, KSPBCGS);
 				KSPSetTolerances(ksp, 1.e-6, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
 				KSPSetFromOptions(ksp);
 
@@ -720,14 +723,12 @@ namespace minicombust::flow
 
                         // Record neighbour as seen, record index in phi arrays in map for later accesses.
                         unique_neighbours.insert(neighbour);
-                        boundary_map[neighbour]  = mesh->local_mesh_size + nhalos++;
                     }
                     else if ( !unique_neighbours.contains(neighbour) )
                     {
                         // Record neighbour as seen, record index in phi arrays in map for later accesses. Increment amount of data to recieve later.
                         uint64_t halo_rank_index = distance(halo_ranks.begin(), it);
                         unique_neighbours.insert(neighbour);
-                        boundary_map[neighbour]  = mesh->local_mesh_size + nhalos++;
                         halo_rank_recv_indexes[halo_rank_index].push_back(neighbour);
                     }
                 }
@@ -736,12 +737,10 @@ namespace minicombust::flow
             void setup_halos ()
             {
                 set<uint64_t> unique_neighbours;
-
                 for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
                 {
                     const uint64_t cell       = block_cell + mesh->local_cells_disp;
                     const uint64_t shmem_cell = cell       - mesh->shmem_cell_disp;
-
                     // Get 6 immediate neighbours
                     const uint64_t below_neighbour                = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + DOWN_FACE];
                     const uint64_t above_neighbour                = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + UP_FACE];
@@ -749,7 +748,6 @@ namespace minicombust::flow
                     const uint64_t around_right_neighbour         = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + RIGHT_FACE];
                     const uint64_t around_front_neighbour         = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + FRONT_FACE];
                     const uint64_t around_back_neighbour          = mesh->cell_neighbours[ shmem_cell * mesh->faces_per_cell + BACK_FACE];
-
                     process_halo_neighbour(unique_neighbours, below_neighbour);             // Immediate neighbour cell indexes are correct   
                     process_halo_neighbour(unique_neighbours, above_neighbour);             // Immediate neighbour cell indexes are correct  
                     process_halo_neighbour(unique_neighbours, around_left_neighbour);       // Immediate neighbour cell indexes are correct   
@@ -757,6 +755,8 @@ namespace minicombust::flow
                     process_halo_neighbour(unique_neighbours, around_front_neighbour);      // Immediate neighbour cell indexes are correct   
                     process_halo_neighbour(unique_neighbours, around_back_neighbour);       // Immediate neighbour cell indexes are correct   
 
+
+					//TODO: do we need this bit I don't think we need it.
                     // Get 8 cells neighbours around
                     if ( around_left_neighbour != MESH_BOUNDARY  )   // If neighbour isn't edge of mesh and isn't a halo cell
                     {
@@ -826,7 +826,15 @@ namespace minicombust::flow
                     }
                 }
 
-                if ( halo_ranks.size() == 0 )  return;
+				for(auto i : unique_neighbours)
+				{
+					boundary_map[i]  = mesh->local_mesh_size + nhalos++;
+				}
+				
+				sort(halo_ranks.begin(), halo_ranks.end());
+				sort(halo_rank_recv_indexes.begin(), halo_rank_recv_indexes.end());
+                
+				if ( halo_ranks.size() == 0 )  return;
 
                 uint64_t current_disp = 0;
                 halo_disps.push_back(current_disp);

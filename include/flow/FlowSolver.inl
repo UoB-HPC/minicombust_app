@@ -138,8 +138,8 @@ namespace minicombust::flow
     {
 		/*Group exchange of most phi values over the halos*/
         int num_requests = 9;
-
-        MPI_Request send_requests[halo_ranks.size() * num_requests];
+        
+		MPI_Request send_requests[halo_ranks.size() * num_requests];
         MPI_Request recv_requests[halo_ranks.size() * num_requests];
 
         for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
@@ -890,7 +890,7 @@ namespace minicombust::flow
 					dVPR = phi.VARP[mesh->local_mesh_size + nhalos + boundary_cell] - phi.VARP[block_cell0];
 
                     dX = face_centers[face] - mesh->cell_centers[shmem_cell0];
-					//NOTE: This is required to stop really small dX due to machine precision.
+					//NOTE: This is required to prevent really small dX due to machine precision.
 					if(abs(dX.x) < 0.0000000000000003)
 					{
 						dX.x = 0.0;
@@ -1068,7 +1068,7 @@ namespace minicombust::flow
                 // !
                 if( face_mass_fluxes[face] < 0.0 )
                 {
-                    printf("NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
+                    printf("PRECOMP NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
                     face_mass_fluxes[face] = 1e-15;
 
 					phi.TE[mesh->local_mesh_size + nhalos + boundary_cell] = 
@@ -1329,7 +1329,6 @@ namespace minicombust::flow
 		
 		VecAssemblyBegin(b);
 		VecAssemblyEnd(b);
-	
     }
 
     template<typename T> void FlowSolver<T>::update_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component )
@@ -1372,7 +1371,6 @@ namespace minicombust::flow
 
         VecAssemblyBegin(b);
         VecAssemblyEnd(b);
-
     }
 
     template<typename T> void FlowSolver<T>::solve_sparse_matrix ( T *phi_component)
@@ -1591,7 +1589,7 @@ namespace minicombust::flow
 
                     if( face_mass_fluxes[face] < 0.0 )
                     {
-                        printf("NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
+                        printf("MAIN COMP UVW NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
                         face_mass_fluxes[face] = 1e-15;
                     }
                     
@@ -1733,8 +1731,8 @@ namespace minicombust::flow
         }
 
 		const double UVW_URFactor = 0.5;
-	
-        vel_setup_time -= MPI_Wtime();
+        
+		vel_setup_time -= MPI_Wtime();
         setup_sparse_matrix(UVW_URFactor, A_phi.U, phi.U, S_phi.U);   
         vel_setup_time  += MPI_Wtime();
 
@@ -1830,7 +1828,7 @@ namespace minicombust::flow
 			vec<T> Xn = Xnac -  mesh->cell_centers[shmem_cell1];
 			vec<T> Xp = Xpac -  mesh->cell_centers[shmem_cell0];
 
-			//NOTE:This is required to avoid very small values due to machine precision
+			//NOTE: This is required to avoid small values due to machine precision.
 			if(abs(Xn.x) < 0.0000000000000003)
             {
                 Xn.x = 0.0;
@@ -1888,9 +1886,11 @@ namespace minicombust::flow
 
             if ( mesh->faces[face].cell1 < mesh->mesh_size )  // INTERNAL
             {
+
 				uint64_t phi_index0 = ( block_cell0 >= mesh->local_mesh_size ) ? boundary_map[mesh->faces[face].cell0] : block_cell0;
                 uint64_t phi_index1 = ( block_cell1 >= mesh->local_mesh_size ) ? boundary_map[mesh->faces[face].cell1] : block_cell1;
 
+				//TODO:fix this.
                 const T lambda0 = 0.5;//face_lambdas[face];
                 const T lambda1 = 1.0 - lambda0;
                 
@@ -1937,7 +1937,6 @@ namespace minicombust::flow
                 const T dpy  = ( phi_grad.P[phi_index1].y * lambda1 + phi_grad.P[phi_index0].y * lambda0) * Xpn.y;  
                 const T dpz  = ( phi_grad.P[phi_index1].z * lambda1 + phi_grad.P[phi_index0].z * lambda0) * Xpn.z; 
 
-
                 face_fields[face].cell0 = -ApV;
                 face_fields[face].cell1 = -ApV;
 				
@@ -1956,7 +1955,6 @@ namespace minicombust::flow
                     const T Din = 1.2;
 
                     face_mass_fluxes[face] = Din * dot_product( vel_inward, face_normals[face] );
-					
 					S_phi.U[block_cell0] = S_phi.U[block_cell0] - face_mass_fluxes[face];
                 }
                 else if( boundary_type == OUTLET )
@@ -1972,10 +1970,10 @@ namespace minicombust::flow
                     // !
                     if( face_mass_fluxes[face] < 0.0 )
                     {
-                        printf("NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
+                        printf("MAIN COMP PRES NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
                         face_mass_fluxes[face] = 1e-15;
 
-						 phi.TE[mesh->local_mesh_size + nhalos + boundary_cell] =
+						phi.TE[mesh->local_mesh_size + nhalos + boundary_cell] =
                             phi.TE[block_cell0];
 						phi.ED[mesh->local_mesh_size + nhalos + boundary_cell] =
                             phi.ED[block_cell0];
@@ -2121,9 +2119,9 @@ namespace minicombust::flow
 		VecZeroEntries(b);
 		VecZeroEntries(u);
 
-		//NOTE: solution falls apart with really small RHS vector this protects against that.
-		//TODO: compare zero with RHS using confidence if that is good use that.
 		int flag = 1;
+		//NOTE: We do this since the solution falls apart with RHS vector close to zero.
+		//TODO: Compare zero with RHS using confidence if that is acceptable use that.
         for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 		{
 			if(abs(S_phi.U[i]) > 0.0000000001)
@@ -2206,7 +2204,7 @@ namespace minicombust::flow
             5. Correct the cell velocities
         */
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
-		
+	
 		pres_total_time -= MPI_Wtime();
 		int Loop_num = 0;
 		bool Loop_continue = true;
@@ -2240,11 +2238,11 @@ namespace minicombust::flow
 		pres_setup_time -= MPI_Wtime();
 		setup_pressure_matrix(); //Set up Sp and Ap for the initial pressure solve.
 		pres_setup_time += MPI_Wtime();
-
+		
 		while(Loop_continue)  //conduct a number of improvements to the pressure and velocity fields.
 		{
 			Loop_num++;
-			
+		
 			pres_solve_time -= MPI_Wtime();
 			solve_pressure_matrix(); //Compute pressure correction
 			pres_solve_time += MPI_Wtime();
@@ -2288,10 +2286,10 @@ namespace minicombust::flow
 				//internal cells
 				uint64_t phi_index0 = ( block_cell0 >= mesh->local_mesh_size ) ? boundary_map[mesh->faces[face].cell0] : block_cell0;
 				uint64_t phi_index1 = ( block_cell1 >= mesh->local_mesh_size ) ? boundary_map[mesh->faces[face].cell1] : block_cell1;
-				
 				face_mass_fluxes[face] += (face_fields[face].cell0*(phi.PP[phi_index1] - phi.PP[phi_index0]));
+				
 			}
-			
+
 			/*halos values of phi.PP correct so updating halo values of phi.P here avoids
 			  a halo exchange later*/
 			for ( uint64_t cell = 0; cell < mesh->local_mesh_size + nhalos; cell++ )
@@ -2306,7 +2304,7 @@ namespace minicombust::flow
 				phi.V[cell] -= phi_grad.PP[cell].y * fact; 
 				phi.W[cell] -= phi_grad.PP[cell].z * fact;
 			}
-
+			
 			//Reset Su for the next partial solve.
 			#pragma ivdep 
 			for ( uint64_t i = 0; i < mesh->local_mesh_size + nhalos; i++ )
@@ -3022,6 +3020,9 @@ namespace minicombust::flow
         if (FLOW_SOLVER_DEBUG)  printf("\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
 
         int comms_timestep = 1;
+		if ( mpi_config->particle_flow_rank == 0 )
+			printf("\n\ntimestep %lu\n",timestep_count + 1);
+
         if (((timestep_count + 1) % 100) == 0)
         {
             double arr_usage  = ((double)get_array_memory_usage()) / 1.e9;
@@ -3059,12 +3060,12 @@ namespace minicombust::flow
 		exchange_phi_halos();
 
 		get_phi_gradients();
-		
+
 		if(FLOW_SOLVER_LIMIT_GRAD)
 			limit_phi_gradients();
 
 		exchange_grad_halos();
-		
+	
 		if(timestep_count == 0)
 		{
 			set_up_field();
@@ -3076,13 +3077,12 @@ namespace minicombust::flow
             update_flow_field();
 
 		compute_time -= MPI_Wtime();
+		
 		calculate_UVW();
 
 		exchange_phi_halos(); //exchange new UVW values.
-	
+
         calculate_pressure();
-		
-		MPI_Barrier (mpi_config->particle_flow_world);
 		
 		//Turbulence solve
 		Scalar_solve(TERBTE, phi.TE, phi_grad.TE, phi.TE);
@@ -3109,29 +3109,26 @@ namespace minicombust::flow
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-
-		if((timestep_count + 1) == 10000)
+		if((timestep_count + 1) == 100)
 		{
 			if(mpi_config->particle_flow_rank == 0)
-        {
-            printf("Result after pressure is:\n");
-        }
-        for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
-        {
-            if(i == mpi_config->particle_flow_rank)
-            {
-                for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
-                {
-                    const uint64_t cell = block_cell + mesh->local_cells_disp;
-                    printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
-                    printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
-                }
-            }
-            MPI_Barrier(mpi_config->particle_flow_world);
-        }
+			{
+				printf("Result after pressure is:\n");
+			}
+			for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
+			{
+				if(i == mpi_config->particle_flow_rank)
+				{
+					for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
+					{
+						const uint64_t cell = block_cell + mesh->local_cells_disp;
+						printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
+						printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
+					}
+				}
+				MPI_Barrier(mpi_config->particle_flow_world);
+			}
 		}
-
-
 
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
         {
