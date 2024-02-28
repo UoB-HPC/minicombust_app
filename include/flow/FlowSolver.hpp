@@ -522,7 +522,7 @@ namespace minicombust::flow
 				//NOTE: Petsc default is 1.e-6 but -12 seems to give better results,
 				//although this costs for runtime.
 				//KSPSetType(ksp, KSPBCGS);
-				KSPSetTolerances(ksp, 1.e-6, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
+				//KSPSetTolerances(ksp, 1.e-6, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
 				KSPSetFromOptions(ksp);
 
 				//Mat, Vec and ksp for dense gradient solve

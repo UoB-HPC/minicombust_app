@@ -425,9 +425,8 @@ namespace minicombust::flow
         static double recv_time1=0., recv_time2=0., recv_time3=0.;
 
         int recvs_complete = 0;
-
-        MPI_Ibcast(&recvs_complete, 1, MPI_INT, 0, mpi_config->world, &bcast_request);
-        
+        MPI_Ibcast(&recvs_complete, 1, MPI_INT, 0, mpi_config->world, &bcast_request);       
+ 
         int message_waiting = 0;
         MPI_Iprobe(MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
 
@@ -436,7 +435,6 @@ namespace minicombust::flow
         while(!all_processed)
         {
             time0 -= MPI_Wtime(); //1
-
             if ( message_waiting )
             {
                 uint64_t rank_slot = ranks.size();
@@ -444,7 +442,7 @@ namespace minicombust::flow
                 MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
 
                 resize_cell_particle(elements[rank_slot], rank_slot);
-                if ( FLOW_SOLVER_DEBUG )  printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
+                if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
 
                 logger.recieved_cells += elements[rank_slot];
 
@@ -474,7 +472,6 @@ namespace minicombust::flow
                 continue;
              }
 
-
             time0 += MPI_Wtime(); //1
             time1 -= MPI_Wtime(); //1
             
@@ -486,7 +483,7 @@ namespace minicombust::flow
 
                 if ( recieved_indexes && !processed_neighbours[p] )
                 {
-                    if ( FLOW_SOLVER_DEBUG )  printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
+                    if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
                     
                     get_neighbour_cells (p);
                     processed_neighbours[p] = true;
@@ -502,15 +499,14 @@ namespace minicombust::flow
             MPI_Test ( &bcast_request, &recvs_complete, MPI_STATUS_IGNORE );
             MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
 
-            if ( FLOW_SOLVER_DEBUG && recvs_complete )  printf("\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
-            
+            if ( FLOW_SOLVER_DEBUG && recvs_complete ) if(recvs_complete) printf("\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
             all_processed = all_processed & !message_waiting & recvs_complete;
-            time2 += MPI_Wtime(); //1
+			time2 += MPI_Wtime(); //1
         }
 
         logger.reduced_recieved_cells += new_cells_set.size();
 
-        if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
+        if ( FLOW_SOLVER_DEBUG ) printf("\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
@@ -539,8 +535,7 @@ namespace minicombust::flow
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //5
-        
-        
+
         uint64_t ptr_disp = 0;
         bool *processed_cell_fields = async_locks;
         for (uint64_t p = 0; p < ranks.size(); p++)
@@ -584,7 +579,6 @@ namespace minicombust::flow
                 if ( recieved_indexes && !processed_neighbours[p] )
                 {
                     if ( FLOW_SOLVER_DEBUG )  printf("\tFlow block %d: Processing %d cell fields from %d .\n", mpi_config->particle_flow_rank, elements[p], ranks[p]);
-
                     for (int i = 0; i < elements[p]; i++)
                     {
                         mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].momentum += cell_particle_aos[p][i].momentum;
@@ -598,6 +592,7 @@ namespace minicombust::flow
             }
             if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
         }
+
         recv_time3 += MPI_Wtime();
 
         MPI_Waitall(send_requests.size() - 2, send_requests.data(), MPI_STATUSES_IGNORE); // Check field values later on!
@@ -608,7 +603,6 @@ namespace minicombust::flow
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //6
 
-        
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //7
 
@@ -1730,6 +1724,14 @@ namespace minicombust::flow
             A_phi.W[i] += f;
         }
 
+		//RHS from particle code
+		for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
+		{
+			S_phi.U[i] += mesh->particle_terms[i].momentum.x;
+			S_phi.V[i] += mesh->particle_terms[i].momentum.y;
+			S_phi.W[i] += mesh->particle_terms[i].momentum.z;
+		}
+
 		const double UVW_URFactor = 0.5;
         
 		vel_setup_time -= MPI_Wtime();
@@ -2118,7 +2120,7 @@ namespace minicombust::flow
 
 		VecZeroEntries(b);
 		VecZeroEntries(u);
-
+		PetscReal norm;
 		int flag = 1;
 		//NOTE: We do this since the solution falls apart with RHS vector close to zero.
 		//TODO: Compare zero with RHS using confidence if that is acceptable use that.
@@ -2138,13 +2140,15 @@ namespace minicombust::flow
 				VecSetValue(b, i+mesh->local_cells_disp, 0.0, INSERT_VALUES);
 			}
 		}
-	
+		
+		VecNorm(b, NORM_2, &norm);	
+		
 		VecAssemblyBegin(b);
         VecAssemblyEnd(b);
-
+	
 		KSPSolve(ksp, b, u);
-
-        PetscInt indx[mesh->local_mesh_size];
+		
+		PetscInt indx[mesh->local_mesh_size];
         for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
         {
             indx[i] = i+mesh->local_cells_disp;
@@ -2204,7 +2208,6 @@ namespace minicombust::flow
             5. Correct the cell velocities
         */
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
-	
 		pres_total_time -= MPI_Wtime();
 		int Loop_num = 0;
 		bool Loop_continue = true;
@@ -2788,6 +2791,15 @@ namespace minicombust::flow
             A_phi.V[i] += f;
         }
 
+		//RHS from particles for TEMP
+		if(type == TEMP)
+		{
+			for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
+			{
+				S_phi.U[i] += mesh->particle_terms[i].energy;
+			}
+		}
+
 		if(type == TERBTE or type == TERBED)
 		{
 			sca_terb_time[type] -= MPI_Wtime();
@@ -3021,7 +3033,7 @@ namespace minicombust::flow
 
         int comms_timestep = 1;
 		if ( mpi_config->particle_flow_rank == 0 )
-			printf("\n\ntimestep %lu\n",timestep_count + 1);
+			printf("\ntimestep %lu\n",timestep_count + 1);
 
         if (((timestep_count + 1) % 100) == 0)
         {
@@ -3071,9 +3083,10 @@ namespace minicombust::flow
 			set_up_field();
 			set_up_fgm_table();
 		}
+	
 		compute_time += MPI_Wtime();
-
-        if ((timestep_count % comms_timestep) == 0)  
+        
+		if ((timestep_count % comms_timestep) == 0)  
             update_flow_field();
 
 		compute_time -= MPI_Wtime();
@@ -3109,11 +3122,11 @@ namespace minicombust::flow
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-		if((timestep_count + 1) == 100)
+		if(((timestep_count + 1) % 5) == 0)
 		{
 			if(mpi_config->particle_flow_rank == 0)
 			{
-				printf("Result after pressure is:\n");
+				printf("Result is:\n");
 			}
 			for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
 			{

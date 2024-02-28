@@ -20,7 +20,7 @@ namespace minicombust::particles
     #define INVALID_FACE 1;
     #define VALID_FACE 0;
 
-    const double EPSILON = 5.0e-17;
+    const double EPSILON = 5.0e-10;
 
     enum INTERSECT_PLANES { POSSIBLE = 0, IMPOSSIBLE = 1, PARALLEL = 3}; 
     
@@ -62,7 +62,7 @@ namespace minicombust::particles
                     partial_volumes += abs(partial_box_size.x * partial_box_size.y * partial_box_size.z);
                 }
 
-                // if (PARTICLE_DEBUG)  cout << "\t\tpartial_volumes - total  " << partial_volumes-total_volume << endl;
+				if (PARTICLE_DEBUG) cout << "\t\tpartial_volumes - total  " << partial_volumes-total_volume << " epsilon " << EPSILON << endl;
                 if (abs(partial_volumes-total_volume) < EPSILON)  return true;
                 return false;
                 
@@ -96,7 +96,7 @@ namespace minicombust::particles
 
                 diameter = 2 * pow(0.75 * mass / ( M_PI * 724.), 1./3.);
 
-                if (PARTICLE_DEBUG)  cout  << "\t\tParticle is starting in " << cell << ", x1: " << print_vec(x1) << " v1: " << print_vec(v1) <<  endl ;
+                if (PARTICLE_DEBUG) cout  << "\t\tParticle is starting in " << cell << ", x1: " << print_vec(x1) << " v1: " << print_vec(v1) <<  endl ;
             }
 
             Particle(vec<T> position, vec<T> velocity, vec<T> acceleration, T mass, T temp, T diameter, uint64_t cell) : 
@@ -110,7 +110,9 @@ namespace minicombust::particles
 
                 if ( check_cell(cell, mesh) )
                 {
-                    if (PARTICLE_DEBUG)  cout << "\t\tParticle is still in cell " << cell << ", x1: " << print_vec(x1) <<  endl ;
+					
+                    if (PARTICLE_DEBUG) cout << "\n\t\tParticle is still in cell " << cell 
+											 << ", x1: " << print_vec(x1) <<  endl ;
 
                     if (LOGGER)  logger->cell_checks++;
 
@@ -127,9 +129,20 @@ namespace minicombust::particles
                     
                     uint64_t face_mask = POSSIBLE; // Prevents double interceptions     
 
-                    vec<T> z_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + E_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
-                    vec<T> x_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + B_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
-                    vec<T> y_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + C_VERTEX] - mesh->shmem_point_disp] - mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
+                    vec<T> z_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*
+								   mesh->cell_size + E_VERTEX] - mesh->shmem_point_disp] - 
+								   mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*
+								   mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
+					
+                    vec<T> x_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*
+								   mesh->cell_size + B_VERTEX] - mesh->shmem_point_disp] - 
+								   mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*
+								   mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
+	
+                    vec<T> y_vec = mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*
+								   mesh->cell_size + C_VERTEX] - mesh->shmem_point_disp] - 
+								   mesh->points[mesh->cells[(cell - mesh->shmem_cell_disp)*
+								   mesh->cell_size + A_VERTEX] - mesh->shmem_point_disp];
 
                     vec<T> x_delta   = x1 - artificial_A;
                     
@@ -150,14 +163,32 @@ namespace minicombust::particles
                         {
                             if ((1 << face) & face_mask)  continue;
 
-                            if (PARTICLE_DEBUG) cout << "\t\t\tTrying face " << mesh->get_face_string(face) << " " << bitset<6>(face_mask) << endl; 
-                            if (PARTICLE_DEBUG) cout << "\t\t\tMoving from cell " << cell << " with pos " << print_vec(*A) << " to " << print_vec (*B) << endl; 
+                            if (PARTICLE_DEBUG) cout << "\t\t\tTrying face " << 
+									mesh->get_face_string(face) << " " 
+									<< bitset<6>(face_mask) << endl;
+					 
+                            if (PARTICLE_DEBUG) cout << "\t\t\tMoving from cell " << 
+									cell << " with pos " << print_vec(*A) << " to " 
+									<< print_vec (*B) << endl; 
 
-                            // Check whether particle - moving from A to B - intercepts face CDEF. If LHS == RHS, particle intercepts this face.
-                            vec<T> *C = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][0]] - mesh->shmem_point_disp];
-                            vec<T> *D = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][1]] - mesh->shmem_point_disp];
-                            vec<T> *E = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][2]] - mesh->shmem_point_disp];
-                            vec<T> *F = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][3]] - mesh->shmem_point_disp];
+                            /*Check whether particle - moving from A to B - intercepts face CDEF. 
+							  If LHS == RHS, particle intercepts this face.*/
+
+                            vec<T> *C = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * 
+										mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][0]] - 
+										mesh->shmem_point_disp];
+					
+                            vec<T> *D = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * 
+										mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][1]] - 
+										mesh->shmem_point_disp];
+				
+                            vec<T> *E = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * 
+										mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][2]] - 
+										mesh->shmem_point_disp];
+				
+                            vec<T> *F = &mesh->points[mesh->cells[ (cell - mesh->shmem_cell_disp) * 
+										mesh->cell_size + CUBE_FACE_VERTEX_MAP[face][3]] - 
+										mesh->shmem_point_disp];
 
                             const double LHS = tetrahedral_volume(A, C, D, B)
                                              + tetrahedral_volume(A, D, F, B)
@@ -169,13 +200,14 @@ namespace minicombust::particles
                                              + tetrahedral_volume(B, C, D, F)
                                              + tetrahedral_volume(B, E, C, F);
 
-                            if (PARTICLE_DEBUG)  printf("\t\t\t%.20f == %.20f\n", LHS, RHS);
+                            if (PARTICLE_DEBUG) printf("\t\t\t%.20f == %.20f\n", LHS, RHS);
                             if ( (abs(LHS - RHS) < EPSILON) && (LHS != 0.) )  
                             {
                                 intercepted_face_id = face;
                                 intercepted_faces++;
-                                
-                                if (PARTICLE_DEBUG)  cout << "\t\t\tIntercepted Face " << mesh->get_face_string(face) << " num faces =  " << intercepted_faces << endl;
+                            
+                                if (PARTICLE_DEBUG) cout << "\t\t\tIntercepted Face " << mesh->get_face_string(face) << 
+								" num faces =  " << intercepted_faces << endl;
                             }
                         }
 
@@ -183,8 +215,8 @@ namespace minicombust::particles
                         {
                             logger->cell_checks++;
                         }
-
-                        // Check if multiple faces have been intercepted
+                        
+						// Check if multiple faces have been intercepted
                         if (intercepted_faces != 1)
                         {
                             // Get random point within unit sphere
@@ -192,7 +224,7 @@ namespace minicombust::particles
                             r        = - 1. + (r * 2.);
                             artificial_A = mesh->cell_centers[cell - mesh->shmem_cell_disp] + 0.4 * r * mesh->cell_size_vector / 2.;
 
-                            if (PARTICLE_DEBUG)  cout << "\t\t\tMultiple faces, artificial position " <<  print_vec(artificial_A) << endl;
+                            if (PARTICLE_DEBUG) cout << "\t\t\tMultiple faces, artificial position " <<  print_vec(artificial_A) << endl;
                             if (LOGGER)
                             {
                                 logger->position_adjustments++;
@@ -202,7 +234,7 @@ namespace minicombust::particles
                             {
                                 decayed = true;
                                 cell    = MESH_BOUNDARY;
-                                if (PARTICLE_DEBUG)  cout << "\t\t\tLost Particle " << endl;
+                                if (PARTICLE_DEBUG) cout << "\t\t\tLost Particle " << endl;
                                 if (LOGGER) logger->lost_particles++;
                                 if (LOGGER) logger->decayed_particles++;
                                 return cell;
@@ -213,15 +245,18 @@ namespace minicombust::particles
                         num_tries = 0;
 
                         // Test neighbour cell
-                        cell = mesh->cell_neighbours[(cell - mesh->shmem_cell_disp)*mesh->faces_per_cell + intercepted_face_id];
+                        cell = mesh->cell_neighbours[(cell - mesh->shmem_cell_disp)*
+							   mesh->faces_per_cell + intercepted_face_id];
                         artificial_A = mesh->cell_centers[cell - mesh->shmem_cell_disp];
 
-                        if (PARTICLE_DEBUG)  cout << "\t\tMoving to cell " << cell << " " << mesh->get_face_string(intercepted_face_id) << " direction" << endl;  
+                        if (PARTICLE_DEBUG)  cout << "\t\tMoving to cell " << cell << " " << 
+								mesh->get_face_string(intercepted_face_id) << " direction" << endl;  
 
                         // If intercepted with boundary of mesh, decay particle. TODO: Rebound them?
                         if ( cell == MESH_BOUNDARY ) 
                         {
-                            if (PARTICLE_DEBUG)  cout << "\t\tParticle decayed after leaving the grid, x1: " << print_vec(x1) << " " << cell <<  endl ;
+                            if (PARTICLE_DEBUG) cout << "\t\tParticle decayed after leaving the grid, x1: " 
+												<< print_vec(x1) << " " << cell <<  endl ;
                             decayed = true;
                             if (LOGGER)
                             {   
@@ -235,7 +270,8 @@ namespace minicombust::particles
                         if (check_cell(cell, mesh)) 
                         {
                             found_cell = true;
-                            if (PARTICLE_DEBUG)  cout << "\t\tParticle has moved to cell " << cell << " " << ", x1: " << print_vec(x1) << endl ;
+                            if (PARTICLE_DEBUG) cout << "\t\tParticle has moved to cell " << cell << 
+										" " << ", x1: " << print_vec(x1) << endl ;
                             return cell;
                         }
                         else { // Particle isn't in immediate neighbour
@@ -259,11 +295,12 @@ namespace minicombust::particles
 
                 // TODO: Remove DUMMY_VALs
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub7
-                const vec<T> relative_drop_vel           = local_flow_value.vel - v1;//0.65 * (local_flow_value.vel - v1);                                         // DUMMY_VAL Relative velocity between droplet and the fluid 
-                const T relative_drop_vel_mag            = magnitude(relative_drop_vel);                         // DUMMY_VAL Relative acceleration between the gas and liquid phase.
-                const vec<T> relative_drop_acc           = a1 * delta ;                                                  // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
-
-                // cout << "local_flow_value.vel " << print_vec(local_flow_value.vel) << "v1 " << print_vec(v1) << " relative_drop_vel_mag " << relative_drop_vel_mag << " m " << mass << endl;
+                //Relative velocity between droplet and the fluid
+				const vec<T> relative_drop_vel           = (local_flow_value.vel - v1);
+				// DUMMY_VAL Relative acceleration between the gas and liquid phase. 
+				const T relative_drop_vel_mag            = magnitude(relative_drop_vel);
+                // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
+				const vec<T> relative_drop_acc           = a1 * delta ;
 
                 const T gas_density  = 6.9;                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);
@@ -271,7 +308,8 @@ namespace minicombust::particles
 
                 const T omega               = 1.;                                                                  // DUMMY_VAL What is this?
                 const T kinematic_viscosity = 1.48e-5 * pow(local_flow_value.temp, 1.5) / (local_flow_value.temp + 110.4);    // DUMMY_VAL 
-                const T reynolds            = gas_density * relative_drop_vel_mag * diameter / kinematic_viscosity;
+				
+				const T reynolds            = gas_density * relative_drop_vel_mag * diameter / kinematic_viscosity;
 
                 const T droplet_frontal_area  = M_PI * (diameter / 2.) * (diameter / 2.);
 
@@ -281,10 +319,7 @@ namespace minicombust::particles
                 // const vec<T> body_force    = Should we account for this?
                 const vec<T> virtual_force = (-0.5 * gas_density * omega) * relative_drop_acc;
                 const vec<T> drag_force    = (drag_coefficient * reynolds  * 0.5 * gas_density * relative_drop_vel_mag *  droplet_frontal_area) * relative_drop_vel;
-                
-                
 
-                // cout << "vf " << print_vec(virtual_force) << " df " << print_vec(drag_force) << " m " << mass << endl;
                 a1 = ((virtual_force + drag_force) / mass);
                 v1 = v1 + a1 * delta;
                 
@@ -334,9 +369,7 @@ namespace minicombust::particles
                 particle_cell_fields = {mass * v1 * delta, (air_heat_transfer - evaporation_heat) * delta, mass_delta * delta};
 
 
-
                 decayed = (mass < 0 || temp > critical_temp);
-
 
                 // cout << endl << "Particle Drag Effects" << endl;
                 // cout << "\ta                     "     << print_vec(a1)     << endl;
@@ -456,7 +489,6 @@ namespace minicombust::particles
                     logger->decayed_particles++;
                     logger->burnt_particles++;
                 }
-
 
                 x1 = x1 + v1 * delta;
             }
