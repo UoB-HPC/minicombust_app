@@ -1016,7 +1016,7 @@ namespace minicombust::flow
 			void limit_phi_gradient(T *phi_component, vec<T> *phi_grad_component);
 			void get_phi_gradient ( T *phi_component, vec<T> *phi_grad_component, bool pressure );
 
-			void Scalar_solve(int type, T *phi_component, vec<T> *phi_grad_component, T *old_phi);
+			void Scalar_solve(int type, T *phi_component, vec<T> *phi_grad_component);
 			void FluxScalar(int type, T *phi_component, vec<T> *phi_grad_component);
 			void solveTurbulenceModels(int type);
 

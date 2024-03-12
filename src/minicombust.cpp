@@ -54,17 +54,17 @@ int main (int argc, char ** argv)
     MPI_Op_create(&sum_particle_aos<double>, 1, &mpi_config.MPI_PARTICLE_OPERATION);
 
     // Run Configuration
-    const uint64_t ntimesteps                   = (argc > 5) ? atoi(argv[5]) : 1500; //5 1500;
-    const double   delta                        = 1.0e-8; //-8
+    const uint64_t ntimesteps                   = (argc > 5) ? atoi(argv[5]) : 1500;
+    const double   delta                        = 1.0e-8;
     const int64_t output_iteration              = (argc > 4) ? atoi(argv[4]) : 10;
     const uint64_t particles_per_timestep       = (argc > 2) ? atoi(argv[2]) : 10;
    
 
     // Mesh Configuration
     const uint64_t modifier                = (argc > 3) ? atoi(argv[3]) : 10;
-    vec<double>    box_dim                 = {0.5, 0.5, 0.5};
-    vec<uint64_t>  elements_per_dim        = {modifier*1,   modifier*1,  modifier*1};
-												//*2
+    vec<double>    box_dim                 = {0.1, 0.5, 0.5};
+    vec<uint64_t>  elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
+
     if (mpi_config.rank == 0)  
     {
         printf("Starting miniCOMBUST..\n");
