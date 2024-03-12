@@ -2758,7 +2758,7 @@ namespace minicombust::flow
 		}
 	}
 
-	template<typename T> void FlowSolver<T>::Scalar_solve(int type, T *phi_component, vec<T> *phi_grad_component, T *old_phi)
+	template<typename T> void FlowSolver<T>::Scalar_solve(int type, T *phi_component, vec<T> *phi_grad_component)
 	{
 		/*Solve for a general scalar used for most transport equations
           Follows the general procedure:
@@ -3098,23 +3098,23 @@ namespace minicombust::flow
         calculate_pressure();
 		
 		//Turbulence solve
-		Scalar_solve(TERBTE, phi.TE, phi_grad.TE, phi.TE);
-		Scalar_solve(TERBED, phi.ED, phi_grad.ED, phi.ED);
+		Scalar_solve(TERBTE, phi.TE, phi_grad.TE);
+		Scalar_solve(TERBED, phi.ED, phi_grad.ED);
 		
 		//temperature solve
-		Scalar_solve(TEMP, phi.TEM, phi_grad.TEM, phi.TEM);
+		Scalar_solve(TEMP, phi.TEM, phi_grad.TEM);
 
 		//fuel mixture fraction solve
-		Scalar_solve(FUEL, phi.FUL, phi_grad.FUL, phi.FUL);
+		Scalar_solve(FUEL, phi.FUL, phi_grad.FUL);
 
 		//rection progression solve
-		Scalar_solve(PROG, phi.PRO, phi_grad.PRO, phi.PRO);
+		Scalar_solve(PROG, phi.PRO, phi_grad.PRO);
 	
 		//Solve Variance of mixture fraction as transport equ
-		Scalar_solve(VARFU, phi.VARF, phi_grad.VARF, phi.VARF);
+		Scalar_solve(VARFU, phi.VARF, phi_grad.VARF);
 
 		//Solve Variance of progression as trasnport equ
-		Scalar_solve(VARPR, phi.VARP, phi_grad.VARP, phi.VARP);
+		Scalar_solve(VARPR, phi.VARP, phi_grad.VARP);
 
 		fgm_lookup_time -= MPI_Wtime();
 		//Look up results from the FGM look-up table
