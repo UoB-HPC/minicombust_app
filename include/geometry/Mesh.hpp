@@ -52,7 +52,6 @@ namespace minicombust::geometry
             // Calculate the centre point in each cell
             // Computed as the average of all vertex positions
             void calculate_cell_centers(void) {
-
                 for (uint64_t c = 0; c < shmem_mesh_size; ++c) 
                 {
                     // printf("Rank %d calculating cell %lu local_points_disp %lu local_points_size %lu\n", mpi_config->rank, c, local_points_disp, local_points_size);
@@ -60,7 +59,7 @@ namespace minicombust::geometry
                     for (uint64_t i = 0; i < cell_size; ++i) 
                     {
                         // printf("Rank %d %lu point index %lu point index real %lu\n", mpi_config->rank, i, cells[c*cell_size + i] - local_points_disp, cells[c*cell_size + i] );
-                        cell_centers[c] += points[cells[c*cell_size + i] - shmem_point_disp];
+						cell_centers[c] += points[cells[c*cell_size + i] - shmem_point_disp];
                     }
                     cell_centers[c] /= static_cast<T>(cell_size);
                 }
@@ -111,9 +110,14 @@ namespace minicombust::geometry
             uint64_t *particles_per_point; // Number of particles in each cell
 
             // Flow source terms
-            const vec<T> dummy_gas_vel = {50., 0.00, 0.00};
-            const T      dummy_gas_pre = 4000.;
-            const T      dummy_gas_tem = 2000.;
+            const vec<T> dummy_gas_vel    = {50., 0.00, 0.00};
+            const T      dummy_gas_pre    = 100.0;
+            const T      dummy_gas_tem    = 273.0;
+			const T      dummy_gas_turbTE = 0.0001;
+			const T      dummy_gas_turbED = 0.0;
+			const T	 	 dummy_gas_fuel   = 0.1;
+			const T		 dummy_gas_pro    = 0.001;
+
             const flow_aos<T> dummy_flow_field      = {dummy_gas_vel, dummy_gas_pre, dummy_gas_tem};
             const flow_aos<T> dummy_flow_field_grad = {{0., 0., 0.}, 0., 0.};
 
@@ -171,7 +175,7 @@ namespace minicombust::geometry
                     particle_terms                               = (particle_aos<T> *)malloc(particle_term_size);
                     flow_terms                                   = (flow_aos<T> *)    malloc(flow_term_size);
                     flow_grad_terms                              = (flow_aos<T> *)    malloc(flow_term_size);
-                    
+					particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0}; 
                     #pragma ivdep
                     for (uint64_t c = 0; c < local_mesh_size; c++)
                     {
@@ -189,6 +193,7 @@ namespace minicombust::geometry
                         // // printf ("%f %f\n", points[cells[c*cell_size - shmem_cell_disp] - shmem_point_disp].x, rand_flow.vel.x);
 
                         // flow_terms[c]      = rand_flow;
+						particle_terms[c]  = zero_field;
                         flow_terms[c]      = dummy_flow_field;
                         flow_grad_terms[c] = dummy_flow_field_grad;
                     }

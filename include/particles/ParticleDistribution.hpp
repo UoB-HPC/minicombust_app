@@ -86,8 +86,7 @@ namespace minicombust::particles
                 else
                 {
                     r = T { static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX, static_cast<double>(rand())/RAND_MAX } ;
-                }
-
+				}
                 return lower + (r * (upper - lower));
             }
 
@@ -294,8 +293,17 @@ namespace minicombust::particles
                 for (uint64_t p = 0; p < even_particles_per_timestep + remainder; p++)
                 {
                     // printf("Rank %d trying new particle %lu\n", mpi_config->rank, p);
-                    const Particle<T> particle = (!cylindrical) ? Particle<T>(mesh, start_pos->get_value(),                                               velocity->get_scaled_value(),                     acceleration->get_value(), temperature->get_value(), start_cell, logger) :
-                                                                  Particle<T>(mesh, injector_position + to_cartesian(cyclindrical_position->get_value()), to_cartesian(cyclindrical_velocity->get_value()), acceleration->get_value(), temperature->get_value(), start_cell, logger);
+                    const Particle<T> particle = (!cylindrical) ?
+ 
+													Particle<T>(mesh, start_pos->get_value(), 
+													velocity->get_scaled_value(), acceleration->get_value(), 
+													temperature->get_value(), start_cell, logger) :
+
+													Particle<T>(mesh, 
+													injector_position + to_cartesian(cyclindrical_position->get_value()), 
+													to_cartesian(cyclindrical_velocity->get_value()), 
+													acceleration->get_value(), temperature->get_value(), 
+													start_cell, logger);
                     // printf("Rank %d trying new particle %lu decayed %d\n", mpi_config->rank, p, particle.decayed);
 
                     // cout << "Particle created at position " << print_vec(particle.x1) << " with velocity " << print_vec(particle.v1) << " with acc " << print_vec(particle.a1) << " decayed " << particle.decayed << " cell " << " temp " << particle.temp << particle.cell << endl;

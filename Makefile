@@ -1,14 +1,12 @@
 ## Compilers and Flags
 CC := CC 
 #CC := mpic++ 
-CFLAGS := -g -Wall -Wextra -std=c++20  -O3 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+CFLAGS := -g -Wall -Wextra -std=c++20  -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 #CFLAGS := -g -Wall -Wextra -std=c++17 -O3 -Wno-unknown-pragmas 
 #CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
+
 LIB := -Lbuild/
-EIGEN=-I/home/br-hwaugh/repos/eigen/
-INC := -Iinclude/ $(EIGEN)
-
-
+INC := -Iinclude/
 
 ## Directories
 SRC := src
@@ -16,6 +14,10 @@ TESTS := tests
 EXE := bin/minicombust
 TEST_EXE := bin/minicombust_tests
 
+ifdef PETSC_INSTALL_PATH
+	INC += -I$(PETSC_INSTALL_PATH)/include
+	LIB += -L$(PETSC_INSTALL_PATH)/lib -lpetsc
+endif
 
 ifdef PAPI
 	INC += -DPAPI -I/opt/cray/pe/papi/6.0.0.7/include
@@ -51,6 +53,5 @@ clean:
 	@echo "Cleaning..."
 	rm -rf build/* $(EXE)
 	@echo ""
-
 
 .PHONY: clean

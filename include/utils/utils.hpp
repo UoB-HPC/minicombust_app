@@ -19,7 +19,11 @@
 
 #define PARTICLE_DEBUG 0
 #define LOGGER 1
+#define TIMER_OUTPUT_INTERVAL 100
 #define FLOW_SOLVER_DEBUG 0
+#define FLOW_SOLVER_FINE_TIME 0
+#define FLOW_SOLVER_TIME 0
+#define FLOW_SOLVER_LIMIT_GRAD 0
 #define PARTICLE_SOLVER_DEBUG 0
 #define FLOW 0
 #define PARTICLE 1
@@ -151,6 +155,15 @@ namespace minicombust::utils
         T *V;
         T *W;
         T *P;
+		T *PP;
+		T *TE;
+		T *ED;
+		T *TP;
+		T *TEM;
+		T *FUL;
+		T *PRO;
+		T *VARF;
+		T *VARP;
     };
 
     template<typename T>
