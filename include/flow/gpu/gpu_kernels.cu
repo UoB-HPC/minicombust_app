@@ -124,7 +124,8 @@ __global__ void kernel_get_phi_gradient(double *phi_component, uint64_t local_me
         {
             const uint64_t boundary_cell = faces[face].cell1 - mesh_size;
 
-            dphi = phi_component[local_mesh_size + nhalos + boundary_cell] - phi_component[block_cell0];
+			//We only ever single compute a pressure grad.
+            dphi = 0.0;
 
             dX.x = face_centers[face].x - cell_centers[faces[face].cell0].x;
             dX.y = face_centers[face].y - cell_centers[faces[face].cell0].y;
@@ -318,20 +319,20 @@ __global__ void kernel_precomp_AU(uint64_t faces_size, gpu_Face<uint64_t> *faces
 			const double Visac = effective_viscosity;
 			const double VisFace  = Visac * face_rlencos[face];
 			const double f = -VisFace + min( face_mass_fluxes[face], 0.0 );
-			A_phi.U[block_cell0] = A_phi.U[block_cell0] - f;
+			atomicAdd(&A_phi.U[block_cell0], -1*f);
 		}
 		else if(boundary_type == OUTLET)
 		{
 			const double Visac = effective_viscosity;
 			const double VisFace  = Visac * face_rlencos[face];
 			const double f = -VisFace + min( face_mass_fluxes[face], 0.0 );
-			A_phi.U[block_cell0] = A_phi.U[block_cell0] - f;
+			atomicAdd(&A_phi.U[block_cell0], -1*f);
 		}
 	}
 	if(face > local_mesh_size) return;
 	const double rdelta = 1.0/delta;
 	double f = cell_densities[face] * cell_volumes[face] * rdelta;
-	A_phi.U[face] += f;
+	atomicAdd(&A_phi.U[face], f);
 }
 
 __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, double *cell_densities, phi_vector<double> A_phi, double *cell_volumes, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, double *face_areas, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel)
@@ -456,7 +457,7 @@ __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_
             const double Din = 1.2;
 
             face_mass_fluxes[face] = Din * dot_product( vel_inward, face_normals[face] );
-            S_phi.U[block_cell0] = S_phi.U[block_cell0] - face_mass_fluxes[face];
+            atomicAdd(&S_phi.U[block_cell0], -1*face_mass_fluxes[face]);
 		}
 		else if(boundary_type == OUTLET)
 		{
@@ -574,38 +575,6 @@ __global__ void kernel_correct_flow(int *count_out, double *FlowOut, double *Flo
 			S_phi.U[block_cell0] -= face_mass_fluxes[face];
 		}
 	}
-}
-
-__global__ void test_vec()
-{
-	vec<double> test_1 = {1,2,3};
-	vec<double> test_2 = {1,5,4};
-	vec<double> test_3 = {-1,11.5,3};
-	vec<double> test_4 = {0.1,0,3};
-	vec<double> result_1 = vec_add(test_1,test_2);
-	printf("after add we have (%f,%f,%f)\n",test_1.x,test_1.y,test_1.z);
-	vec<double> result_2 = vec_add(test_1,test_3);
-	vec<double> result_3 = vec_mult(test_1,3);
-	printf("after add we have (%f,%f,%f)\n",test_1.x,test_1.y,test_1.z);
-	vec<double> result_4 = vec_mult(test_1,3);
-	vec<double> result_5 = vec_minus(test_3,test_2);
-	printf("after add we have (%f,%f,%f)\n",test_3.x,test_3.y,test_3.z);
-	double result_6 = dot_product(test_1,test_4);
-	printf("after add we have (%f,%f,%f)\n",test_1.x,test_1.y,test_1.z);
-	vec<double> result_7 = normalise(test_3);
-	printf("after add we have (%f,%f,%f)\n",test_3.x,test_3.y,test_3.z);
-	vec<double> result_8 = normalise(test_4);
-	vec<double> result_9 = vec_div(test_1 , 4);
-	printf("after add we have (%f,%f,%f)\n",test_1.x,test_1.y,test_1.z);
-	printf("result (%f,%f,%f)\n",result_1.x,result_1.y,result_1.z);
-	printf("result (%f,%f,%f)\n",result_2.x,result_2.y,result_2.z);
-	printf("result (%f,%f,%f)\n",result_3.x,result_3.y,result_3.z);
-	printf("result (%f,%f,%f)\n",result_4.x,result_4.y,result_4.z);
-	printf("result (%f,%f,%f)\n",result_5.x,result_5.y,result_5.z);
-	printf("result %f\n",result_6);
-	printf("result (%f,%f,%f)\n",result_7.x,result_7.y,result_7.z);
-	printf("result (%f,%f,%f)\n",result_8.x,result_8.y,result_8.z);
-	printf("result (%f,%f,%f)\n",result_9.x,result_9.y,result_9.z);
 }
 
 __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, phi_vector<double> A_phi, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel, double effective_viscosity, double *face_rlencos, double inlet_effective_viscosity, double *face_areas)
@@ -730,13 +699,13 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 		const double blend_w = GammaBlend * ( fwce - fwci );
 		
 		// ! assemble the two source terms
-        S_phi.U[phi_index0] = S_phi.U[phi_index0] - blend_u + fude - fudi;
-        S_phi.V[phi_index0] = S_phi.V[phi_index0] - blend_v + fvde - fvdi;
-        S_phi.W[phi_index0] = S_phi.W[phi_index0] - blend_w + fwde - fwdi;
+        atomicAdd(&S_phi.U[phi_index0], fude - blend_u - fudi);
+        atomicAdd(&S_phi.V[phi_index0], fvde - blend_v - fvdi);
+        atomicAdd(&S_phi.W[phi_index0], fwde - blend_w - fwdi);
 
-		S_phi.U[phi_index1] = S_phi.U[phi_index1] + blend_u - fude + fudi;
-		S_phi.V[phi_index1] = S_phi.V[phi_index1] + blend_v - fvde + fvdi;
-		S_phi.W[phi_index1] = S_phi.W[phi_index1] + blend_w - fwde + fwdi;
+		atomicAdd(&S_phi.U[phi_index1], blend_u - fude + fudi);
+		atomicAdd(&S_phi.V[phi_index1], blend_v - fvde + fvdi);
+		atomicAdd(&S_phi.W[phi_index1], blend_w - fwde + fwdi);
 	}
 	else //boundary
 	{
@@ -774,16 +743,16 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
             // ! therefore an inlet results in a mass flux < 0.0
 			const double f = -VisFace + min( face_mass_fluxes[face], 0.0 );
 			
-			A_phi.U[block_cell0] = A_phi.U[block_cell0] - f;
-			S_phi.U[block_cell0] = S_phi.U[block_cell0] - f * UFace + fude - fudi;
+			atomicAdd(&A_phi.U[block_cell0], -1 * f);
+			atomicAdd(&S_phi.U[block_cell0], -1 * f * UFace + fude - fudi);
 			phi.U[local_mesh_size + nhalos + boundary_cell] = UFace;
 
-			A_phi.V[block_cell0] = A_phi.V[block_cell0] - f;
-			S_phi.V[block_cell0] = S_phi.V[block_cell0] - f * VFace + fvde - fvdi;
+			atomicAdd(&A_phi.V[block_cell0], -1 * f);
+			atomicAdd(&S_phi.V[block_cell0], -1 * f * VFace + fvde - fvdi);
 			phi.V[local_mesh_size + nhalos + boundary_cell] = VFace;
 
-			A_phi.W[block_cell0] = A_phi.W[block_cell0] - f;
-			S_phi.W[block_cell0] = S_phi.W[block_cell0] - f * WFace + fwde - fwdi;
+			atomicAdd(&A_phi.W[block_cell0], -1 * f);
+			atomicAdd(&S_phi.W[block_cell0], -1 * f * WFace + fwde - fwdi);
 			phi.W[local_mesh_size + nhalos + boundary_cell] = WFace;
 		}
 		else if( boundary_type == OUTLET )
@@ -826,16 +795,17 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 
 			const double f = -VisFace + min( face_mass_fluxes[face], 0.0 );
 
-			A_phi.U[block_cell0] = A_phi.U[block_cell0] - f;
-			S_phi.U[block_cell0] = S_phi.U[block_cell0] - f * UFace + fude - fudi;
+
+			atomicAdd(&A_phi.U[block_cell0], -1 * f);
+            atomicAdd(&S_phi.U[block_cell0], -1 * f * UFace + fude - fudi);
 			phi.U[local_mesh_size + nhalos + boundary_cell] = UFace;
 
-			A_phi.V[block_cell0] = A_phi.V[block_cell0] - f;
-			S_phi.V[block_cell0] = S_phi.V[block_cell0] - f * VFace + fvde - fvdi;
+			atomicAdd(&A_phi.V[block_cell0], -1 * f);
+            atomicAdd(&S_phi.V[block_cell0], -1 * f * VFace + fvde - fvdi);
 			phi.V[local_mesh_size + nhalos + boundary_cell] = VFace;
 
-			A_phi.W[block_cell0] = A_phi.W[block_cell0] - f;
-			S_phi.W[block_cell0] = S_phi.W[block_cell0] - f * WFace + fwde - fwdi;
+			atomicAdd(&A_phi.W[block_cell0], -1 * f);
+            atomicAdd(&S_phi.W[block_cell0], -1 * f * WFace + fwde - fwdi);
 			phi.W[local_mesh_size + nhalos + boundary_cell] = WFace;
 		}
 		else if( boundary_type == WALL )
@@ -878,17 +848,17 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
             // !               standard
             // !               implicit
             // !                  V
-			A_phi.U[block_cell0] = A_phi.U[block_cell0] + coef;
-			A_phi.V[block_cell0] = A_phi.V[block_cell0] + coef;
-			A_phi.W[block_cell0] = A_phi.W[block_cell0] + coef;
+			atomicAdd(&A_phi.U[block_cell0], coef);
+			atomicAdd(&A_phi.V[block_cell0], coef);
+			atomicAdd(&A_phi.W[block_cell0], coef);
 
 			// !
             // !                    corr.                     expliciet
             // !                  impliciet
             // !                     V                         V
-			S_phi.U[block_cell0] = S_phi.U[block_cell0] + coef*phi.U[block_cell0] - force.x;
-			S_phi.V[block_cell0] = S_phi.V[block_cell0] + coef*phi.V[block_cell0] - force.y;
-			S_phi.W[block_cell0] = S_phi.W[block_cell0] + coef*phi.W[block_cell0] - force.z;
+			atomicAdd(&S_phi.U[block_cell0], coef*phi.U[block_cell0] - force.x);
+			atomicAdd(&S_phi.V[block_cell0], coef*phi.V[block_cell0] - force.y);
+			atomicAdd(&S_phi.W[block_cell0], coef*phi.W[block_cell0] - force.z);
 
 			phi.U[local_mesh_size + nhalos + boundary_cell] = UFace;
 			phi.V[local_mesh_size + nhalos + boundary_cell] = VFace;
@@ -1344,8 +1314,8 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
 
 		const double blend = GammaBlend * ( fce - fci );
 
-		S_phi.U[phi_index0] = S_phi.U[phi_index0] - blend + fde1 - fdi;
-        S_phi.U[phi_index1] = S_phi.U[phi_index1] + blend - fde1 + fdi;
+		atomicAdd(&S_phi.U[phi_index0], fde1 - blend - fdi);
+        atomicAdd(&S_phi.U[phi_index1], blend - fde1 + fdi);
 	}
 	else //BOUNDARY
 	{
@@ -1421,8 +1391,8 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
 
 			const double f = -VisFace + min( face_mass_fluxes[face], 0.0 );
 
-			A_phi.V[block_cell0] = A_phi.V[block_cell0] - f;
-			S_phi.U[block_cell0] = S_phi.U[block_cell0] - f * PhiFace + fde - fdi;
+			atomicAdd(&A_phi.V[block_cell0], -1 * f);
+			atomicAdd(&S_phi.U[block_cell0], -1 * f * PhiFace + fde - fdi);
 
 			phi_component[local_mesh_size + nhalos + boundary_cell] = PhiFace;
 		}
@@ -1460,7 +1430,7 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
 		
 			const double fdi = VisFace * dot_product( dPhidXac , Xpn );
 
-			S_phi.U[block_cell0] = S_phi.U[block_cell0] + fde - fdi;
+			atomicAdd(&S_phi.U[block_cell0], fde - fdi);
 	
 			phi_component[local_mesh_size + nhalos + boundary_cell] = PhiFace;
 		}
@@ -1578,12 +1548,12 @@ __global__ void kernel_solve_turb_models_face(int type, uint64_t faces_size, uin
 				phi.TP[block_cell0] = Tau_w * Utau * rkapdn;
 				phi.TE[local_mesh_size + nhalos + boundary_cell] = phi.TE[block_cell0];
 
-				S_phi.U[block_cell0] = S_phi.U[block_cell0] + phi.TP[block_cell0] * cell_volumes[block_cell0];
+				atomicAdd(&S_phi.U[block_cell0], phi.TP[block_cell0] * cell_volumes[block_cell0]);
 				
 				//dissipation term
 				double DisP = Cmu75*sqrt(phi.TE[block_cell0])*rkapdn;
 
-				A_phi.V[block_cell0] = A_phi.V[block_cell0] + cell_densities[block_cell0] * DisP * cell_volumes[block_cell0];
+				atomicAdd(&A_phi.V[block_cell0], cell_densities[block_cell0] * DisP * cell_volumes[block_cell0]);
 			}
 		}
 		else if(type == TERBED)

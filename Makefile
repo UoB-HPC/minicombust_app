@@ -2,7 +2,8 @@
 #CC := CC 
 CC := nvcc
 NVCC := nvcc
-CFLAGS := -g -forward-unknown-to-host-compiler -Xcompiler -std=c++20 -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+NVFLAGS := -g -arch=sm_70
+CFLAGS := -g -arch=sm_70 -forward-unknown-to-host-compiler -Xcompiler -std=c++20 -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 #CFLAGS := -g -Wall -Wextra -std=c++20 -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 #CFLAGS := -g -Wall -Wextra -std=c++17 -O3 -Wno-unknown-pragmas 
 #CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
@@ -59,7 +60,7 @@ $(EXE_GPU): $(OBJECTS) build/gpu_kernels.o
 	$(CC) $(LIB) $^ build/minicombust.o -Dhave_gpu -o $(EXE_GPU)
 
 build/gpu_kernels.o: include/flow/gpu/gpu_kernels.cu
-	$(NVCC) $(INC) include/flow/gpu/gpu_kernels.cu -c -o $@
+	$(NVCC) $(NVFLAGS) $(INC) include/flow/gpu/gpu_kernels.cu -c -o $@
 
 build/%.o: $(SRC)/%.cpp
 	@mkdir -p bin build out $(dir $@)
