@@ -2,8 +2,8 @@
 CC := mpicxx
 CFLAGS := -g -Wall -Wextra -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 
-LIB := -Lbuild/
-INC := -Iinclude/
+LIB := -Lbuild/ -L${MPI_HOME}/lib -lmpi
+INC := -Iinclude/ -I${MPI_HOME}/include
 
 ## Directories
 SRC := src
