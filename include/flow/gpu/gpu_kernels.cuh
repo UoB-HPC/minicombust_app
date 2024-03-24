@@ -1,0 +1,45 @@
+#include "flow/gpu/gpu_type_def.h"
+
+using namespace minicombust::utils;
+
+void C_kernel_get_phi_gradients(int thread_count, int block_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_bU, double *full_data_bV, double *full_data_bW, double *full_data_bP, double *full_data_bTE, double *full_data_bED, double *full_data_bT, double *full_data_bFU, double *full_data_bPR, double *full_data_bVFU, double *full_data_bVPR, size_t pitch_A, size_t pitch_bU, size_t pitch_bV, size_t pitch_bW, size_t pitch_bP, size_t pitch_bTE, size_t pitch_bED, size_t pitch_bT, size_t pitch_bFU, size_t pitch_bPR, size_t pitch_bVFU, size_t pitch_bVPR);
+
+void C_kernel_calculate_flux_UVW(int thread_count, int block_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, phi_vector<double> A_phi, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel, double effective_viscosity, double *face_rlencos, double inlet_effective_viscosity, double *face_areas);
+
+void C_kernel_apply_forces(int block_count, int thread_count, uint64_t local_mesh_size, double *cell_densities, double *cell_volumes, phi_vector<double> phi, phi_vector<double> S_phi, phi_vector<vec<double>> phi_grad, double delta, phi_vector<double> A_phi, particle_aos<double> *particle_terms);
+
+void C_kernel_setup_sparse_matrix(int block_count, int thread_count, double URFactor, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, double *A_phi_component, gpu_Face<double> *face_fields, double *values, double *S_phi_component, double *phi_component, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz);
+
+void C_kernel_precomp_AU(int thread_count, int block_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t *boundary_types, double effective_viscosity, double * face_rlencos, double *face_mass_fluxes, phi_vector<double> A_phi, uint64_t local_mesh_size, double delta, double *cell_densities, double* cell_volumes);
+
+void C_kernel_update_sparse_matrix(int block_count, int thread_count, double URFactor, uint64_t local_mesh_size, double *A_phi_component, double *values, int *rows_ptr, double *S_phi_component, double *phi_component);
+
+void C_kernel_setup_pressure_matrix(int block_count, int thread_count, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, gpu_Face<double> *face_fields, double *values, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> S_phi);
+
+void C_kernel_find_pressure_correction_max(int block_count, int thread_count, double *Pressure_correction_max, double *phi_component, uint64_t local_mesh_size);
+
+void C_kernel_Update_P_at_boundaries(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, uint64_t nhalos, double *phi_component);
+
+void C_kernel_get_phi_gradient(int block_count, int thread_count, double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_b, size_t pitch_A, size_t pitch_b);
+
+void C_kernel_update_vel_and_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<double> *face_fields, uint64_t mesh_size, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> phi, double *cell_volumes, phi_vector<vec<double>> phi_grad);
+
+void C_kernel_Update_P(int block_count, int thread_count, uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, double *phi_component, vec<double> *phi_grad_component);
+
+void C_kernel_calculate_mass_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, double *cell_densities, phi_vector<double> A_phi, double *cell_volumes, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, double *face_areas, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel);
+
+void C_kernel_compute_flow_correction(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t mesh_size, uint64_t *boundary_types, double *FlowOut, double *FlowIn, double *areaout, int *count_out, double *face_mass_fluxes, double *face_areas);
+
+void C_kernel_correct_flow(int block_count, int thread_count, int *count_out, double *FlowOut, double *FlowIn, double *areaout, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t mesh_size, uint64_t *boundary_types, double *face_mass_fluxes, double *face_areas, double *cell_densities, phi_vector<double> phi, uint64_t local_mesh_size, uint64_t nhalos, vec<double> *face_normals, uint64_t local_cells_disp, phi_vector<double> S_phi);
+
+void C_kernel_flux_scalar(int block_count, int thread_count, int type, uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, double *phi_component, phi_vector<double> A_phi, phi_vector<double> S_phi, vec<double> *phi_grad_component, double *face_lambdas, double effective_viscosity, double *face_rlencos, double *face_mass_fluxes, vec<double> *face_normals, double inlet_effective_viscosity, gpu_Face<double> *face_fields, vec<double> dummy_gas_vel, double dummy_gas_tem, double dummy_gas_fuel);
+
+void C_kernel_apply_pres_forces(int block_count, int thread_count, int type, uint64_t local_mesh_size, double delta, double *cell_densities, double *cell_volumes, double *phi_component, phi_vector<double> A_phi, phi_vector<double> S_phi, particle_aos<double> *particle_terms);
+
+void C_kernel_solve_turb_models_cell(int block_count, int thread_count, int type, uint64_t local_mesh_size, phi_vector<double> A_phi, phi_vector<double> S_phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi, double effective_viscosity, double *cell_densities, double *cell_volumes);
+
+void C_kernel_solve_turb_models_face(int block_count, int thread_count, int type, uint64_t faces_size, uint64_t mesh_size, double *cell_volumes, double effective_viscosity, vec<double> *face_centers, vec<double> *cell_centers, vec<double> *face_normals, double *cell_densities, uint64_t local_mesh_size, uint64_t nhalos, uint64_t local_cells_disp, phi_vector<double> A_phi, phi_vector<double> S_phi, phi_vector<double> phi, gpu_Face<double> *face_fields, gpu_Face<uint64_t> *faces, uint64_t *boundary_types, uint64_t faces_per_cell, uint64_t *cell_faces);
+
+void C_kernel_set_up_fgm_table(int block_count, int thread_count, double *fgm_table, uint64_t seed);
+
+void C_kernel_fgm_look_up(int block_count, int thread_count, double *fgm_table, phi_vector<double> S_phi, phi_vector<double> phi, uint64_t local_mesh_size);
