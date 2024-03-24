@@ -717,6 +717,7 @@ namespace minicombust::flow
 			KSPSolve(grad_ksp, grad_b, grad_u);
 			PetscInt indx[3] = {0, 1, 2};
 			VecGetValues(grad_u, 3, indx, &phi_grad_component[block_cell].x);
+			printf("grad U is (%3.18f, %3.18f, %3.18f)\n",phi_grad_component[block_cell].x,phi_grad_component[block_cell].y,phi_grad_component[block_cell].z);
 			time += MPI_Wtime();
         }
 	}
@@ -997,42 +998,53 @@ namespace minicombust::flow
 
 			KSPSolve(grad_ksp, grad_bU, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.U[block_cell].x);
-
+			printf("\n cell is %lu\n",block_cell);
+			printf("grad U is (%3.18f, %3.18f, %3.18f)\n",phi_grad.U[block_cell].x,phi_grad.U[block_cell].y,phi_grad.U[block_cell].z);
 			KSPSolve(grad_ksp, grad_bV, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.V[block_cell].x);
+			//printf("grad V is (%3.18f, %3.18f, %3.18f)\n",phi_grad.V[block_cell].x,phi_grad.V[block_cell].y,phi_grad.V[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bW, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.W[block_cell].x);
+			//printf("grad W is (%3.18f, %3.18f, %3.18f)\n",phi_grad.W[block_cell].x,phi_grad.W[block_cell].y,phi_grad.W[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bP, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.P[block_cell].x);
+			//printf("grad P is (%3.18f, %3.18f, %3.18f)\n",phi_grad.P[block_cell].x,phi_grad.P[block_cell].y,phi_grad.P[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bTE, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.TE[block_cell].x);
+			//printf("grad TE is (%3.18f, %3.18f, %3.18f)\n",phi_grad.TE[block_cell].x,phi_grad.TE[block_cell].y,phi_grad.TE[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bED, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.ED[block_cell].x);
+			//printf("grad ED is (%3.18f, %3.18f, %3.18f)\n",phi_grad.ED[block_cell].x,phi_grad.ED[block_cell].y,phi_grad.ED[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bT, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.TEM[block_cell].x);
+			//printf("grad TEM is (%3.18f, %3.18f, %3.18f)\n",phi_grad.TEM[block_cell].x,phi_grad.TEM[block_cell].y,phi_grad.TEM[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bFU, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.FUL[block_cell].x);
+			//printf("grad FUL is (%3.18f, %3.18f, %3.18f)\n",phi_grad.FUL[block_cell].x,phi_grad.FUL[block_cell].y,phi_grad.FUL[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bPR, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.PRO[block_cell].x);
+			//printf("grad PRO is (%3.18f, %3.18f, %3.18f)\n",phi_grad.PRO[block_cell].x,phi_grad.PRO[block_cell].y,phi_grad.PRO[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bVFU, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.VARF[block_cell].x);
+			//printf("grad VARF is (%3.18f, %3.18f, %3.18f)\n",phi_grad.VARF[block_cell].x,phi_grad.VARF[block_cell].y,phi_grad.VARF[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bVPR, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.VARP[block_cell].x);
+			//printf("grad VARP is (%3.18f, %3.18f, %3.18f)\n",phi_grad.VARP[block_cell].x,phi_grad.VARP[block_cell].y,phi_grad.VARP[block_cell].z);
         }
     }
 
-	template<typename T> void FlowSolver<T>::precomp_mass_flux()
+	/*template<typename T> void FlowSolver<T>::precomp_mass_flux()
 	{
-		/*we need the value of mass flux at the inlets and outlets to caculate AU*/
+		we need the value of mass flux at the inlets and outlets to caculate AU
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function precomp_mass_flux.\n", mpi_config->rank);
 		for ( uint64_t face = 0; face < mesh->faces_size; face++ )
         {
@@ -1109,6 +1121,7 @@ namespace minicombust::flow
                 FlowFact[i] = -FlowIn/FlowOut;
             }
         }
+		MPI_Allreduce(MPI_IN_PLACE, &areaout, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		MPI_Allreduce(MPI_IN_PLACE, &FlowIn, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
         MPI_Allreduce(MPI_IN_PLACE, &FlowOut, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		if(FlowOut < 0.0000000001)
@@ -1157,7 +1170,7 @@ namespace minicombust::flow
 				S_phi.U[block_cell0] -= face_mass_fluxes[face];
             }
         }
-	}
+	}*/
 
 	template<typename T> void FlowSolver<T>::precomp_AU()
 	{
@@ -1320,9 +1333,13 @@ namespace minicombust::flow
         }
 		MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-		
+	
+		MatView(A, PETSC_VIEWER_STDOUT_WORLD);	
+	
 		VecAssemblyBegin(b);
 		VecAssemblyEnd(b);
+		
+		VecView(b, PETSC_VIEWER_STDOUT_WORLD);
     }
 
     template<typename T> void FlowSolver<T>::update_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component )
@@ -1363,8 +1380,12 @@ namespace minicombust::flow
 		MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
         MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
 
+		MatView(A, PETSC_VIEWER_STDOUT_WORLD);
+
         VecAssemblyBegin(b);
         VecAssemblyEnd(b);
+
+		VecView(b, PETSC_VIEWER_STDOUT_WORLD);
     }
 
     template<typename T> void FlowSolver<T>::solve_sparse_matrix ( T *phi_component)
@@ -1374,6 +1395,8 @@ namespace minicombust::flow
         VecZeroEntries(u);
 
 		KSPSolve(ksp, b, u);
+
+		VecView(u, PETSC_VIEWER_STDOUT_WORLD);
 
 		PetscInt indx[mesh->local_mesh_size];
 		
@@ -2011,6 +2034,7 @@ namespace minicombust::flow
 				areaout += face_areas[face];
 			}
 		}
+		MPI_Allreduce(MPI_IN_PLACE, &areaout, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		MPI_Allreduce(MPI_IN_PLACE, &FlowIn, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		MPI_Allreduce(MPI_IN_PLACE, &FlowOut, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		T FlowFact[count_out];
@@ -3086,14 +3110,14 @@ namespace minicombust::flow
 	
 		compute_time += MPI_Wtime();
         
-		if ((timestep_count % comms_timestep) == 0)  
-            update_flow_field();
+		//if ((timestep_count % comms_timestep) == 0)  
+          //  update_flow_field();
 
 		compute_time -= MPI_Wtime();
 		
 		calculate_UVW();
 
-		exchange_phi_halos(); //exchange new UVW values.
+		/*exchange_phi_halos(); //exchange new UVW values.
 
         calculate_pressure();
 		
@@ -3115,15 +3139,15 @@ namespace minicombust::flow
 
 		//Solve Variance of progression as trasnport equ
 		Scalar_solve(VARPR, phi.VARP, phi_grad.VARP, phi.VARP);
-
+*/
 		fgm_lookup_time -= MPI_Wtime();
 		//Look up results from the FGM look-up table
 		FGM_loop_up();
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-		if(((timestep_count + 1) % 5) == 0)
-		{
+		//if(((timestep_count + 1) % 5) == 0)
+		//{
 			if(mpi_config->particle_flow_rank == 0)
 			{
 				printf("Result is:\n");
@@ -3141,7 +3165,7 @@ namespace minicombust::flow
 				}
 				MPI_Barrier(mpi_config->particle_flow_world);
 			}
-		}
+		//}
 
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
         {

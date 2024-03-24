@@ -28,6 +28,13 @@
 #define FLOW 0
 #define PARTICLE 1
 
+#define TERBTE 0
+#define TERBED 1
+#define TEMP 2
+#define FUEL 3
+#define PROG  4
+#define VARFU 5
+#define VARPR 6
 
 typedef long long int int128_t;
 typedef unsigned long long int uint128_t;
