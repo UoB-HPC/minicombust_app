@@ -1,5 +1,5 @@
 ## Compilers and Flags
-CC := CC 
+CC := mpicxx 
 #CC := mpic++ 
 CFLAGS := -g -Wall -Wextra -std=c++20  -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 #CFLAGS := -g -Wall -Wextra -std=c++17 -O3 -Wno-unknown-pragmas 
@@ -12,7 +12,13 @@ INC := -Iinclude/
 SRC := src
 TESTS := tests
 EXE := bin/minicombust
+EXE_CPU_AMGX := bin/cpu_amgx_minicombust
 TEST_EXE := bin/minicombust_tests
+
+ifdef AMGX_INSTALL_PATH
+    INC += -I$(AMGX_INSTALL_PATH)/include
+    LIB += -L$(AMGX_INSTALL_PATH)/lib -lamgxsh -lamgx
+endif
 
 ifdef PETSC_INSTALL_PATH
 	INC += -I$(PETSC_INSTALL_PATH)/include
@@ -29,6 +35,8 @@ OBJECTS := $(patsubst $(SRC)/%,build/%,$(SOURCES:.cpp=.o))
 
 all: $(EXE) $(TEST_EXE)
 
+cpu_amg: $(EXE_CPU_AMGX)
+
 notest: $(EXE)
 
 $(EXE): $(OBJECTS)
@@ -36,6 +44,12 @@ $(EXE): $(OBJECTS)
 	@echo ""
 	@echo "Linking..."
 	$(CC) $(LIB) $^ build/minicombust.o -o $(EXE) 
+
+$(EXE_CPU_AMGX): $(OBJECTS)
+	$(CC) $(CFLAGS) $(INC) $(SRC)/minicombust.cpp -Dhave_cpu_amgx -c -o build/minicombust.o
+	@echo ""
+	@echo "Linking..."
+	$(CC) $(LIB) $^ build/minicombust.o -Dhave_cpu_amgx -o $(EXE_CPU_AMGX)
 
 $(TEST_EXE): $(OBJECTS)
 	$(CC) $(CFLAGS) $(INC) $(SRC)/minicombust.cpp -c -o build/minicombust.o 

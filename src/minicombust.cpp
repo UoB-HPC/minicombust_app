@@ -8,7 +8,12 @@
 #include "utils/utils.hpp"
 
 #include "particles/ParticleSolver.inl"
-#include "flow/FlowSolver.inl"
+
+#ifdef have_cpu_amgx
+	#include "flow/AMGx_cpu/FlowSolver.inl"
+#else
+	#include "flow/FlowSolver.inl"
+#endif
 
 
 using namespace minicombust::flow;
@@ -103,8 +108,12 @@ int main (int argc, char ** argv)
     }
     else
     {
-		PETSC_COMM_WORLD = mpi_config.particle_flow_world;
-		PetscInitialize(&argc, &argv, nullptr, nullptr);
+		#ifdef have_cpu_amgx
+			AMGX_initialize();
+		#else
+			PETSC_COMM_WORLD = mpi_config.particle_flow_world;
+			PetscInitialize(&argc, &argv, nullptr, nullptr);
+		#endif
         flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta);
     }
 
@@ -235,7 +244,12 @@ int main (int argc, char ** argv)
 	
 	if (mpi_config.solver_type != PARTICLE)
 	{
-		PetscFinalize();
+		#ifdef have_cpu_amgx
+			flow_solver->AMGX_free();
+			AMGX_finalize();
+		#else
+			PetscFinalize();
+		#endif
 	}
     
 	//TODO: calling MPI_Finalize on "big" runs throws a 
