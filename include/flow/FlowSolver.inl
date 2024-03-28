@@ -2120,7 +2120,6 @@ namespace minicombust::flow
 
 		VecZeroEntries(b);
 		VecZeroEntries(u);
-		PetscReal norm;
 		int flag = 1;
 		//NOTE: We do this since the solution falls apart with RHS vector close to zero.
 		//TODO: Compare zero with RHS using confidence if that is acceptable use that.
@@ -2140,8 +2139,6 @@ namespace minicombust::flow
 				VecSetValue(b, i+mesh->local_cells_disp, 0.0, INSERT_VALUES);
 			}
 		}
-		
-		VecNorm(b, NORM_2, &norm);	
 		
 		VecAssemblyBegin(b);
         VecAssemblyEnd(b);
@@ -3122,7 +3119,7 @@ namespace minicombust::flow
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-		if(((timestep_count + 1) % 5) == 0)
+		/*if(((timestep_count + 1) % 5) == 0)
 		{
 			if(mpi_config->particle_flow_rank == 0)
 			{
@@ -3141,7 +3138,7 @@ namespace minicombust::flow
 				}
 				MPI_Barrier(mpi_config->particle_flow_world);
 			}
-		}
+		}*/
 
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
         {
