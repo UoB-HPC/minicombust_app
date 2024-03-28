@@ -245,6 +245,7 @@ namespace minicombust::geometry
                     MPI_Reduce(MPI_IN_PLACE, &total_flow_term_size,                  1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(MPI_IN_PLACE, &total_particle_term_size,              1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
 
+					//TODO: faces_size here is zero since it is a particle cell					
                     if (mpi_config->solver_type == PARTICLE)
                         MPI_Reduce(MPI_IN_PLACE, &particle_memory_usage, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
