@@ -31,6 +31,8 @@ namespace minicombust::visit
 
                 // Print VTK Header
                 ofstream vtk_file;
+                cout << filename + to_string(mpi_config->rank) + "_mesh.vtk" << endl;
+
                 vtk_file.open (filename + to_string(mpi_config->rank) + "_mesh.vtk");
                 vtk_file << "# vtk DataFile Version 3.0 " << endl;
                 vtk_file << "MiniCOMBUST " << endl;
@@ -74,8 +76,7 @@ namespace minicombust::visit
 
                 for (uint64_t i = 0; i < 6; i++)
                 {
-                    cout << "iiiii" << i << endl;
-                    cout << "out/mesh/" + filename + to_string(i) + "_boundarymesh.vtk" << endl;
+                    cout << filename + to_string(i) + "_boundarymesh.vtk" << endl;
                     // Print VTK Header
                     vtk_file.open (filename + to_string(i) + "_boundarymesh.vtk");
                     // vtk_file.open ("out/mesh/" + filename + to_string(mpi_config->rank) + "_boundary_mesh.vtk");

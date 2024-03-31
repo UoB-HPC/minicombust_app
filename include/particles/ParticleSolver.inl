@@ -36,7 +36,7 @@ namespace minicombust::particles
         // }
 
         VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
-        vtk_writer->write_particles("out/minicombust", timestep, particles);
+        vtk_writer->write_particles("out/particles/minicombust", timestep, particles);
     }
 
     template<class T>
@@ -368,7 +368,12 @@ namespace minicombust::particles
         #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
         {
+
+            // cout << "Particle pre_solve  x1 " << print_vec(particles[p].x1) << " v1 " << print_vec(particles[p].v1) << " cell " << particles[p].cell << " flow field " << print_flow_field(particles[p].local_flow_value) << endl;
+
             particles[p].solve_spray( delta, &logger, particles );
+
+            // cout << "Particle post_solve x1 " << print_vec(particles[p].x1) << " v1 " << print_vec(particles[p].v1) << " cell " << particles[p].cell << " flow field " << print_flow_field(particles[p].local_flow_value) << endl;
 
             if (particles[p].decayed){
 				decayed_particles.push_back(p);
@@ -405,6 +410,8 @@ namespace minicombust::particles
         {   
             // Check if particle is in the current cell. Tetras = Volume/Area comparison method. https://www.peertechzpublications.com/articles/TCSIT-6-132.php.
             particles[p].update_cell(mesh, &logger);
+
+            // cout << "Particle x1 " << print_vec(particles[p].x1) << " cell  " << particles[p].cell << endl;
 
             if (particles[p].decayed)
 			{
@@ -492,7 +499,7 @@ namespace minicombust::particles
         const int  comms_timestep = 1;
 
         if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("Rank %d: Start particle timestep\n", mpi_config->rank);
-        if ( ((count + 1) % 100) == 0 )
+        if ( ((count + 1) % 1) == 0 )
         {
             uint64_t particles_in_simulation = particles.size();
             uint64_t total_particles_in_simulation;

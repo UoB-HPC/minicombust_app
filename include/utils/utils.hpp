@@ -355,6 +355,14 @@ namespace minicombust::utils
     }
 
     template<typename T> 
+    inline string print_flow_field(flow_aos<T> v)
+    {
+        stringstream buffer;
+        buffer << "p " << v.pressure << " t " << v.temp << " vel " << print_vec(v.vel) << endl;
+        return buffer.str();
+    }
+
+    template<typename T> 
     inline string print_cube_cell(uint64_t *cube, vec<T> *points)
     {
         stringstream buffer;

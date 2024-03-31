@@ -18,8 +18,8 @@ namespace minicombust::flow
 	template<class T>void FlowSolver<T>::output_data(uint64_t timestep)
     {
 		VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
-        vtk_writer->write_flow_velocities("out/minicombust", timestep, &phi);
-		vtk_writer->write_flow_pressure("out/minicombust", timestep, &phi);
+        vtk_writer->write_flow_velocities("out/flow/minicombust", timestep, &phi);
+		vtk_writer->write_flow_pressure("out/flow/minicombust", timestep, &phi);
     }
 	
     template<typename T> inline bool FlowSolver<T>::is_halo ( uint64_t cell )
@@ -1725,12 +1725,12 @@ namespace minicombust::flow
         }
 
 		//RHS from particle code
-		for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
-		{
-			S_phi.U[i] += mesh->particle_terms[i].momentum.x;
-			S_phi.V[i] += mesh->particle_terms[i].momentum.y;
-			S_phi.W[i] += mesh->particle_terms[i].momentum.z;
-		}
+		// for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
+		// {
+		// 	S_phi.U[i] += mesh->particle_terms[i].momentum.x;
+		// 	S_phi.V[i] += mesh->particle_terms[i].momentum.y;
+		// 	S_phi.W[i] += mesh->particle_terms[i].momentum.z;
+		// }
 
 		const double UVW_URFactor = 0.5;
         
@@ -2789,13 +2789,13 @@ namespace minicombust::flow
         }
 
 		//RHS from particles for TEMP
-		if(type == TEMP)
-		{
-			for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
-			{
-				S_phi.U[i] += mesh->particle_terms[i].energy;
-			}
-		}
+		// if(type == TEMP)
+		// {
+		// 	for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
+		// 	{
+		// 		S_phi.U[i] += mesh->particle_terms[i].energy;
+		// 	}
+		// }
 
 		if(type == TERBTE or type == TERBED)
 		{

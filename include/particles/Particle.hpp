@@ -296,18 +296,26 @@ namespace minicombust::particles
                 // TODO: Remove DUMMY_VALs
                 // SOLVE SPRAY/DRAG MODEL  https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub7
                 //Relative velocity between droplet and the fluid
+                // cout << "\ta                     "     << print_vec(a1)     << endl;
+                // cout << "\tvel1                  "     << print_vec(v1)     << endl;
+                // cout << "\ttemp                  "     << temp     << endl;
+                // cout << "\tdiameter                  "     << diameter     << endl;
+                
 				const vec<T> relative_drop_vel           = (local_flow_value.vel - v1);
 				// DUMMY_VAL Relative acceleration between the gas and liquid phase. 
 				const T relative_drop_vel_mag            = magnitude(relative_drop_vel);
                 // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 				const vec<T> relative_drop_acc           = a1 * delta ;
 
-                const T gas_density  = 6.9;                                               // DUMMY VAL
+                // const T gas_density  = 6.9;                                               // DUMMY VAL
+                const T gas_density  = local_flow_value.pressure / ( local_flow_value.temp * 287.050);                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);
 
 
-                const T omega               = 1.;                                                                  // DUMMY_VAL What is this?
-                const T kinematic_viscosity = 1.48e-5 * pow(local_flow_value.temp, 1.5) / (local_flow_value.temp + 110.4);    // DUMMY_VAL 
+                // http://www-mdp.eng.cam.ac.uk/web/library/enginfo/aerothermal_dvd_only/aero/fprops/propsoffluids/node5.html
+                const T omega               = 1.;                                                                            // DUMMY_VAL What is this?
+                const T viscosity            = 1.48e-6 * pow(local_flow_value.temp, 1.5) / (local_flow_value.temp + 110.4);   // DUMMY_VAL 
+                const T kinematic_viscosity = viscosity / gas_density;   // DUMMY_VAL 
 				
 				const T reynolds            = gas_density * relative_drop_vel_mag * diameter / kinematic_viscosity;
 
@@ -332,12 +340,12 @@ namespace minicombust::particles
                 const T critical_temp          = 548.;
                 const T a_constant             = (temp < boiling_temp) ? 13.7600 : 14.1964;
                 const T b_constant             = (temp < boiling_temp) ? 2651.13 : 2777.65;
-                const T fuel_vapour_pressure   = exp(a_constant - b_constant / (temp - 43.));                         // DUMMY_VAL fuel vapor at drop surface (kP)
+                const T fuel_vapour_pressure   = exp(a_constant - b_constant / (temp - 43.));                        // DUMMY_VAL fuel vapor at drop surface (kP)
                 const T pressure_relation      = (air_pressure + fuel_vapour_pressure) / fuel_vapour_pressure;       // DUMMY_VAL Clausius-Clapeyron relation. air pressure / fuel vapour pressure.
                 const T molecular_ratio        = 29. / 108.;                                                         // DUMMY_VAL molecular weight air / molecular weight fuel
-                const T mass_fraction_fuel     = 1. / (1. + (pressure_relation - 1.) * molecular_ratio);                // Mass fraction of fuel vapour at the droplet surface  
+                const T mass_fraction_fuel     = 1. / (1. + (pressure_relation - 1.) * molecular_ratio);             // Mass fraction of fuel vapour at the droplet surface  
                 const T mass_fraction_fuel_ref = (2./3.) * mass_fraction_fuel;                                       // Mass fraction of fuel vapour ref at the droplet surface  
-                const T mass_fraction_air_ref  = 1. - mass_fraction_fuel_ref;                                         // Mass fraction of air vapour  ref at the droplet surface  
+                const T mass_fraction_air_ref  = 1. - mass_fraction_fuel_ref;                                        // Mass fraction of air vapour  ref at the droplet surface  
 
                 const T thermal_conduct_air      = 0.04418;                                                                                                                        // DUMMY_VAL mean thermal conduct. Calc each iteration?
                 const T thermal_conduct_fuel     = 1.e-6*(13.2 - 0.0313 * (boiling_temp - 273.)) * pow(temp / 273., 2. - 0.0372 * ((temp * temp) / (boiling_temp * boiling_temp)));   // DUMMY_VAL mean thermal conductivity. Calc each iteration?
@@ -382,6 +390,7 @@ namespace minicombust::particles
                 // cout << "\tdroplet_frontal_area  "  << droplet_frontal_area << endl;
                 // cout << "\treynolds              "  << reynolds << endl;
                 // cout << "\tdrag_coefficient      "  << drag_coefficient << endl;
+                // cout << "\tgas_density           "  << gas_density << endl;
                 // cout << "\tkinematic_viscosity   "  << kinematic_viscosity << endl;
                 // cout << "\tmass                  "  << mass << endl;
                 // cout << "\tdiameter              "  << diameter << endl;
@@ -395,7 +404,7 @@ namespace minicombust::particles
 
 
                 // cout << "\ttemp                  "  << temp << endl;
-                // cout << "\tlocal_flow_value.temp       "  << local_flow_value.temp << endl;
+                // cout << "\tlocal_flow_value.temp    "  << local_flow_value.temp << endl;
                 // cout << "\tfuel_vapour_pressure  "  << fuel_vapour_pressure << endl;
                 // cout << "\tair_pressure          "  << air_pressure << endl;
                 // cout << "\tpressure_relation     "  << pressure_relation << endl;
