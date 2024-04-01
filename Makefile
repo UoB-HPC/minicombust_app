@@ -1,15 +1,9 @@
 ## Compilers and Flags
-#CC := CC 
-CC := nvcc
-NVCC := nvcc
-NVFLAGS := -g -arch=sm_70
-CFLAGS := -g -arch=sm_70 -forward-unknown-to-host-compiler -Xcompiler -std=c++20 -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
-#CFLAGS := -g -Wall -Wextra -std=c++20 -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
-#CFLAGS := -g -Wall -Wextra -std=c++17 -O3 -Wno-unknown-pragmas 
-#CFLAGS := -g -Wall -std=c++17 -Ofast -xHost -xHost -qopt-report-phase=vec,loop -qopt-report=5 
+CC := mpicxx
+CFLAGS := -g -Wall -Wextra -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 
-LIB := -Lbuild/ -L${MPI_HOME}/lib -lmpi
-INC := -Iinclude/ -I${MPI_HOME}/include
+LIB := -Lbuild/
+INC := -Iinclude/
 
 ## Directories
 SRC := src
@@ -18,9 +12,18 @@ EXE := bin/minicombust
 EXE_GPU := bin/gpu_minicombust
 TEST_EXE := bin/minicombust_tests
 
+ifdef MPI_INSTALL_PATH
+	INC += -I$(MPI_INSTALL_PATH)/include
+	LIB += -L$(MPI_INSTALL_PATH)/lib -lmpi
+endif
+
 ifdef CUDA_INSTALL_PATH
-	INC += -I$(CUDA_INSTALL_PATH)/cuda/include
-	LIB += -L$(CUDA_INSTALL_PATH)/cuda/lib64 -lcudart
+	CC := nvcc
+	CFLAGS := -pg -g -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+	NVCC := nvcc
+	NVFLAGS := -pg -g -O0 -gencode arch=compute_90,code=sm_90
+	INC += -I$(CUDA_INSTALL_PATH)/include
+	LIB += -L$(CUDA_INSTALL_PATH)/lib64 -lcudart
 endif
 
 ifdef PETSC_INSTALL_PATH
@@ -57,7 +60,7 @@ $(EXE_GPU): $(OBJECTS) build/gpu_kernels.o
 	$(CC) $(CFLAGS) $(INC) $(SRC)/minicombust.cpp -Dhave_gpu -c -o build/minicombust.o
 	@echo ""
 	@echo "Linking..."
-	$(CC) $(LIB) $^ build/minicombust.o -Dhave_gpu -o $(EXE_GPU)
+	$(NVCC) $(LIB) $^ build/minicombust.o -Dhave_gpu -o $(EXE_GPU)
 
 build/gpu_kernels.o: include/flow/gpu/gpu_kernels.cu
 	$(NVCC) $(NVFLAGS) $(INC) include/flow/gpu/gpu_kernels.cu -c -o $@

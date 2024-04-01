@@ -3,6 +3,28 @@
 #include "amgx_c.h"
 #include "cuda_runtime.h"
 
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
+/* print callback*/
+void print_callback(const char *msg, int length)
+{
+	int rank;
+	int size;
+
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+   	if(rank == (size-1)) {printf("%s", msg);}
+}
+
 namespace minicombust::flow 
 {
     template<class T>
@@ -344,9 +366,8 @@ namespace minicombust::flow
                     face_areas[face]       = magnitude(*(face_nodes[2]) - *(face_nodes[0])) * magnitude(*(face_nodes[1]) - *(face_nodes[0]));
 					face_centers[face]     = (*(face_nodes[0]) + *(face_nodes[1]) + *(face_nodes[2]) + *(face_nodes[3]));
 					face_centers[face]     = face_centers[face] / double(4.0);
-                    
-					//TODO: sort this 
-					face_lambdas[face]     = 0.5;//magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
+                   
+					face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
                     face_normals[face]     = cross_product(*(face_nodes[2]) - *(face_nodes[0]), *(face_nodes[1]) - *(face_nodes[0])); 
 
                     if ( dot_product(face_normals[face], mesh->cell_centers[shmem_cell1] -  mesh->cell_centers[shmem_cell0]) < 0 )
@@ -566,6 +587,7 @@ namespace minicombust::flow
 				cudaMalloc(&gpu_phi.PP, phi_array_size);
 				cudaMalloc(&gpu_phi.TE, phi_array_size);
 				cudaMalloc(&gpu_phi.ED, phi_array_size);
+				cudaMalloc(&gpu_phi.TP, phi_array_size);
 				cudaMalloc(&gpu_phi.TEM, phi_array_size);
 				cudaMalloc(&gpu_phi.FUL, phi_array_size);
 				cudaMalloc(&gpu_phi.PRO, phi_array_size);
@@ -608,6 +630,8 @@ namespace minicombust::flow
 				cudaMemcpy(gpu_phi.TE, phi.TE, phi_array_size,
                            cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_phi.ED, phi.ED, phi_array_size,
+                           cudaMemcpyHostToDevice);
+				cudaMemcpy(gpu_phi.TP, phi.TP, phi_array_size,
                            cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_phi.TEM, phi.TEM, phi_array_size,
                            cudaMemcpyHostToDevice);
@@ -751,16 +775,18 @@ namespace minicombust::flow
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
 
 				//Create config for AMGX
-				AMGX_config_create_from_file(&grad_cfg, "GRAD.json");
-                AMGX_config_create_from_file(&cfg, "FGMRES_AGGREGATION.json");
+				AMGX_register_print_callback(&print_callback);
+				AMGX_install_signal_handler();
+				AMGX_config_create_from_file(&grad_cfg, "solvers/GRAD.json");
+                AMGX_config_create_from_file(&cfg, "solvers/CG_DILU.json");
                 AMGX_config_add_parameters(&cfg, "exception_handling=1");	
-	
+				
 				MPI_Comm solo_comm = MPI_COMM_SELF;
 				//Create resoruces for AMGX
 				AMGX_resources_create(&grad_rsrc, grad_cfg,
 									  &solo_comm, 1, &lrank);		
-				AMGX_resources_create(&main_rsrc, cfg, 
-										&(mpi_config->particle_flow_world), 1, &lrank);
+				AMGX_resources_create(&main_rsrc, cfg,
+									  &mpi_config->particle_flow_world, 1, &lrank);
 				
 				//Create matrix and vectors for AMGX
 				AMGX_matrix_create(&grad_A, grad_rsrc, mode);
@@ -781,6 +807,7 @@ namespace minicombust::flow
 				AMGX_matrix_create(&A, main_rsrc, mode);
 				AMGX_vector_create(&u, main_rsrc, mode);
 				AMGX_vector_create(&b, main_rsrc, mode);
+				
 				//Create solvers for AMGX
 				AMGX_solver_create(&grad_solver, grad_rsrc, mode, grad_cfg);
 				AMGX_solver_create(&solver, main_rsrc, mode, cfg);
@@ -1177,7 +1204,7 @@ namespace minicombust::flow
 				AMGX_config_destroy(grad_cfg);
 				AMGX_config_destroy(cfg);
 			}
-
+			
             void resize_send_buffers_nodes_arrays (uint64_t elements)
             {
                 while ( send_buffers_node_index_array_size < ((size_t) elements * sizeof(uint64_t)) )

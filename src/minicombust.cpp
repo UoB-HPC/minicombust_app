@@ -55,7 +55,7 @@ int main (int argc, char ** argv)
 
     // Run Configuration
     const uint64_t ntimesteps                   = (argc > 5) ? atoi(argv[5]) : 1500; //5 1500;
-    const double   delta                        = 1.0e-3; //-8
+    const double   delta                        = 1.0e-8; //-8
     const int64_t output_iteration              = (argc > 4) ? atoi(argv[4]) : 10;
     const uint64_t particles_per_timestep       = (argc > 2) ? atoi(argv[2]) : 10;
    
@@ -255,6 +255,6 @@ int main (int argc, char ** argv)
 	//PMPI_Finalize error for Device or resource busy 
 	//need to look into this and work out what is going on.
 	//can test with 0 7 241 -1 1 with 482 threads
-	//MPI_Finalize();
+	MPI_Finalize();
     return 0;
 }
