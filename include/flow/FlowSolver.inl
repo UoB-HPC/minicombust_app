@@ -1320,7 +1320,7 @@ namespace minicombust::flow
         }
 		MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
 		MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-		
+	
 		VecAssemblyBegin(b);
 		VecAssemblyEnd(b);
     }
@@ -1892,8 +1892,8 @@ namespace minicombust::flow
 				uint64_t phi_index0 = ( block_cell0 >= mesh->local_mesh_size ) ? boundary_map[mesh->faces[face].cell0] : block_cell0;
                 uint64_t phi_index1 = ( block_cell1 >= mesh->local_mesh_size ) ? boundary_map[mesh->faces[face].cell1] : block_cell1;
 
-				//TODO:fix this.
-                const T lambda0 = 0.5;//face_lambdas[face];
+				
+                const T lambda0 = face_lambdas[face];
                 const T lambda1 = 1.0 - lambda0;
                 
 				const vec<T> dUdXac  =   phi_grad.U[phi_index0] * lambda0 + phi_grad.U[phi_index1] * lambda1;
@@ -2068,6 +2068,7 @@ namespace minicombust::flow
 				phi.V[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
 				phi.W[mesh->local_mesh_size + nhalos + boundary_cell] *= fact; 
 
+			
 				const uint64_t block_cell0 = mesh->faces[face].cell0 - mesh->local_cells_disp;
 				S_phi.U[block_cell0] -= face_mass_fluxes[face];
 			}
@@ -2142,9 +2143,9 @@ namespace minicombust::flow
 		
 		VecAssemblyBegin(b);
         VecAssemblyEnd(b);
-	
+
 		KSPSolve(ksp, b, u);
-		
+
 		PetscInt indx[mesh->local_mesh_size];
         for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
         {
@@ -2234,7 +2235,7 @@ namespace minicombust::flow
 		pres_flux_time -= MPI_Wtime();
 		calculate_mass_flux();  //Compute the uncorrected mass fluxes at every faces
 		pres_flux_time += MPI_Wtime();
-
+		
 		pres_setup_time -= MPI_Wtime();
 		setup_pressure_matrix(); //Set up Sp and Ap for the initial pressure solve.
 		pres_setup_time += MPI_Wtime();
@@ -3097,7 +3098,7 @@ namespace minicombust::flow
 		//Turbulence solve
 		Scalar_solve(TERBTE, phi.TE, phi_grad.TE);
 		Scalar_solve(TERBED, phi.ED, phi_grad.ED);
-		
+	
 		//temperature solve
 		Scalar_solve(TEMP, phi.TEM, phi_grad.TEM);
 
@@ -3119,7 +3120,7 @@ namespace minicombust::flow
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-		/*if(((timestep_count + 1) % 5) == 0)
+		if(((timestep_count + 1) % 5) == 0)
 		{
 			if(mpi_config->particle_flow_rank == 0)
 			{
@@ -3138,7 +3139,7 @@ namespace minicombust::flow
 				}
 				MPI_Barrier(mpi_config->particle_flow_world);
 			}
-		}*/
+		}
 
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
         {
