@@ -93,7 +93,7 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::exchange_grad_halos()
 	{
 		/*Group exchange of most phi gradient vectors over the halos*/
-		int num_requests = 9;
+		int num_requests = 11;
 		
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
         MPI_Request recv_requests[halo_ranks.size() * num_requests];
@@ -109,6 +109,8 @@ namespace minicombust::flow
             MPI_Isend( gpu_phi_grad.TEM, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
             MPI_Isend( gpu_phi_grad.FUL, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] );
             MPI_Isend( gpu_phi_grad.PRO, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
+			MPI_Isend( gpu_phi_grad.VARF, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 9, mpi_config->particle_flow_world, &send_requests[num_requests*r + 9] );
+			MPI_Isend( gpu_phi_grad.VARP, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );	
 		}
 
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
@@ -122,6 +124,8 @@ namespace minicombust::flow
             MPI_Irecv( &gpu_phi_grad.TEM[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
             MPI_Irecv( &gpu_phi_grad.FUL[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
             MPI_Irecv( &gpu_phi_grad.PRO[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
+			MPI_Irecv( &gpu_phi_grad.VARF[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
+			MPI_Irecv( &gpu_phi_grad.VARP[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
 		}
 
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
@@ -131,21 +135,23 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::exchange_phi_halos_cpu ()
 	{
 		/*Group exchange of most phi values over the halos*/
-		int num_requests = 9;
+		int num_requests = 11;
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
 		MPI_Request recv_requests[halo_ranks.size() * num_requests];
 		
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
 		{
-			MPI_Isend( phi.U,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-			MPI_Isend( phi.V,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
-			MPI_Isend( phi.W,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
-			MPI_Isend( phi.P,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
-			MPI_Isend( phi.TE,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );
-			MPI_Isend( phi.ED,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
-			MPI_Isend( phi.TEM,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
-			MPI_Isend( phi.FUL,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] );
-			MPI_Isend( phi.PRO,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
+			MPI_Isend( phi.U,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
+			MPI_Isend( phi.V,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
+			MPI_Isend( phi.W,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
+			MPI_Isend( phi.P,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
+			MPI_Isend( phi.TE,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );
+			MPI_Isend( phi.ED,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
+			MPI_Isend( phi.TEM,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
+			MPI_Isend( phi.FUL,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] );
+			MPI_Isend( phi.PRO,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
+			MPI_Isend( phi.VARF,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 9, mpi_config->particle_flow_world, &send_requests[num_requests*r + 9] );
+			MPI_Isend( phi.VARP,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );
 		}
 
         for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
@@ -159,7 +165,9 @@ namespace minicombust::flow
 			MPI_Irecv( &phi.TEM[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
 			MPI_Irecv( &phi.FUL[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
 			MPI_Irecv( &phi.PRO[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
-        }
+        	MPI_Irecv( &phi.VARF[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
+			MPI_Irecv( &phi.VARP[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
+		}
 
         MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
         MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
@@ -168,22 +176,24 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::exchange_phi_halos ()
     {
 		/*Group exchange of most phi values over the halos*/
-        int num_requests = 9;
+        int num_requests = 11;
         
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
         MPI_Request recv_requests[halo_ranks.size() * num_requests];
 
         for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
         {
-            MPI_Isend( gpu_phi.U,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-            MPI_Isend( gpu_phi.V,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
-            MPI_Isend( gpu_phi.W,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
-            MPI_Isend( gpu_phi.P,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
-			MPI_Isend( gpu_phi.TE,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );	
-			MPI_Isend( gpu_phi.ED,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
-			MPI_Isend( gpu_phi.TEM,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
-			MPI_Isend( gpu_phi.FUL,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] ); 
-			MPI_Isend( gpu_phi.PRO,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
+            MPI_Isend( gpu_phi.U,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
+            MPI_Isend( gpu_phi.V,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
+            MPI_Isend( gpu_phi.W,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
+            MPI_Isend( gpu_phi.P,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
+			MPI_Isend( gpu_phi.TE,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );	
+			MPI_Isend( gpu_phi.ED,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
+			MPI_Isend( gpu_phi.TEM,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
+			MPI_Isend( gpu_phi.FUL,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] ); 
+			MPI_Isend( gpu_phi.PRO,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
+			MPI_Isend( gpu_phi.VARF,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 9, mpi_config->particle_flow_world, &send_requests[num_requests*r + 9] );
+			MPI_Isend( gpu_phi.VARP,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );
 		}
 
         for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
@@ -197,6 +207,8 @@ namespace minicombust::flow
 			MPI_Irecv( &gpu_phi.TEM[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
 			MPI_Irecv( &gpu_phi.FUL[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
 			MPI_Irecv( &gpu_phi.PRO[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
+			MPI_Irecv( &gpu_phi.VARF[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
+			MPI_Irecv( &gpu_phi.VARP[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
 		}
 		
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
@@ -1462,13 +1474,13 @@ namespace minicombust::flow
 
 		//rection progression solve
 		Scalar_solve(PROG, gpu_phi.PRO, gpu_phi_grad.PRO);
-	
+
 		//Solve Variance of mixture fraction as transport equ
 		Scalar_solve(VARFU, gpu_phi.VARF, gpu_phi_grad.VARF);
 
 		//Solve Variance of progression as trasnport equ
 		Scalar_solve(VARPR, gpu_phi.VARP, gpu_phi_grad.VARP);
-
+		
 		fgm_lookup_time -= MPI_Wtime();
 		//Look up results from the FGM look-up table
 		FGM_look_up();

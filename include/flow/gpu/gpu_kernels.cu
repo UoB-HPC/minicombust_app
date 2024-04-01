@@ -1358,7 +1358,7 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
 		face_fields[face].cell1 = -VisFace + min( face_mass_fluxes[face] , 0.0 );
 
 		const double blend = GammaBlend * ( fce - fci );
-
+		
 		atomicAdd(&S_phi.U[phi_index0], fde1 - blend - fdi);
         atomicAdd(&S_phi.U[phi_index1], blend - fde1 + fdi);
 	}
@@ -1702,6 +1702,20 @@ __global__ void kernel_test_particle_terms(particle_aos<double> *particle_terms,
     {
     	printf("gpu terms for cell %lu (%3.18f,%3.18f,%3.18f)\n", i, particle_terms[i].momentum.x, particle_terms[i].momentum.y, particle_terms[i].momentum.z);
     }
+}
+
+__global__ void kernel_vec_print(vec<double> *to_print, uint64_t num_print)
+{
+	for(uint64_t i = 0; i < num_print; i++)
+	{
+		printf("(%3.18f,%3.18f,%3.18f), ",to_print[i].x,to_print[i].y,to_print[i].z);
+	}
+	printf("\n");
+}
+
+void C_kernel_vec_print(vec<double> *to_print, uint64_t num_print)
+{
+	kernel_vec_print<<<1,1>>>(to_print, num_print);
 }
 
 void C_kernel_test_particle_terms(particle_aos<double> *particle_terms, uint64_t local_mesh_size)

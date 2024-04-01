@@ -4,6 +4,8 @@ using namespace minicombust::utils;
 
 void C_kernel_print(double *to_print, uint64_t num_print);
 
+void C_kernel_vec_print(vec<double> *to_print, uint64_t num_print);
+
 void C_kernel_test_particle_terms(particle_aos<double> *particle_terms, uint64_t local_mesh_size);
 
 void C_kernel_test_values(int *nnz, double *values, int *rows_ptr, int64_t *col_indices, uint64_t local_mesh_size, double *b, double *u);
