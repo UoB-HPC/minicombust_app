@@ -520,20 +520,46 @@ namespace minicombust::particles
             }
         }
 
+		particle_timing[0] -= MPI_Wtime();
 		compute_time -= MPI_Wtime();
         particle_release();
 		compute_time += MPI_Wtime();
+		particle_timing[0] += MPI_Wtime();
 
+		particle_timing[1] -= MPI_Wtime();
         if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
             update_flow_field();
-        
+		particle_timing[1] += MPI_Wtime();        
+
+		particle_timing[2] -= MPI_Wtime();
 		compute_time -= MPI_Wtime();
         solve_spray_equations();
+		particle_timing[2] += MPI_Wtime();
 
+		particle_timing[3] -= MPI_Wtime();
         update_particle_positions();
 		compute_time += MPI_Wtime();
-
+		particle_timing[3] += MPI_Wtime();
         logger.avg_particles += (double)particles.size() / (double)num_timesteps;
+
+		if(count + 1 == 100)
+        {
+            if(mpi_config->particle_flow_rank == 0)
+            {
+                MPI_Reduce(MPI_IN_PLACE, particle_timing, 4, MPI_DOUBLE, MPI_SUM,
+                           0, mpi_config->particle_flow_world);
+                for(int i = 0; i < 4; i++)
+                {
+                    particle_timing[i] /= mpi_config->particle_flow_world_size;
+                }
+                printf("\nParticle Timing: \nRelease: %f\nCalc update particles: %f\nSolve Spray: %f\nUpdate: %f\n",particle_timing[0],particle_timing[1],particle_timing[2],particle_timing[3]);
+            }
+            else
+            {
+                MPI_Reduce(particle_timing, nullptr, 4, MPI_DOUBLE, MPI_SUM,
+                           0, mpi_config->particle_flow_world);
+            }
+        }
 
         count++;
 

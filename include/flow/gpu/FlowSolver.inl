@@ -744,6 +744,7 @@ namespace minicombust::flow
 		gpuErrchk(cudaMemset2D(full_data_bVFU, bVFU_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
 	    gpuErrchk(cudaMemset2D(full_data_bVPR, bVPR_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
 
+		//generate all the data arrays
 		C_kernel_get_phi_gradients(block_count, thread_count, gpu_phi, gpu_phi_grad, mesh->local_mesh_size, mesh->local_cells_disp, mesh->faces_per_cell, (gpu_Face<uint64_t> *) gpu_faces, gpu_cell_faces, gpu_cell_centers, mesh->mesh_size, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size(), gpu_face_centers, nhalos, full_data_A, full_data_bU, full_data_bV, full_data_bW, full_data_bP, full_data_bTE, full_data_bED, full_data_bT, full_data_bFU, full_data_bPR, full_data_bVFU, full_data_bVPR, A_pitch, bU_pitch, bV_pitch, bW_pitch, bP_pitch, bTE_pitch, bED_pitch, bT_pitch, bFU_pitch, bPR_pitch, bVFU_pitch, bVPR_pitch);
 	
 		//generate all the data arrays
@@ -1409,6 +1410,49 @@ namespace minicombust::flow
 
             }
         }
+		
+		/*if(((timestep_count + 1) % 1) == 0)
+        {
+            gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.TE, gpu_phi.TE, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.ED, gpu_phi.ED, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.FUL, gpu_phi.FUL, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.PRO, gpu_phi.PRO, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.VARF, gpu_phi.VARF, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.VARP, gpu_phi.VARP, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            if(mpi_config->particle_flow_rank == 0)
+            {
+                printf("Result is:\n");
+            }
+            for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
+            {
+                if(i == mpi_config->particle_flow_rank)
+                {
+                    for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
+                    {
+                        const uint64_t cell = block_cell + mesh->local_cells_disp;
+                        printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
+                        printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
+                    }
+                }
+                MPI_Barrier(mpi_config->particle_flow_world);
+            }
+        }*/
 
 		//NOTE: comparing the parallel and serial version 
 		//We get idential A and b with UVW but not idential results
@@ -1421,7 +1465,9 @@ namespace minicombust::flow
 		compute_time -= MPI_Wtime();
 		exchange_phi_halos();
 
+		flow_timings[0] -= MPI_Wtime();
 		get_phi_gradients();
+		flow_timings[0] += MPI_Wtime();
 
 //		if(FLOW_SOLVER_LIMIT_GRAD)
 //			limit_phi_gradients();
@@ -1436,6 +1482,7 @@ namespace minicombust::flow
 
 		compute_time += MPI_Wtime();
       
+		flow_timings[1] -= MPI_Wtime();
 		if ((timestep_count % comms_timestep) == 0)
 		{
 			gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
@@ -1453,41 +1500,59 @@ namespace minicombust::flow
                        mesh->local_mesh_size * sizeof(particle_aos<T>),
                        cudaMemcpyHostToDevice));
 		}
-
+		flow_timings[1] += MPI_Wtime();
 		compute_time -= MPI_Wtime();
 
+		flow_timings[2] -= MPI_Wtime();
 		calculate_UVW();
+		flow_timings[2] += MPI_Wtime();
 
 		exchange_phi_halos(); //exchange new UVW values.
 
+		flow_timings[3] -= MPI_Wtime();
 		calculate_pressure(); 
+		flow_timings[3] += MPI_Wtime();
 
+		flow_timings[4] -= MPI_Wtime();
 		//Turbulence solve
 		Scalar_solve(TERBTE, gpu_phi.TE, gpu_phi_grad.TE);
+		flow_timings[4] += MPI_Wtime();
+        flow_timings[5] -= MPI_Wtime();
 		Scalar_solve(TERBED, gpu_phi.ED, gpu_phi_grad.ED);
-	
+		flow_timings[5] += MPI_Wtime();		
+
+		flow_timings[6] -= MPI_Wtime();
 		//temperature solve
 		Scalar_solve(TEMP, gpu_phi.TEM, gpu_phi_grad.TEM);
+		flow_timings[6] += MPI_Wtime();
 
+		flow_timings[7] -= MPI_Wtime();
 		//fuel mixture fraction solve
 		Scalar_solve(FUEL, gpu_phi.FUL, gpu_phi_grad.FUL);
+		flow_timings[7] += MPI_Wtime();		
 
+		flow_timings[8] -= MPI_Wtime();
 		//rection progression solve
 		Scalar_solve(PROG, gpu_phi.PRO, gpu_phi_grad.PRO);
+		flow_timings[8] += MPI_Wtime();
 
+		flow_timings[9] -= MPI_Wtime();
 		//Solve Variance of mixture fraction as transport equ
 		Scalar_solve(VARFU, gpu_phi.VARF, gpu_phi_grad.VARF);
+		flow_timings[9] += MPI_Wtime();
 
+		flow_timings[10] -= MPI_Wtime();
 		//Solve Variance of progression as trasnport equ
 		Scalar_solve(VARPR, gpu_phi.VARP, gpu_phi_grad.VARP);
-		
+		flow_timings[10] += MPI_Wtime();		
+
 		fgm_lookup_time -= MPI_Wtime();
 		//Look up results from the FGM look-up table
 		FGM_look_up();
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-		if(((timestep_count + 1) % 10) == 0)
+		if(((timestep_count + 1) % 200) == 0)
 		{
 			gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
                        cudaMemcpyDeviceToHost));
@@ -1574,6 +1639,25 @@ namespace minicombust::flow
 				sca_total_time[i] = 0.0;
 			}
         }
+
+		if(timestep_count + 1 == 100)
+        {
+            if(mpi_config->particle_flow_rank == 0)
+            {
+                MPI_Reduce(MPI_IN_PLACE, flow_timings, 11, MPI_DOUBLE, MPI_SUM,
+                           0, mpi_config->particle_flow_world);
+                for(int i = 0; i < 11; i++)
+                {
+                    flow_timings[i] /= mpi_config->particle_flow_world_size;
+                }
+                printf("\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10]);
+            }
+            else
+            {
+                MPI_Reduce(flow_timings, nullptr, 11, MPI_DOUBLE, MPI_SUM,
+                           0, mpi_config->particle_flow_world);
+            }
+        }		
         
 		if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
         timestep_count++;

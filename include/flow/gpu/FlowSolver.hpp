@@ -194,6 +194,7 @@ namespace minicombust::flow
 
             uint64_t max_storage;
 
+			double flow_timings[11] = {0.0};
             double time_stats[11] = {0.0};
 			double vel_total_time = 0.0, vel_flux_time = 0.0;
 			double vel_setup_time = 0.0, vel_solve_time = 0.0;
@@ -778,7 +779,7 @@ namespace minicombust::flow
 				AMGX_register_print_callback(&print_callback);
 				AMGX_install_signal_handler();
 				AMGX_config_create_from_file(&grad_cfg, "solvers/GRAD.json");
-                AMGX_config_create_from_file(&cfg, "solvers/CG_DILU.json");
+				AMGX_config_create_from_file(&cfg, "solvers/CG_DILU.json");
                 AMGX_config_add_parameters(&cfg, "exception_handling=1");	
 				
 				MPI_Comm solo_comm = MPI_COMM_SELF;

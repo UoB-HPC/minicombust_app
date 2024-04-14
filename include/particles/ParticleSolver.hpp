@@ -63,6 +63,8 @@ namespace minicombust::particles
 
             int *block_ranks;
 
+			double particle_timing[4] = {0.0};
+
             double time_stats[6] = {0.0};
 
             bool *async_locks;

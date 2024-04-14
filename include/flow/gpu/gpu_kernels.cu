@@ -76,7 +76,7 @@ __device__ vec<double> normalise(vec<double> a)
 __global__ void kernel_get_phi_gradient(double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_b, size_t pitch_A, size_t pitch_b)
 {
     const uint64_t block_cell = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(block_cell > local_mesh_size) return;
+    if(block_cell >= local_mesh_size) return;
     double *data_A = (double *)(((char *)full_data_A)+(block_cell*pitch_A));
     double *data_b = (double *)(((char *)full_data_b)+(block_cell*pitch_b));
 
@@ -161,7 +161,7 @@ __global__ void kernel_get_phi_gradient(double *phi_component, uint64_t local_me
 __global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_bU, double *full_data_bV, double *full_data_bW, double *full_data_bP, double *full_data_bTE, double *full_data_bED, double *full_data_bT, double *full_data_bFU, double *full_data_bPR, double *full_data_bVFU, double *full_data_bVPR, size_t pitch_A, size_t pitch_bU, size_t pitch_bV, size_t pitch_bW, size_t pitch_bP, size_t pitch_bTE, size_t pitch_bED, size_t pitch_bT, size_t pitch_bFU, size_t pitch_bPR, size_t pitch_bVFU, size_t pitch_bVPR)
 {
 	const uint64_t block_cell = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if(block_cell > local_mesh_size) return;
+	if(block_cell >= local_mesh_size) return;
 	double *data_A = (double *)(((char *)full_data_A)+(block_cell*pitch_A));
 	double *data_bU = (double *)(((char *)full_data_bU)+(block_cell*pitch_bU));
     double *data_bV = (double *)(((char *)full_data_bV)+(block_cell*pitch_bV));
@@ -265,8 +265,8 @@ __global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<
         data_A[6] += (dX.z * dX.x);
         data_A[7] += (dX.z * dX.y);
         data_A[8] += (dX.z * dX.z);
-
-        data_bU[0] += (dX.x * dU);
+        
+		data_bU[0] += (dX.x * dU);
         data_bU[1] += (dX.y * dU);
         data_bU[2] += (dX.z * dU);
 
@@ -316,7 +316,7 @@ __global__ void kernel_precomp_AU(uint64_t faces_size, gpu_Face<uint64_t> *faces
 {
 	//Big gpu loop
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if(face > faces_size) return;
+	if(face >= faces_size) return;
 	const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
 	if(faces[face].cell1 >= mesh_size){
 		//only boundaries
@@ -337,7 +337,7 @@ __global__ void kernel_precomp_AU(uint64_t faces_size, gpu_Face<uint64_t> *faces
 			atomicAdd(&A_phi.U[block_cell0], -1*f);
 		}
 	}
-	if(face > local_mesh_size) return;
+	if(face >= local_mesh_size) return;
 	const double rdelta = 1.0/delta;
 	double f = cell_densities[face] * cell_volumes[face] * rdelta;
 	atomicAdd(&A_phi.U[face], f);
@@ -347,7 +347,7 @@ __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_
 {
 	//Big gpu loop
     const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(face > faces_size) return;
+    if(face >= faces_size) return;
 	const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
     const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;
 
@@ -590,7 +590,7 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 
 	//Big gpu loop
     const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(face > faces_size) return;
+    if(face >= faces_size) return;
     const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
     const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;	
 
@@ -877,7 +877,7 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 __global__ void kernel_apply_forces(uint64_t local_mesh_size, double *cell_densities, double *cell_volumes, phi_vector<double> phi, phi_vector<double> S_phi, phi_vector<vec<double>> phi_grad, double delta, phi_vector<double> A_phi, particle_aos<double> *particle_terms)
 {
 	const uint64_t cell = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(cell > local_mesh_size) return;
+    if(cell >= local_mesh_size) return;
 
 	// Gravity force (enthalpy)
 	const double BodyForce = -0.001*cell_densities[cell]*cell_volumes[cell]*(phi.TEM[cell] - 273);
@@ -1119,7 +1119,7 @@ __global__ void kernel_find_pressure_correction_max(double *Pressure_correction_
 __global__ void kernel_Update_P_at_boundaries(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, uint64_t nhalos, double *phi_component)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(face > faces_size) return;
+    if(face >= faces_size) return;
 	const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
 	if (faces[face].cell1 >= mesh_size)
 	{
@@ -1131,7 +1131,7 @@ __global__ void kernel_Update_P_at_boundaries(uint64_t faces_size, gpu_Face<uint
 __global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<double> *face_fields, uint64_t mesh_size, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> phi, double *cell_volumes, phi_vector<vec<double>> phi_grad)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(face > faces_size) return;
+    if(face >= faces_size) return;
 	const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
 	const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;
 
@@ -1169,7 +1169,7 @@ __global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_
         }
 		face_mass_fluxes[face] += (face_fields[face].cell0*(phi.PP[phi_index1] - phi.PP[phi_index0]));
 	}
-	if(face > (local_mesh_size + nhalos)) return;
+	if(face >= (local_mesh_size + nhalos)) return;
 	double Ar = (A_phi.U[face] != 0.0) ? 1.0 / A_phi.U[face] : 0.0;
 	double fact = cell_volumes[face] * Ar;
 	
@@ -1183,7 +1183,7 @@ __global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_
 __global__ void kernel_Update_P(uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, double *phi_component, vec<double> *phi_grad_component)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(face > faces_size) return;
+    if(face >= faces_size) return;
 	const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
 	if(faces[face].cell1 >= mesh_size)
 	{
@@ -1204,7 +1204,7 @@ __global__ void kernel_Update_P(uint64_t faces_size, uint64_t local_mesh_size, u
 __global__ void kernel_set_up_fgm_table(double *fgm_table, uint64_t seed)
 {
 	const uint64_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if(id > 100*100*100*100) return;
+	if(id >= 100*100*100*100) return;
 	curandState state;
 	curand_init(seed, id, 0, &state);
 	fgm_table[id] = curand_uniform(&state);
@@ -1213,17 +1213,17 @@ __global__ void kernel_set_up_fgm_table(double *fgm_table, uint64_t seed)
 __global__ void kernel_fgm_look_up(double *fgm_table, phi_vector<double> S_phi, phi_vector<double> phi, uint64_t local_mesh_size)
 {
 	const uint64_t cell = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if( cell > local_mesh_size) return;
+	if( cell >= local_mesh_size) return;
 	//find location in table based on variables
     //simulate finding the closest two points in the database
-    int progress_1 = min(100, (int) floor(phi.PRO[cell]*100));
-    int progress_2 = min(100, (int) ceil(phi.PRO[cell]*100));
-    int var_progress_1 = min(100, (int) floor(phi.VARP[cell]*100));
-    int var_progress_2 = min(100, (int) ceil(phi.VARP[cell]*100));
-    int fuel_1 = min(100, (int) floor(phi.FUL[cell]*100));
-    int fuel_2 = min(100, (int) ceil(phi.FUL[cell]*100));
-    int var_fuel_1 = min(100, (int) floor(phi.VARF[cell]*100));
-    int var_fuel_2 = min(100, (int) ceil(phi.VARF[cell]*100));
+    int progress_1 = max(0, min(99, (int) floor(phi.PRO[cell]*100)));
+    int progress_2 = max(0, min(99, (int) ceil(phi.PRO[cell]*100)));
+    int var_progress_1 = max(0, min(99, (int) floor(phi.VARP[cell]*100)));
+    int var_progress_2 = max(0, min(99, (int) ceil(phi.VARP[cell]*100)));
+    int fuel_1 = max(0, min(99, (int) floor(phi.FUL[cell]*100)));
+    int fuel_2 = max(0, min(99, (int) ceil(phi.FUL[cell]*100)));
+    int var_fuel_1 = max(0, min(99, (int) floor(phi.VARF[cell]*100)));
+    int var_fuel_2 = max(0, min(99, (int) ceil(phi.VARF[cell]*100)));
 
 	//interpolate table values to find given value
     //simulate using the average of the 16
@@ -1254,7 +1254,7 @@ __global__ void kernel_fgm_look_up(double *fgm_table, phi_vector<double> S_phi, 
 __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, double *phi_component, phi_vector<double> A_phi, phi_vector<double> S_phi, vec<double> *phi_grad_component, double *face_lambdas, double effective_viscosity, double *face_rlencos, double *face_mass_fluxes, vec<double> *face_normals, double inlet_effective_viscosity, gpu_Face<double> *face_fields, vec<double> dummy_gas_vel, double dummy_gas_tem, double dummy_gas_fuel)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(face > faces_size) return;
+    if(face >= faces_size) return;
 
 	double GammaBlend = 0.0;
 
@@ -1492,7 +1492,7 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
 __global__ void kernel_apply_pres_forces(int type, uint64_t local_mesh_size, double delta, double *cell_densities, double *cell_volumes, double *phi_component, phi_vector<double> A_phi, phi_vector<double> S_phi, particle_aos<double> *particle_terms)
 {
 	const uint64_t cell = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if(cell > local_mesh_size) return;
+	if(cell >= local_mesh_size) return;
 	
 	const double rdelta = 1.0/delta;
 
@@ -1510,7 +1510,7 @@ __global__ void kernel_apply_pres_forces(int type, uint64_t local_mesh_size, dou
 __global__ void kernel_solve_turb_models_cell(int type, uint64_t local_mesh_size, phi_vector<double> A_phi, phi_vector<double> S_phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi, double effective_viscosity, double *cell_densities, double *cell_volumes)
 {
 	const uint64_t cell = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(cell > local_mesh_size) return;
+    if(cell >= local_mesh_size) return;
 
 	if(type == TERBTE)
 	{
@@ -1544,7 +1544,7 @@ __global__ void kernel_solve_turb_models_cell(int type, uint64_t local_mesh_size
 __global__ void kernel_solve_turb_models_face(int type, uint64_t faces_size, uint64_t mesh_size, double *cell_volumes, double effective_viscosity, vec<double> *face_centers, vec<double> *cell_centers, vec<double> *face_normals, double *cell_densities, uint64_t local_mesh_size, uint64_t nhalos, uint64_t local_cells_disp, phi_vector<double> A_phi, phi_vector<double> S_phi, phi_vector<double> phi, gpu_Face<double> *face_fields, gpu_Face<uint64_t> *faces, uint64_t *boundary_types, uint64_t faces_per_cell, uint64_t *cell_faces)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(face > faces_size) return;
+    if(face >= faces_size) return;
 	if(type == TERBTE)
 	{
 		double Cmu = 0.09;
@@ -1736,7 +1736,7 @@ void C_kernel_test_values(int *nnz, double *values, int *rows_ptr, int64_t *col_
 __global__ void kernel_update_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, vec<double> *cell_centers, gpu_Face<double> *face_fields, phi_vector<vec<double>> phi_grad, double *face_mass_fluxes, phi_vector<double> S_phi, vec<double> *face_normals)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if(face > faces_size) return;
+    if(face >= faces_size) return;
 	
 	const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
     const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;
