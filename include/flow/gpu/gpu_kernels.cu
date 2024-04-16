@@ -73,7 +73,26 @@ __device__ vec<double> normalise(vec<double> a)
 	return a;
 }
 
-__global__ void kernel_get_phi_gradient(double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_b, size_t pitch_A, size_t pitch_b)
+__device__ void solve(double *A, double *b, double *out)
+{
+    double det = A[0] * (A[4] * A[8] - A[7] * A[5]) -
+                 A[1] * (A[3] * A[8] - A[5] * A[6]) +
+                 A[2] * (A[3] * A[7] - A[4] * A[6]);
+
+    double invdet = 1 / det;
+
+    out[0] = b[0] * invdet * (A[4] * A[8] - A[7] * A[5]) +
+             b[1] * invdet * (A[2] * A[7] - A[1] * A[8]) +
+             b[2] * invdet * (A[1] * A[5] - A[2] * A[4]);
+    out[1] = b[0] * invdet * (A[5] * A[6] - A[3] * A[8]) +
+             b[1] * invdet * (A[0] * A[8] - A[2] * A[6]) +
+             b[2] * invdet * (A[3] * A[2] - A[0] * A[5]);
+    out[2] = b[0] * invdet * (A[3] * A[7] - A[6] * A[4]) +
+             b[1] * invdet * (A[6] * A[1] - A[0] * A[7]) +
+             b[2] * invdet * (A[0] * A[4] - A[3] * A[1]);
+}
+
+__global__ void kernel_get_phi_gradient(double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_b, size_t pitch_A, size_t pitch_b, vec<double> *grad_component)
 {
     const uint64_t block_cell = (blockIdx.x * blockDim.x) + threadIdx.x;
     if(block_cell >= local_mesh_size) return;
@@ -156,6 +175,21 @@ __global__ void kernel_get_phi_gradient(double *phi_component, uint64_t local_me
         data_b[1] += (dX.y * dphi);
         data_b[2] += (dX.z * dphi);
 	}
+	solve(data_A, data_b, &grad_component[block_cell].x);
+}
+
+__global__ void test_solve()
+{
+	double data_A[9] = {1,0,0,0,1,0,0,0,1};
+	double data_b[3] = {1,1,1};
+	double out[3];
+	solve(data_A, data_b, out);
+	printf("out is (%f, %f, %f)\n", out[0], out[1], out[2]);
+}
+
+void C_test_solve()
+{
+	test_solve<<<1,1>>>();
 }
 
 __global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_bU, double *full_data_bV, double *full_data_bW, double *full_data_bP, double *full_data_bTE, double *full_data_bED, double *full_data_bT, double *full_data_bFU, double *full_data_bPR, double *full_data_bVFU, double *full_data_bVPR, size_t pitch_A, size_t pitch_bU, size_t pitch_bV, size_t pitch_bW, size_t pitch_bP, size_t pitch_bTE, size_t pitch_bED, size_t pitch_bT, size_t pitch_bFU, size_t pitch_bPR, size_t pitch_bVFU, size_t pitch_bVPR)
@@ -310,6 +344,17 @@ __global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<
         data_bVPR[1] += (dX.y * dVPR);
         data_bVPR[2] += (dX.z * dVPR);
 	}
+	solve(data_A, data_bU, &phi_grad.U[block_cell].x);
+	solve(data_A, data_bV, &phi_grad.V[block_cell].x);
+	solve(data_A, data_bW, &phi_grad.W[block_cell].x);
+	solve(data_A, data_bP, &phi_grad.P[block_cell].x);
+	solve(data_A, data_bTE, &phi_grad.TE[block_cell].x);
+	solve(data_A, data_bED, &phi_grad.ED[block_cell].x);
+	solve(data_A, data_bT, &phi_grad.TEM[block_cell].x);
+	solve(data_A, data_bFU, &phi_grad.FUL[block_cell].x);
+	solve(data_A, data_bPR, &phi_grad.PRO[block_cell].x);
+	solve(data_A, data_bVFU, &phi_grad.VARF[block_cell].x);
+	solve(data_A, data_bVPR, &phi_grad.VARP[block_cell].x);
 }
 
 __global__ void kernel_precomp_AU(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t *boundary_types, double effective_viscosity, double * face_rlencos, double *face_mass_fluxes, phi_vector<double> A_phi, uint64_t local_mesh_size, double delta, double *cell_densities, double* cell_volumes)
@@ -704,7 +749,7 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 		const double blend_u = GammaBlend * ( fuce - fuci );
 		const double blend_v = GammaBlend * ( fvce - fvci );
 		const double blend_w = GammaBlend * ( fwce - fwci );
-		
+	
 		// ! assemble the two source terms
         atomicAdd(&S_phi.U[phi_index0], fude - blend_u - fudi);
         atomicAdd(&S_phi.V[phi_index0], fvde - blend_v - fvdi);
@@ -1100,7 +1145,8 @@ __global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows
     rows_ptr[local_mesh_size] = *nnz;
 	for (uint64_t i = 0; i < local_mesh_size; i++)
     {
-        values[rows_ptr[i]] = A_phi.V[i];
+		//force a dominate diagonal to stablise pressure solve 
+        values[rows_ptr[i]] = A_phi.V[i] + 10000;
     }
 }
 
@@ -1568,7 +1614,7 @@ __global__ void kernel_solve_turb_models_face(int type, uint64_t faces_size, uin
 
 				const double Visc = effective_viscosity;
 
-				const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[faces[face].cell1]);
+				const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[faces[face].cell0]);
 				
 				vec<double> Up;
 				Up.x = phi.U[block_cell0] - UFace;
@@ -1708,7 +1754,7 @@ __global__ void kernel_vec_print(vec<double> *to_print, uint64_t num_print)
 {
 	for(uint64_t i = 0; i < num_print; i++)
 	{
-		printf("(%3.18f,%3.18f,%3.18f), ",to_print[i].x,to_print[i].y,to_print[i].z);
+		printf("(%3.18f,%3.18f,%3.18f)\n",to_print[i].x,to_print[i].y,to_print[i].z);
 	}
 	printf("\n");
 }
@@ -1854,9 +1900,9 @@ void C_kernel_Update_P_at_boundaries(int block_count, int thread_count, uint64_t
 	kernel_Update_P_at_boundaries<<<block_count,thread_count>>>(faces_size, faces, local_cells_disp, mesh_size, local_mesh_size, nhalos, phi_component);
 }
 
-void C_kernel_get_phi_gradient(int block_count, int thread_count, double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_b, size_t pitch_A, size_t pitch_b)
+void C_kernel_get_phi_gradient(int block_count, int thread_count, double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, double *full_data_A, double *full_data_b, size_t pitch_A, size_t pitch_b, vec<double> *grad_component)
 {
-	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi_component, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map_keys, boundary_map_values, map_size, face_centers, nhalos, full_data_A, full_data_b, pitch_A, pitch_b);
+	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi_component, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map_keys, boundary_map_values, map_size, face_centers, nhalos, full_data_A, full_data_b, pitch_A, pitch_b, grad_component);
 }
 
 void C_kernel_update_vel_and_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<double> *face_fields, uint64_t mesh_size, int64_t map_size, uint64_t *boundary_map_keys, uint64_t *boundary_map_values, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> phi, double *cell_volumes, phi_vector<vec<double>> phi_grad) 

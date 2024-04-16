@@ -56,6 +56,7 @@ namespace minicombust::flow
             uint64_t    *send_buffers_interp_node_indexes;
             flow_aos<T> *send_buffers_interp_node_flow_fields;
 
+			bool first_press = true;
 			bool first_mat = true;
             bool *async_locks;
             
@@ -109,6 +110,40 @@ namespace minicombust::flow
 			MPI_Datatype		 *gpu_halo_mpi_double_datatypes;
 			double				 *gpu_fgm_table;
 
+			int partition_vector_size;
+            int *partition_vector;
+
+			T  *full_data_A;
+	        T  *full_data_bU;
+    	    T  *full_data_bV;
+        	T  *full_data_bW;
+	        T  *full_data_bP;
+    	    T  *full_data_bTE;
+        	T  *full_data_bED;
+	        T  *full_data_bT;
+    	    T  *full_data_bFU;
+        	T  *full_data_bPR;
+	        T  *full_data_bVFU;
+    	    T  *full_data_bVPR;
+
+			size_t A_pitch;
+	        size_t bU_pitch;
+    	    size_t bV_pitch;
+        	size_t bW_pitch;
+	        size_t bP_pitch;
+    	    size_t bTE_pitch;
+        	size_t bED_pitch;
+ 	       	size_t bT_pitch;
+    	    size_t bFU_pitch;
+        	size_t bPR_pitch;
+	        size_t bVFU_pitch;
+    	    size_t bVPR_pitch;
+	
+			T *values;
+        	int *nnz;
+        	int *rows_ptr;
+        	int64_t *col_indices;
+
 //PETSC
 /*			Mat A;
 			Vec b, u;
@@ -129,14 +164,12 @@ namespace minicombust::flow
 			AMGX_matrix_handle A;
 			AMGX_vector_handle b, u;
 			AMGX_solver_handle solver;
-		
-			AMGX_config_handle grad_cfg;
-			AMGX_resources_handle grad_rsrc;	
-			AMGX_matrix_handle grad_A;
-			AMGX_vector_handle grad_b, grad_u, grad_bU, grad_bV, grad_bW;
-			AMGX_vector_handle grad_bP, grad_bTE, grad_bED, grad_bT, grad_bFU;
-			AMGX_vector_handle grad_bPR, grad_bVFU, grad_bVPR;
-			AMGX_solver_handle grad_solver;
+	
+			AMGX_config_handle pressure_cfg;
+            AMGX_resources_handle pressure_rsrc;
+            AMGX_matrix_handle pressure_A;
+            AMGX_vector_handle pressure_b, pressure_u;
+            AMGX_solver_handle pressure_solver;
 
             T *cell_densities;
             T *cell_volumes;
@@ -225,6 +258,9 @@ namespace minicombust::flow
                 printf("Process %d selecting device %d\n", rank, lrank);
                 cudaSetDevice(lrank);
  
+				partition_vector_size = mesh->mesh_size;
+            	partition_vector = (int *)malloc(partition_vector_size * sizeof(int));
+
                 const float fraction  = 0.125;
                 max_storage           = max((uint64_t)(fraction * mesh->local_mesh_size), 1UL);
 
@@ -618,6 +654,25 @@ namespace minicombust::flow
 				cudaMalloc(&gpu_halo_mpi_double_datatypes, halo_mpi_double_datatypes.size() * sizeof(MPI_Datatype));
 				cudaMalloc(&gpu_halo_mpi_vec_double_datatypes, halo_mpi_vec_double_datatypes.size() * sizeof(MPI_Datatype));
 
+				gpuErrchk(cudaMalloc(&rows_ptr, sizeof(int) *(mesh->local_mesh_size+1)));
+        		gpuErrchk(cudaMalloc(&col_indices, sizeof(int64_t) * (mesh->local_mesh_size*7)));
+        		gpuErrchk(cudaMalloc(&values, sizeof(T) * (mesh->local_mesh_size*7)));
+        		gpuErrchk(cudaMalloc(&nnz, sizeof(int)));
+
+				//Allocate big data arrays Note: the storage for these is fairly large.
+        		gpuErrchk(cudaMallocPitch(&full_data_A, &A_pitch, 9 * sizeof(T), mesh->local_mesh_size));
+  		      	gpuErrchk(cudaMallocPitch(&full_data_bU, &bU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+        		gpuErrchk(cudaMallocPitch(&full_data_bV, &bV_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+		        gpuErrchk(cudaMallocPitch(&full_data_bW, &bW_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+		        gpuErrchk(cudaMallocPitch(&full_data_bP, &bP_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+        		gpuErrchk(cudaMallocPitch(&full_data_bTE, &bTE_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+		        gpuErrchk(cudaMallocPitch(&full_data_bED, &bED_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+        		gpuErrchk(cudaMallocPitch(&full_data_bT, &bT_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+		        gpuErrchk(cudaMallocPitch(&full_data_bFU, &bFU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+        		gpuErrchk(cudaMallocPitch(&full_data_bPR, &bPR_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+		        gpuErrchk(cudaMallocPitch(&full_data_bVFU, &bVFU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+        		gpuErrchk(cudaMallocPitch(&full_data_bVPR, &bVPR_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+			
 				cudaMemcpy(gpu_phi.U, phi.U, phi_array_size, 
 						   cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_phi.V, phi.V, phi_array_size,
@@ -778,40 +833,28 @@ namespace minicombust::flow
 				//Create config for AMGX
 				AMGX_register_print_callback(&print_callback);
 				AMGX_install_signal_handler();
-				AMGX_config_create_from_file(&grad_cfg, "solvers/GRAD.json");
-				AMGX_config_create_from_file(&cfg, "solvers/CG_DILU.json");
+				AMGX_config_create_from_file(&pressure_cfg, "solvers/CLASSICAL_V_CYCLE.json");
+				AMGX_config_create_from_file(&cfg, "solvers/PBICGSTAB_NOPREC.json");
                 AMGX_config_add_parameters(&cfg, "exception_handling=1");	
 				
-				MPI_Comm solo_comm = MPI_COMM_SELF;
-				//Create resoruces for AMGX
-				AMGX_resources_create(&grad_rsrc, grad_cfg,
-									  &solo_comm, 1, &lrank);		
 				AMGX_resources_create(&main_rsrc, cfg,
 									  &mpi_config->particle_flow_world, 1, &lrank);
+				AMGX_resources_create(&pressure_rsrc, pressure_cfg,
+                                      &mpi_config->particle_flow_world, 1, &lrank);	
 				
 				//Create matrix and vectors for AMGX
-				AMGX_matrix_create(&grad_A, grad_rsrc, mode);
-				AMGX_vector_create(&grad_u, grad_rsrc, mode);
-				AMGX_vector_create(&grad_b, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bU, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bV, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bW, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bP, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bTE, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bED, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bT, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bFU, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bPR, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bVFU, grad_rsrc, mode);
-				AMGX_vector_create(&grad_bVPR, grad_rsrc, mode);
-
 				AMGX_matrix_create(&A, main_rsrc, mode);
 				AMGX_vector_create(&u, main_rsrc, mode);
 				AMGX_vector_create(&b, main_rsrc, mode);
+
+				AMGX_matrix_create(&pressure_A, pressure_rsrc, mode);
+                AMGX_vector_create(&pressure_u, pressure_rsrc, mode);
+                AMGX_vector_create(&pressure_b, pressure_rsrc, mode);
 				
 				//Create solvers for AMGX
-				AMGX_solver_create(&grad_solver, grad_rsrc, mode, grad_cfg);
 				AMGX_solver_create(&solver, main_rsrc, mode, cfg);
+				AMGX_solver_create(&pressure_solver, pressure_rsrc, mode, cfg);
+
 
 				AMGX_config_get_default_number_of_rings(cfg, &nrings);
 
@@ -1178,32 +1221,21 @@ namespace minicombust::flow
 			void AMGX_free()
 			{
 				AMGX_solver_destroy(solver);
-				AMGX_solver_destroy(grad_solver);
+				AMGX_solver_destroy(pressure_solver);
 
 				AMGX_vector_destroy(u);
 				AMGX_vector_destroy(b);
-				AMGX_vector_destroy(grad_bVPR);
-				AMGX_vector_destroy(grad_bVFU);
-                AMGX_vector_destroy(grad_bPR);
-                AMGX_vector_destroy(grad_bFU);
-                AMGX_vector_destroy(grad_bT);
-                AMGX_vector_destroy(grad_bED);
-                AMGX_vector_destroy(grad_bTE);
-                AMGX_vector_destroy(grad_bP);
-                AMGX_vector_destroy(grad_bW);
-                AMGX_vector_destroy(grad_bV);
-                AMGX_vector_destroy(grad_bU);
-				AMGX_vector_destroy(grad_u);
-				AMGX_vector_destroy(grad_b);
+				AMGX_vector_destroy(pressure_b);
+				AMGX_vector_destroy(pressure_u);
 
 				AMGX_matrix_destroy(A);
-				AMGX_matrix_destroy(grad_A);
+				AMGX_matrix_destroy(pressure_A);
 
 				AMGX_resources_destroy(main_rsrc);
-				AMGX_resources_destroy(grad_rsrc);
+				AMGX_resources_destroy(pressure_rsrc);
 
-				AMGX_config_destroy(grad_cfg);
 				AMGX_config_destroy(cfg);
+				AMGX_config_destroy(pressure_cfg);
 			}
 			
             void resize_send_buffers_nodes_arrays (uint64_t elements)

@@ -1,0 +1,18 @@
+{
+    "config_version": 2, 
+    "solver": {
+        "preconditioner": {
+            "scope": "amg_solver", 
+            "solver": "NOSOLVER"
+        }, 
+        "use_scalar_norm": 1, 
+        "solver": "PBICGSTAB", 
+        "print_solve_stats": 0, 
+        "obtain_timings": 0, 
+        "monitor_residual": 0, 
+        "convergence": "RELATIVE_INI_CORE", 
+        "scope": "main", 
+        "tolerance": 0.1, 
+        "norm": "L2"
+    }
+}
