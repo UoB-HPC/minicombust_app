@@ -113,6 +113,8 @@ namespace minicombust::flow
 			int partition_vector_size;
             int *partition_vector;
 
+
+			//TODO: we don't nee all this memory decolration anymore
 			T  *full_data_A;
 	        T  *full_data_bU;
     	    T  *full_data_bV;

@@ -10,41 +10,40 @@ namespace minicombust::flow
 {
 
 	template<class T>void FlowSolver<T>::output_data(uint64_t timestep)
-    {
+    	{
 		VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
-        vtk_writer->write_flow_velocities("out/minicombust", timestep, &phi);
+        	vtk_writer->write_flow_velocities("out/minicombust", timestep, &phi);
 		vtk_writer->write_flow_pressure("out/minicombust", timestep, &phi);
-    }
+    	}
 	
-    template<typename T> inline bool FlowSolver<T>::is_halo ( uint64_t cell )
-    {
+	template<typename T> inline bool FlowSolver<T>::is_halo ( uint64_t cell )
+    	{
 		/*Return true if a cell is part of the halo between processes*/
-        return ( cell - mesh->local_cells_disp >= mesh->local_mesh_size );
-    }
+        	return ( cell - mesh->local_cells_disp >= mesh->local_mesh_size );
+    	}
 
-
-    template<typename T> void FlowSolver<T>::exchange_cell_info_halos ()
-    {
+	template<typename T> void FlowSolver<T>::exchange_cell_info_halos ()
+	{
 		/*Exchange constant cell values over halos*/
-        int num_requests = 2;
+        	int num_requests = 2;
 
-        MPI_Request send_requests[halo_ranks.size() * num_requests];
-        MPI_Request recv_requests[halo_ranks.size() * num_requests];
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
-            MPI_Isend( cell_densities,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-            MPI_Isend( cell_volumes,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
-        }
+        	MPI_Request send_requests[halo_ranks.size() * num_requests];
+        	MPI_Request recv_requests[halo_ranks.size() * num_requests];
+        	for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+        	{
+            		MPI_Isend( cell_densities,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
+            		MPI_Isend( cell_volumes,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
+        	}
 
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
-            MPI_Irecv( &cell_densities[mesh->local_mesh_size + halo_disps[r]],  halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
-            MPI_Irecv( &cell_volumes[mesh->local_mesh_size + halo_disps[r]],    halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 1, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 1] );
-        }
+        	for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+        	{
+            		MPI_Irecv( &cell_densities[mesh->local_mesh_size + halo_disps[r]],  halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
+            		MPI_Irecv( &cell_volumes[mesh->local_mesh_size + halo_disps[r]],    halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 1, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 1] );
+        	}
 
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
-        MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
-    }
+        	MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
+    	}
 	
 	template<typename T> void FlowSolver<T>::exchange_single_phi_halo(T *phi_component)
 	{
@@ -52,7 +51,7 @@ namespace minicombust::flow
 		int num_requests = 1;
 		
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
-        MPI_Request recv_requests[halo_ranks.size() * num_requests];
+        	MPI_Request recv_requests[halo_ranks.size() * num_requests];
 	
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
 		{
@@ -65,30 +64,30 @@ namespace minicombust::flow
 		}
 		
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
-        MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);	
+        	MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);	
 	}
 
 	template<typename T> void FlowSolver<T>::exchange_single_grad_halo(vec<T> *phi_grad_component)
-    {
+    	{
 		/*Pass a single gradient vector over the halos*/
-        int num_requests = 1;
+        	int num_requests = 1;
 
-        MPI_Request send_requests[halo_ranks.size() * num_requests];
-        MPI_Request recv_requests[halo_ranks.size() * num_requests];
+        	MPI_Request send_requests[halo_ranks.size() * num_requests];
+        	MPI_Request recv_requests[halo_ranks.size() * num_requests];
 
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
+        	for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+        	{
 			MPI_Isend(phi_grad_component, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0]);
-        }
+        	}	
 
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
+        	for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+        	{
 			MPI_Irecv(&phi_grad_component[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0]);
-        }
+        	}
 
-        MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
-        MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
-    }
+        	MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
+        	MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
+    	}
 
 	template<typename T> void FlowSolver<T>::exchange_grad_halos()
 	{
@@ -96,40 +95,40 @@ namespace minicombust::flow
 		int num_requests = 11;
 		
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
-        MPI_Request recv_requests[halo_ranks.size() * num_requests];
+        	MPI_Request recv_requests[halo_ranks.size() * num_requests];
         
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
 		{
 			MPI_Isend( gpu_phi_grad.U,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-            MPI_Isend( gpu_phi_grad.V,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
-            MPI_Isend( gpu_phi_grad.W,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
-            MPI_Isend( gpu_phi_grad.P,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
-            MPI_Isend( gpu_phi_grad.TE,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );
-            MPI_Isend( gpu_phi_grad.ED,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
-            MPI_Isend( gpu_phi_grad.TEM, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
-            MPI_Isend( gpu_phi_grad.FUL, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] );
-            MPI_Isend( gpu_phi_grad.PRO, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
+            		MPI_Isend( gpu_phi_grad.V,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
+            		MPI_Isend( gpu_phi_grad.W,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
+            		MPI_Isend( gpu_phi_grad.P,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
+            		MPI_Isend( gpu_phi_grad.TE,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );
+            		MPI_Isend( gpu_phi_grad.ED,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
+            		MPI_Isend( gpu_phi_grad.TEM, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
+            		MPI_Isend( gpu_phi_grad.FUL, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] );
+            		MPI_Isend( gpu_phi_grad.PRO, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
 			MPI_Isend( gpu_phi_grad.VARF, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 9, mpi_config->particle_flow_world, &send_requests[num_requests*r + 9] );
 			MPI_Isend( gpu_phi_grad.VARP, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );	
 		}
 
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
+        	{
 			MPI_Irecv( &gpu_phi_grad.U[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
-            MPI_Irecv( &gpu_phi_grad.V[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 1, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 1] );
-            MPI_Irecv( &gpu_phi_grad.W[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 2, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 2] );
-            MPI_Irecv( &gpu_phi_grad.P[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 3, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 3] );
-            MPI_Irecv( &gpu_phi_grad.TE[mesh->local_mesh_size + halo_disps[r]],  3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 4, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 4] );
-            MPI_Irecv( &gpu_phi_grad.ED[mesh->local_mesh_size + halo_disps[r]],  3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 5, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 5] );
-            MPI_Irecv( &gpu_phi_grad.TEM[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
-            MPI_Irecv( &gpu_phi_grad.FUL[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
-            MPI_Irecv( &gpu_phi_grad.PRO[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
+            		MPI_Irecv( &gpu_phi_grad.V[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 1, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 1] );
+            		MPI_Irecv( &gpu_phi_grad.W[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 2, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 2] );
+            		MPI_Irecv( &gpu_phi_grad.P[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 3, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 3] );
+            		MPI_Irecv( &gpu_phi_grad.TE[mesh->local_mesh_size + halo_disps[r]],  3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 4, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 4] );
+            		MPI_Irecv( &gpu_phi_grad.ED[mesh->local_mesh_size + halo_disps[r]],  3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 5, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 5] );
+            		MPI_Irecv( &gpu_phi_grad.TEM[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
+            		MPI_Irecv( &gpu_phi_grad.FUL[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
+            		MPI_Irecv( &gpu_phi_grad.PRO[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
 			MPI_Irecv( &gpu_phi_grad.VARF[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
 			MPI_Irecv( &gpu_phi_grad.VARP[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
 		}
 
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
-        MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
+        	MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
 	}
 
 	template<typename T> void FlowSolver<T>::exchange_phi_halos_cpu ()
@@ -154,8 +153,8 @@ namespace minicombust::flow
 			MPI_Isend( phi.VARP,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );
 		}
 
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
+        	for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+        	{
 			MPI_Irecv( &phi.U[mesh->local_mesh_size + halo_disps[r]],        halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
 			MPI_Irecv( &phi.V[mesh->local_mesh_size + halo_disps[r]],        halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 1, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 1] );
 			MPI_Irecv( &phi.W[mesh->local_mesh_size + halo_disps[r]],        halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 2, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 2] );
@@ -165,13 +164,13 @@ namespace minicombust::flow
 			MPI_Irecv( &phi.TEM[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
 			MPI_Irecv( &phi.FUL[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
 			MPI_Irecv( &phi.PRO[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
-        	MPI_Irecv( &phi.VARF[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
+        		MPI_Irecv( &phi.VARF[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
 			MPI_Irecv( &phi.VARP[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
 		}
 
-        MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
-        MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
-    }
+        	MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
+        	MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
+    	}
 
     template<typename T> void FlowSolver<T>::exchange_phi_halos ()
     {
@@ -722,9 +721,8 @@ namespace minicombust::flow
 		gpuErrchk(cudaMemset(gpu_S_phi.W, 0.0, (mesh->local_mesh_size + nhalos) * sizeof(T)));
 		
 		int thread_count = min((uint64_t) 256,mesh->faces_size);
-		
 		int block_count = max(1,(int) ceil((double) mesh->faces_size/ (double) thread_count));
-
+		
 		C_kernel_calculate_flux_UVW(block_count,thread_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->mesh_size, mesh->local_mesh_size, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, gpu_phi_grad, gpu_cell_centers, gpu_face_centers, gpu_phi, gpu_A_phi, gpu_face_mass_fluxes, gpu_face_lambdas, gpu_face_normals, (gpu_Face<T> *) gpu_face_fields, gpu_S_phi, nhalos, gpu_boundary_types, mesh->dummy_gas_vel, effective_viscosity, gpu_face_rlencos, inlet_effective_viscosity, gpu_face_areas);
 
 		//wait for flux caculations
@@ -740,22 +738,24 @@ namespace minicombust::flow
 
 		//define variables for
 		const double UVW_URFactor = 0.5;
-
 		gpuErrchk(cudaMemset(nnz, 0, sizeof(int)));
 		gpuErrchk(cudaMemset(values, 0.0, sizeof(T) * (mesh->local_mesh_size*7)));
 		gpuErrchk(cudaMemset(col_indices, 0, sizeof(int64_t) * (mesh->local_mesh_size*7)));
 		gpuErrchk(cudaMemset(rows_ptr, 0, sizeof(int) * (mesh->local_mesh_size+1)));
-
+		
 		//Solve for U
-		C_kernel_setup_sparse_matrix(1, 1, UVW_URFactor, mesh->local_mesh_size, rows_ptr, col_indices, mesh->local_cells_disp, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, gpu_A_phi.U, (gpu_Face<T> *) gpu_face_fields, values, gpu_S_phi.U, gpu_phi.U, mesh->mesh_size, mesh->faces_per_cell, gpu_cell_faces, nnz);
+		C_kernel_setup_sparse_matrix(block_count, thread_count, UVW_URFactor, mesh->local_mesh_size, rows_ptr, col_indices, mesh->local_cells_disp, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, gpu_A_phi.U, (gpu_Face<T> *) gpu_face_fields, values, gpu_S_phi.U, gpu_phi.U, mesh->mesh_size, mesh->faces_per_cell, gpu_cell_faces, nnz);
 		
 		//wait for matrix values
 		gpuErrchk(cudaDeviceSynchronize());
-
-		int cpu_nnz = 0;
-		gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
-					cudaMemcpyDeviceToHost));
-
+		
+		int cpu_nnz = mesh->local_mesh_size*(mesh->faces_per_cell+1);
+		//int cpu_nnz = 0;
+		//gpuErrchk(cudaMemcpy(nnz, &cpu_nnz, sizeof(int),cudaMemcpyHostToDevice));
+		//C_kernel_test_values(nnz, values, rows_ptr, col_indices, mesh->local_mesh_size, gpu_S_phi.U, gpu_phi.U);
+		//gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
+		//			cudaMemcpyDeviceToHost));
+		
 		if(first_mat)
 		{
 			//find partition vector
@@ -789,12 +789,15 @@ namespace minicombust::flow
 
 		AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U);
         AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1);
-		
+
 		AMGX_solver_solve(solver, b, u);
 		AMGX_vector_download(u, gpu_phi.U);
 
 		//Solve for V
-		C_kernel_update_sparse_matrix(1, 1, UVW_URFactor, mesh->local_mesh_size, gpu_A_phi.V, values, rows_ptr, gpu_S_phi.V, gpu_phi.V, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, mesh->local_cells_disp, (gpu_Face<double> *) gpu_face_fields, mesh->mesh_size);
+		thread_count = min((uint64_t) 256,mesh->faces_size);
+        	block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
+		
+		C_kernel_update_sparse_matrix(block_count, thread_count, UVW_URFactor, mesh->local_mesh_size, gpu_A_phi.V, values, rows_ptr, gpu_S_phi.V, gpu_phi.V, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, mesh->local_cells_disp, (gpu_Face<double> *) gpu_face_fields, mesh->mesh_size);
 
 		//wait for matrix values
 		gpuErrchk(cudaDeviceSynchronize());
@@ -803,21 +806,23 @@ namespace minicombust::flow
 		AMGX_vector_upload(b, (mesh->local_mesh_size +  nhalos), 1, gpu_S_phi.V);
 		AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1);
 		AMGX_solver_setup(solver, A);
+		
 		AMGX_solver_solve(solver, b, u);
 		AMGX_vector_download(u, gpu_phi.V);
 
 		//Solve for W
-		C_kernel_update_sparse_matrix(1, 1, UVW_URFactor, mesh->local_mesh_size, gpu_A_phi.W, values, rows_ptr, gpu_S_phi.W, gpu_phi.W, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, mesh->local_cells_disp, (gpu_Face<double> *) gpu_face_fields, mesh->mesh_size);
+		C_kernel_update_sparse_matrix(block_count, thread_count, UVW_URFactor, mesh->local_mesh_size, gpu_A_phi.W, values, rows_ptr, gpu_S_phi.W, gpu_phi.W, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, mesh->local_cells_disp, (gpu_Face<double> *) gpu_face_fields, mesh->mesh_size);
 
 		//wait for matrix values
 		gpuErrchk(cudaDeviceSynchronize());
 
 		AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL);
-	    AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.W);
+	    	AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.W);
 		AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1);
-	    AMGX_solver_setup(solver, A);
+	    	AMGX_solver_setup(solver, A);
+		
 		AMGX_solver_solve(solver, b, u);
-	    AMGX_vector_download(u, gpu_phi.W);
+	    	AMGX_vector_download(u, gpu_phi.W);
 	}
 
 	template<typename T> void FlowSolver<T>::precomp_AU()
@@ -859,31 +864,39 @@ namespace minicombust::flow
 		T *FlowIn;
 		T *FlowOut;
 		T *areaout;
+		T *FlowFact;
 		int *count_out;
 
 		gpuErrchk(cudaMalloc(&FlowIn, sizeof(T)));
 		gpuErrchk(cudaMalloc(&FlowOut, sizeof(T)));
 		gpuErrchk(cudaMalloc(&areaout, sizeof(T)));
+		gpuErrchk(cudaMalloc(&FlowFact, sizeof(T)));
 		gpuErrchk(cudaMalloc(&count_out, sizeof(int)));
 
+		gpuErrchk(cudaMemset(FlowFact, 0.0, sizeof(T)));
 		gpuErrchk(cudaMemset(FlowIn, 0.0, sizeof(T)));
 		gpuErrchk(cudaMemset(FlowOut, 0.0, sizeof(T)));
 		gpuErrchk(cudaMemset(areaout, 0.0, sizeof(T)));
 		gpuErrchk(cudaMemset(count_out, 0, sizeof(int)));
 
-		C_kernel_compute_flow_correction(1, 1, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->mesh_size, gpu_boundary_types, FlowOut, FlowIn, areaout, count_out, gpu_face_mass_fluxes, gpu_face_areas);
+		C_kernel_compute_flow_correction(block_count, thread_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->mesh_size, gpu_boundary_types, FlowOut, FlowIn, areaout, count_out, gpu_face_mass_fluxes, gpu_face_areas);
 
 		//Wait for flow in and out to be computed
 		gpuErrchk(cudaDeviceSynchronize());
-
+		
 		MPI_Allreduce(MPI_IN_PLACE, areaout, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		MPI_Allreduce(MPI_IN_PLACE, FlowIn, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		MPI_Allreduce(MPI_IN_PLACE, FlowOut, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 
-		C_kernel_correct_flow(1, 1, count_out, FlowOut, FlowIn, areaout, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->mesh_size, gpu_boundary_types, gpu_face_mass_fluxes, gpu_face_areas, gpu_cell_densities, gpu_phi, mesh->local_mesh_size, nhalos, gpu_face_normals, mesh->local_cells_disp, gpu_S_phi);
-	
+		C_kernel_correct_flow(block_count, thread_count, count_out, FlowOut, FlowIn, areaout, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->mesh_size, gpu_boundary_types, gpu_face_mass_fluxes, gpu_face_areas, gpu_cell_densities, gpu_phi, mesh->local_mesh_size, nhalos, gpu_face_normals, mesh->local_cells_disp, gpu_S_phi, FlowFact);
+
 		//Wait for correction before returning.
 		gpuErrchk(cudaDeviceSynchronize());
+
+		C_kernel_correct_flow2(block_count, thread_count, count_out, FlowOut, FlowIn, areaout, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->mesh_size, gpu_boundary_types, gpu_face_mass_fluxes, gpu_face_areas, gpu_cell_densities, gpu_phi, mesh->local_mesh_size, nhalos, gpu_face_normals, mesh->local_cells_disp, gpu_S_phi, FlowFact);
+		
+		//Wait for correction before returning.
+        gpuErrchk(cudaDeviceSynchronize());
 	}
 
 	template<typename T> void FlowSolver<T>::calculate_pressure()
@@ -905,21 +918,25 @@ namespace minicombust::flow
 
 		calculate_mass_flux();
 		//wait for flux happens in C kernel.
-		
+
 		gpuErrchk(cudaMemset(nnz, 0, sizeof(int)));
         gpuErrchk(cudaMemset(values, 0.0, sizeof(T) * (mesh->local_mesh_size*7)));
         gpuErrchk(cudaMemset(col_indices, 0, sizeof(int64_t) * (mesh->local_mesh_size*7)));
         gpuErrchk(cudaMemset(rows_ptr, 0, sizeof(int) * (mesh->local_mesh_size+1)));
 
-		C_kernel_setup_pressure_matrix(1, 1, mesh->local_mesh_size, rows_ptr, col_indices, mesh->local_cells_disp, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, (gpu_Face<T> *) gpu_face_fields, values, mesh->mesh_size, mesh->faces_per_cell, gpu_cell_faces, nnz, gpu_face_mass_fluxes, gpu_A_phi, gpu_S_phi);
+		int thread_count = min((uint64_t) 256,mesh->local_mesh_size);
+        int block_count = max(1,(int) ceil((double) mesh->local_mesh_size/(double) thread_count));
+
+		C_kernel_setup_pressure_matrix(block_count, thread_count, mesh->local_mesh_size, rows_ptr, col_indices, mesh->local_cells_disp, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, (gpu_Face<T> *) gpu_face_fields, values, mesh->mesh_size, mesh->faces_per_cell, gpu_cell_faces, nnz, gpu_face_mass_fluxes, gpu_A_phi, gpu_S_phi);
 	
 		//wait for pressure matrix
         gpuErrchk(cudaDeviceSynchronize());
-
-		int cpu_nnz = 0;
-        gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
-                    cudaMemcpyDeviceToHost));
-
+		
+		int cpu_nnz = mesh->local_mesh_size*(mesh->faces_per_cell+1);
+		//int cpu_nnz = 0;
+        //gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
+        //            cudaMemcpyDeviceToHost));
+		
 		if(first_press)
 		{
 			first_press = false;
@@ -936,44 +953,60 @@ namespace minicombust::flow
 			AMGX_matrix_replace_coefficients(pressure_A, mesh->local_mesh_size, cpu_nnz, values, NULL);
 		}
 		AMGX_solver_setup(pressure_solver, pressure_A);
-
-		int thread_count = min((uint64_t) 256,mesh->faces_size);
-		int block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
+		
+		thread_count = min((uint64_t) 256,mesh->faces_size);
+		block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
 	
 		while(Loop_continue)
 		{
 			Loop_num++;
+			cpu_Pressure_correction_max = 0.0;
 			
 			//Solve first pressure update
 			AMGX_vector_upload(pressure_b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U);
 			AMGX_vector_set_zero(pressure_u, (mesh->local_mesh_size + nhalos), 1);
-
+			
 			AMGX_solver_solve(pressure_solver, pressure_b, pressure_u);
 			AMGX_vector_download(pressure_u, gpu_phi.PP);
 
-			C_kernel_find_pressure_correction_max(1, 1, gpu_Pressure_correction_max, gpu_phi.PP, mesh->local_mesh_size);
+			/*cpu_Pressure_correction_max = thrust::transform_reduce(thrust::device, 
+										  gpu_phi.PP, gpu_phi.PP+mesh->local_mesh_size, 
+										  []__device__(auto &x) -> double {
+										  return abs(x);
+										  },
+										  0.0, thrust::max<double>);*/
+			//printf("max is %f\n",cpu_Pressure_correction_max);
+			C_kernel_find_pressure_correction_max(1, 1, &cpu_Pressure_correction_max, gpu_phi.PP, mesh->local_mesh_size);
+			//thread_count = min((uint64_t) 256,mesh->local_mesh_size);
+        	//block_count = max(1,(int) ceil((double) mesh->local_mesh_size/(double) thread_count));
+			//C_kernel_find_pressure_correction_max(block_count, thread_count, gpu_Pressure_correction_max, gpu_phi.PP, mesh->local_mesh_size);
+
+			//printf("max is %f\n",cpu_Pressure_correction_max);
 
 			//wait for pressure max
 			gpuErrchk(cudaDeviceSynchronize());
 
-			MPI_Allreduce(MPI_IN_PLACE, gpu_Pressure_correction_max, 1, MPI_DOUBLE, MPI_MAX, mpi_config->particle_flow_world);
+			MPI_Allreduce(MPI_IN_PLACE, &cpu_Pressure_correction_max, 1, MPI_DOUBLE, MPI_MAX, mpi_config->particle_flow_world);
+			//MPI_Allreduce(MPI_IN_PLACE, gpu_Pressure_correction_max, 1, MPI_DOUBLE, MPI_MAX, mpi_config->particle_flow_world);
 
-			gpuErrchk(cudaMemcpy(&cpu_Pressure_correction_max, gpu_Pressure_correction_max, sizeof(T), cudaMemcpyDeviceToHost));
-		
+			//gpuErrchk(cudaMemcpy(&cpu_Pressure_correction_max, gpu_Pressure_correction_max, sizeof(T), cudaMemcpyDeviceToHost));
+			
 			if(Loop_num == 1)
 			{
 				Pressure_correction_ref = cpu_Pressure_correction_max;
 			}
 
 			exchange_single_phi_halo(gpu_phi.PP);
+		
+			thread_count = min((uint64_t) 256,mesh->faces_size);
+        	block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
 
 			C_kernel_Update_P_at_boundaries(block_count, thread_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->mesh_size, mesh->local_mesh_size, nhalos, gpu_phi.PP);
 
 			//wait for update.
 			gpuErrchk(cudaDeviceSynchronize());
-
+	
 			get_phi_gradient(gpu_phi.PP, gpu_phi_grad.PP);
-
 			//wait for grad done in C kernel.
 
 			exchange_single_grad_halo(gpu_phi_grad.PP);
@@ -988,19 +1021,16 @@ namespace minicombust::flow
 			C_kernel_update_mass_flux(thread_count, block_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->local_mesh_size, mesh->mesh_size, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size(), gpu_face_centers, gpu_cell_centers, (gpu_Face<double> *) gpu_face_fields, gpu_phi_grad, gpu_face_mass_fluxes, gpu_S_phi, gpu_face_normals);
 
 			gpuErrchk(cudaMemset(gpu_phi.PP, 0.0, (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T)));
-			
 			if(Loop_num >= 4 or (cpu_Pressure_correction_max <= (0.25 * Pressure_correction_ref))) Loop_continue = false;
 		}
-
 		C_kernel_Update_P_at_boundaries(block_count, thread_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->mesh_size, mesh->local_mesh_size, nhalos, gpu_phi.P);
 
 		//wait for P update
 		gpuErrchk(cudaDeviceSynchronize());
-
+		
 		get_phi_gradient(gpu_phi.P, gpu_phi_grad.P);
-
 		//wait done in C kernel.
-
+		
 		C_kernel_Update_P(block_count, thread_count, mesh->faces_size, mesh->local_mesh_size, nhalos, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->mesh_size, gpu_cell_centers, gpu_face_centers, gpu_boundary_types, gpu_phi.P, gpu_phi_grad.P);
 
 		//wait for P update.
@@ -1064,14 +1094,18 @@ namespace minicombust::flow
         gpuErrchk(cudaMemset(col_indices, 0, sizeof(int64_t) * (mesh->local_mesh_size*7)));
         gpuErrchk(cudaMemset(rows_ptr, 0, sizeof(int) * (mesh->local_mesh_size+1)));
 
-		C_kernel_setup_sparse_matrix(1, 1, URFactor, mesh->local_mesh_size, rows_ptr, col_indices, mesh->local_cells_disp, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, gpu_A_phi.V, (gpu_Face<double> *) gpu_face_fields, values, gpu_S_phi.U, phi_component, mesh->mesh_size, mesh->faces_per_cell, gpu_cell_faces, nnz);
+		thread_count = min((uint64_t) 256,mesh->faces_size);
+        block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
+
+		C_kernel_setup_sparse_matrix(block_count, thread_count, URFactor, mesh->local_mesh_size, rows_ptr, col_indices, mesh->local_cells_disp, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, gpu_A_phi.V, (gpu_Face<double> *) gpu_face_fields, values, gpu_S_phi.U, phi_component, mesh->mesh_size, mesh->faces_per_cell, gpu_cell_faces, nnz);
 	
 		//SYNC
 		gpuErrchk(cudaDeviceSynchronize());
 
-		int cpu_nnz = 0;
-        gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
-                    cudaMemcpyDeviceToHost));
+		int cpu_nnz = mesh->local_mesh_size*(mesh->faces_per_cell+1);
+		//int cpu_nnz = 0;
+        //gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
+        //            cudaMemcpyDeviceToHost));
 
 		AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL);
 	    AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U);
