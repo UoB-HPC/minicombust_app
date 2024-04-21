@@ -615,6 +615,7 @@ namespace minicombust::flow
 
             for ( uint64_t p = 0; p < ranks.size(); p++ )
             {
+				//printf("p is %lu\n",p);
                 int recieved_indexes = 0;
                 MPI_Test(&recv_requests[2*p + 1], &recieved_indexes, MPI_STATUS_IGNORE);
 
@@ -627,9 +628,10 @@ namespace minicombust::flow
                         mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].energy   += cell_particle_aos[p][i].energy;
                         mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].fuel     += cell_particle_aos[p][i].fuel;
                     }
-
+					//printf("p is %lu\n",p);
                     processed_cell_fields[p] = true;
                 }
+				//printf("p is %lu\n",p);
                 all_processed &= processed_cell_fields[p];
             }
             if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
@@ -690,7 +692,7 @@ namespace minicombust::flow
 		int block_count = max(1,(int) ceil((double) mesh->local_mesh_size/ (double) thread_count));
 
 		//Ensure memory is set to zero
-        gpuErrchk(cudaMemset2D(full_data_A, A_pitch, 0, 9 * sizeof(T), mesh->local_mesh_size));
+        /*gpuErrchk(cudaMemset2D(full_data_A, A_pitch, 0, 9 * sizeof(T), mesh->local_mesh_size));
         gpuErrchk(cudaMemset2D(full_data_bU, bU_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
         gpuErrchk(cudaMemset2D(full_data_bV, bV_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
         gpuErrchk(cudaMemset2D(full_data_bW, bW_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
@@ -701,10 +703,23 @@ namespace minicombust::flow
         gpuErrchk(cudaMemset2D(full_data_bFU, bFU_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
         gpuErrchk(cudaMemset2D(full_data_bPR, bPR_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
         gpuErrchk(cudaMemset2D(full_data_bVFU, bVFU_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
-        gpuErrchk(cudaMemset2D(full_data_bVPR, bVPR_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));
+        gpuErrchk(cudaMemset2D(full_data_bVPR, bVPR_pitch, 0, 3 * sizeof(T), mesh->local_mesh_size));*/
+
+		/*gpuErrchk(cudaMemset(full_data_A, 0.0, 9 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bU, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bV, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bW, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bP, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bTE, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bED, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bT, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bFU, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bPR, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bVFU, 0.0, 3 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bVPR, 0.0, 3 * sizeof(T)));*/
 
 		//generate all the data arrays
-		C_kernel_get_phi_gradients(block_count, thread_count, gpu_phi, gpu_phi_grad, mesh->local_mesh_size, mesh->local_cells_disp, mesh->faces_per_cell, (gpu_Face<uint64_t> *) gpu_faces, gpu_cell_faces, gpu_cell_centers, mesh->mesh_size, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size(), gpu_face_centers, nhalos, full_data_A, full_data_bU, full_data_bV, full_data_bW, full_data_bP, full_data_bTE, full_data_bED, full_data_bT, full_data_bFU, full_data_bPR, full_data_bVFU, full_data_bVPR, A_pitch, bU_pitch, bV_pitch, bW_pitch, bP_pitch, bTE_pitch, bED_pitch, bT_pitch, bFU_pitch, bPR_pitch, bVFU_pitch, bVPR_pitch);
+		C_kernel_get_phi_gradients(block_count, thread_count, gpu_phi, gpu_phi_grad, mesh->local_mesh_size, mesh->local_cells_disp, mesh->faces_per_cell, (gpu_Face<uint64_t> *) gpu_faces, gpu_cell_faces, gpu_cell_centers, mesh->mesh_size, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size(), gpu_face_centers, nhalos);
 	
 		//Wait for arrays to fill.
 		gpuErrchk(cudaDeviceSynchronize());
@@ -742,15 +757,24 @@ namespace minicombust::flow
 		gpuErrchk(cudaMemset(values, 0.0, sizeof(T) * (mesh->local_mesh_size*7)));
 		gpuErrchk(cudaMemset(col_indices, 0, sizeof(int64_t) * (mesh->local_mesh_size*7)));
 		gpuErrchk(cudaMemset(rows_ptr, 0, sizeof(int) * (mesh->local_mesh_size+1)));
-		
+
 		//Solve for U
 		C_kernel_setup_sparse_matrix(block_count, thread_count, UVW_URFactor, mesh->local_mesh_size, rows_ptr, col_indices, mesh->local_cells_disp, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, gpu_A_phi.U, (gpu_Face<T> *) gpu_face_fields, values, gpu_S_phi.U, gpu_phi.U, mesh->mesh_size, mesh->faces_per_cell, gpu_cell_faces, nnz);
 		
 		//wait for matrix values
 		gpuErrchk(cudaDeviceSynchronize());
 		
-		int cpu_nnz = mesh->local_mesh_size*(mesh->faces_per_cell+1);
-		//int cpu_nnz = 0;
+		/*int cpu_nnz = mesh->local_mesh_size*(mesh->faces_per_cell+1);
+		gpuErrchk(cudaMemcpy(nnz, &cpu_nnz, sizeof(int),
+		                  cudaMemcpyHostToDevice));
+		for(int i = 0; i < mpi_config->particle_flow_world_size; i++){
+			if(mpi_config->particle_flow_rank == i){
+				//C_kernel_test_values(nnz, values, rows_ptr, col_indices, mesh->local_mesh_size, gpu_S_phi.U, gpu_phi.U);
+			}
+			MPI_Barrier (mpi_config->particle_flow_world);
+		}
+		MPI_Barrier (mpi_config->particle_flow_world);
+		*///int cpu_nnz = 0;
 		//gpuErrchk(cudaMemcpy(nnz, &cpu_nnz, sizeof(int),cudaMemcpyHostToDevice));
 		//C_kernel_test_values(nnz, values, rows_ptr, col_indices, mesh->local_mesh_size, gpu_S_phi.U, gpu_phi.U);
 		//gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
@@ -772,10 +796,22 @@ namespace minicombust::flow
 					count++;
 				}
         	}
-			
+
+	/*		for(int i = 0; i < mesh->mesh_size; i++)
+            {
+                printf("%d, ",partition_vector[i]);
+            }
+            printf("\n");
+	*/		
 			first_mat = false;
 			AMGX_matrix_upload_all_global(A, mesh->mesh_size, mesh->local_mesh_size, cpu_nnz, 1, 1, rows_ptr, col_indices, values, NULL, 1, 1, partition_vector);
-		
+
+			/*for(int i = 0; i < mesh->mesh_size; i++)
+			{
+				printf("%d, ",partition_vector[i]);
+			}
+			printf("\n");	
+	*/
 			AMGX_vector_bind(u, A);
 			AMGX_vector_bind(b, A);
 			
@@ -793,6 +829,14 @@ namespace minicombust::flow
 		AMGX_solver_solve(solver, b, u);
 		AMGX_vector_download(u, gpu_phi.U);
 
+		/*for(int i = 0; i < mpi_config->particle_flow_world_size; i++){
+            if(mpi_config->particle_flow_rank == i){
+                //C_kernel_test_values(nnz, values, rows_ptr, col_indices, mesh->local_mesh_size, gpu_S_phi.U, gpu_phi.U);
+                            }
+                                        MPI_Barrier (mpi_config->particle_flow_world);
+                                                }
+                                                        MPI_Barrier (mpi_config->particle_flow_world);
+*/
 		//Solve for V
 		thread_count = min((uint64_t) 256,mesh->faces_size);
         	block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
@@ -844,11 +888,14 @@ namespace minicombust::flow
 		int block_count = max(1,(int) ceil((double) mesh->local_mesh_size/(double) thread_count));
 		
 		//Ensure memory is set to zero
-		gpuErrchk(cudaMemset2D(full_data_A, A_pitch, 0.0, 9 * sizeof(T), mesh->local_mesh_size));
-		gpuErrchk(cudaMemset2D(full_data_bU, bU_pitch, 0.0, 3 * sizeof(T), mesh->local_mesh_size));
+		/*gpuErrchk(cudaMemset2D(full_data_A, A_pitch, 0.0, 9 * sizeof(T), mesh->local_mesh_size));
+		gpuErrchk(cudaMemset2D(full_data_bU, bU_pitch, 0.0, 3 * sizeof(T), mesh->local_mesh_size));*/
+
+		/*gpuErrchk(cudaMemset(full_data_A, 0.0, 9 * sizeof(T)));
+        gpuErrchk(cudaMemset(full_data_bU, 0.0, 3 * sizeof(T)));*/
 
 		//generate all the data arrays
-		C_kernel_get_phi_gradient(block_count, thread_count, phi_component, mesh->local_mesh_size, mesh->local_cells_disp, mesh->faces_per_cell, (gpu_Face<uint64_t> *) gpu_faces, gpu_cell_faces, gpu_cell_centers, mesh->mesh_size, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size(), gpu_face_centers, nhalos, full_data_A, full_data_bU, A_pitch, bU_pitch, phi_grad_component);
+		C_kernel_get_phi_gradient(block_count, thread_count, phi_component, mesh->local_mesh_size, mesh->local_cells_disp, mesh->faces_per_cell, (gpu_Face<uint64_t> *) gpu_faces, gpu_cell_faces, gpu_cell_centers, mesh->mesh_size, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size(), gpu_face_centers, nhalos, phi_grad_component);
 	}
 
 	template<typename T> void FlowSolver<T>::calculate_mass_flux()
@@ -919,6 +966,10 @@ namespace minicombust::flow
 		calculate_mass_flux();
 		//wait for flux happens in C kernel.
 
+		//C_kernel_print(gpu_S_phi.U, mesh->local_mesh_size);
+
+		//gpuErrchk(cudaDeviceSynchronize());	
+
 		gpuErrchk(cudaMemset(nnz, 0, sizeof(int)));
         gpuErrchk(cudaMemset(values, 0.0, sizeof(T) * (mesh->local_mesh_size*7)));
         gpuErrchk(cudaMemset(col_indices, 0, sizeof(int64_t) * (mesh->local_mesh_size*7)));
@@ -934,8 +985,8 @@ namespace minicombust::flow
 		
 		int cpu_nnz = mesh->local_mesh_size*(mesh->faces_per_cell+1);
 		//int cpu_nnz = 0;
-        //gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
-        //            cudaMemcpyDeviceToHost));
+        //gpuErrchk(cudaMemcpy(nnz, &cpu_nnz, sizeof(int),
+        //            cudaMemcpyHostToDevice));
 		
 		if(first_press)
 		{
@@ -953,7 +1004,7 @@ namespace minicombust::flow
 			AMGX_matrix_replace_coefficients(pressure_A, mesh->local_mesh_size, cpu_nnz, values, NULL);
 		}
 		AMGX_solver_setup(pressure_solver, pressure_A);
-		
+
 		thread_count = min((uint64_t) 256,mesh->faces_size);
 		block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
 	
@@ -965,22 +1016,11 @@ namespace minicombust::flow
 			//Solve first pressure update
 			AMGX_vector_upload(pressure_b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U);
 			AMGX_vector_set_zero(pressure_u, (mesh->local_mesh_size + nhalos), 1);
-			
+		
 			AMGX_solver_solve(pressure_solver, pressure_b, pressure_u);
 			AMGX_vector_download(pressure_u, gpu_phi.PP);
 
-			/*cpu_Pressure_correction_max = thrust::transform_reduce(thrust::device, 
-										  gpu_phi.PP, gpu_phi.PP+mesh->local_mesh_size, 
-										  []__device__(auto &x) -> double {
-										  return abs(x);
-										  },
-										  0.0, thrust::max<double>);*/
-			//printf("max is %f\n",cpu_Pressure_correction_max);
 			C_kernel_find_pressure_correction_max(1, 1, &cpu_Pressure_correction_max, gpu_phi.PP, mesh->local_mesh_size);
-			//thread_count = min((uint64_t) 256,mesh->local_mesh_size);
-        	//block_count = max(1,(int) ceil((double) mesh->local_mesh_size/(double) thread_count));
-			//C_kernel_find_pressure_correction_max(block_count, thread_count, gpu_Pressure_correction_max, gpu_phi.PP, mesh->local_mesh_size);
-
 			//printf("max is %f\n",cpu_Pressure_correction_max);
 
 			//wait for pressure max
@@ -997,7 +1037,7 @@ namespace minicombust::flow
 			}
 
 			exchange_single_phi_halo(gpu_phi.PP);
-		
+
 			thread_count = min((uint64_t) 256,mesh->faces_size);
         	block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
 
@@ -1011,7 +1051,7 @@ namespace minicombust::flow
 
 			exchange_single_grad_halo(gpu_phi_grad.PP);
 
-			C_kernel_update_vel_and_flux(block_count, thread_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->local_mesh_size, nhalos, (gpu_Face<T> *) gpu_face_fields, mesh->mesh_size, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, gpu_face_mass_fluxes, gpu_A_phi, gpu_phi, gpu_cell_volumes, gpu_phi_grad);
+			C_kernel_update_vel_and_flux(block_count, thread_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->local_mesh_size, nhalos, (gpu_Face<T> *) gpu_face_fields, mesh->mesh_size, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, gpu_face_mass_fluxes, gpu_A_phi, gpu_phi, gpu_cell_volumes, gpu_phi_grad, timestep_count);
 
 			//wait for vel and flux update.
 			gpuErrchk(cudaDeviceSynchronize());
@@ -1273,6 +1313,8 @@ namespace minicombust::flow
 		get_phi_gradients();
 		flow_timings[0] += MPI_Wtime();
 
+		//C_kernel_vec_print(gpu_phi_grad.U, mesh->local_mesh_size);
+
 //		if(FLOW_SOLVER_LIMIT_GRAD)
 //			limit_phi_gradients();
 
@@ -1313,6 +1355,52 @@ namespace minicombust::flow
 
 		exchange_phi_halos(); //exchange new UVW values.
 
+		//printf("We finish pressure\n");
+		MPI_Barrier(mpi_config->particle_flow_world);
+/*
+		if(((timestep_count + 1) % 1) == 0)
+        {
+            gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.TE, gpu_phi.TE, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.ED, gpu_phi.ED, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.FUL, gpu_phi.FUL, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.PRO, gpu_phi.PRO, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.VARF, gpu_phi.VARF, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(phi.VARP, gpu_phi.VARP, phi_array_size,
+                       cudaMemcpyDeviceToHost));
+            if(mpi_config->particle_flow_rank == 0)
+            {
+                printf("Result is:\n");
+            }
+            for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
+            {
+                if(i == mpi_config->particle_flow_rank)
+                {
+                    for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
+                    {
+                        const uint64_t cell = block_cell + mesh->local_cells_disp;
+                        printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
+                        printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
+                    }
+                }
+                MPI_Barrier(mpi_config->particle_flow_world);
+            }
+        }
+*/
 		flow_timings[3] -= MPI_Wtime();
 		calculate_pressure(); 
 		flow_timings[3] += MPI_Wtime();
@@ -1357,7 +1445,7 @@ namespace minicombust::flow
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-		/*if(((timestep_count + 1) % 1) == 0)
+	/*	if(((timestep_count + 1) % 1) == 0)
 		{
 			gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
                        cudaMemcpyDeviceToHost));
@@ -1398,8 +1486,8 @@ namespace minicombust::flow
 				}
 				MPI_Barrier(mpi_config->particle_flow_world);
 			}
-		}*/
-
+		}
+*/
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
         {
             if(mpi_config->particle_flow_rank == 0)

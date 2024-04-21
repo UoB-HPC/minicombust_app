@@ -62,7 +62,7 @@ int main (int argc, char ** argv)
 
     // Mesh Configuration
     const uint64_t modifier                = (argc > 3) ? atoi(argv[3]) : 10;
-    vec<double>    box_dim                 = {1, 0.5, 0.5};
+    vec<double>    box_dim                 = {0.1*modifier*2, 0.1*modifier, 0.1*modifier};//{1, 0.5, 0.5};
     vec<uint64_t>  elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
 
     if (mpi_config.rank == 0)  

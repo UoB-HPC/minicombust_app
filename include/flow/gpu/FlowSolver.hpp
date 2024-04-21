@@ -3,6 +3,22 @@
 #include "amgx_c.h"
 #include "cuda_runtime.h"
 
+#define AMGX_SAFE_CALL(rc) \
+{ \
+  AMGX_RC err;     \
+  char msg[4096];   \
+  switch(err = (rc)) {    \
+  case AMGX_RC_OK: \
+    break; \
+  default: \
+    fprintf(stderr, "AMGX ERROR: file %s line %6d\n", __FILE__, __LINE__); \
+    AMGX_get_error_string(err, msg, 4096);\
+    fprintf(stderr, "AMGX ERROR: %s\n", msg); \
+    AMGX_abort(NULL,1);\
+    break; \
+  } \
+}
+
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
@@ -115,7 +131,7 @@ namespace minicombust::flow
 
 
 			//TODO: we don't nee all this memory decolration anymore
-			T  *full_data_A;
+			/*T  *full_data_A;
 	        T  *full_data_bU;
     	    T  *full_data_bV;
         	T  *full_data_bW;
@@ -126,9 +142,9 @@ namespace minicombust::flow
     	    T  *full_data_bFU;
         	T  *full_data_bPR;
 	        T  *full_data_bVFU;
-    	    T  *full_data_bVPR;
+    	    T  *full_data_bVPR;*/
 
-			size_t A_pitch;
+			/*size_t A_pitch;
 	        size_t bU_pitch;
     	    size_t bV_pitch;
         	size_t bW_pitch;
@@ -139,7 +155,7 @@ namespace minicombust::flow
     	    size_t bFU_pitch;
         	size_t bPR_pitch;
 	        size_t bVFU_pitch;
-    	    size_t bVPR_pitch;
+    	    size_t bVPR_pitch;*/
 	
 			T *values;
         	int *nnz;
@@ -257,7 +273,7 @@ namespace minicombust::flow
                 cudaGetDeviceCount(&gpu_count);
                 int rank = mpi_config->particle_flow_rank;
                 int lrank = rank % gpu_count;
-                printf("Process %d selecting device %d\n", rank, lrank);
+                printf("Process %d selecting device %d of %d\n", rank, lrank, gpu_count);
                 cudaSetDevice(lrank);
  
 				partition_vector_size = mesh->mesh_size;
@@ -278,7 +294,7 @@ namespace minicombust::flow
                 send_buffers_node_index_array_size   = max_storage * sizeof(uint64_t);
                 send_buffers_node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
 
-                async_locks = (bool*)malloc(4 * mesh->num_blocks * sizeof(bool));
+                async_locks = (bool*)malloc((4 * mesh->num_blocks)+1 * sizeof(bool));
                 
                 send_counts    =              (uint64_t*) malloc(mesh->num_blocks * sizeof(uint64_t));
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
@@ -656,13 +672,15 @@ namespace minicombust::flow
 				cudaMalloc(&gpu_halo_mpi_double_datatypes, halo_mpi_double_datatypes.size() * sizeof(MPI_Datatype));
 				cudaMalloc(&gpu_halo_mpi_vec_double_datatypes, halo_mpi_vec_double_datatypes.size() * sizeof(MPI_Datatype));
 
+				//async_locks = (bool*)malloc(halo_ranks.size() * sizeof(bool));
+
 				gpuErrchk(cudaMalloc(&rows_ptr, sizeof(int) *(mesh->local_mesh_size+1)));
         		gpuErrchk(cudaMalloc(&col_indices, sizeof(int64_t) * (mesh->local_mesh_size*7)));
         		gpuErrchk(cudaMalloc(&values, sizeof(T) * (mesh->local_mesh_size*7)));
         		gpuErrchk(cudaMalloc(&nnz, sizeof(int)));
 
 				//Allocate big data arrays Note: the storage for these is fairly large.
-        		gpuErrchk(cudaMallocPitch(&full_data_A, &A_pitch, 9 * sizeof(T), mesh->local_mesh_size));
+        		/*gpuErrchk(cudaMallocPitch(&full_data_A, &A_pitch, 9 * sizeof(T), mesh->local_mesh_size));
   		      	gpuErrchk(cudaMallocPitch(&full_data_bU, &bU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
         		gpuErrchk(cudaMallocPitch(&full_data_bV, &bV_pitch, 3 * sizeof(T), mesh->local_mesh_size));
 		        gpuErrchk(cudaMallocPitch(&full_data_bW, &bW_pitch, 3 * sizeof(T), mesh->local_mesh_size));
@@ -673,7 +691,20 @@ namespace minicombust::flow
 		        gpuErrchk(cudaMallocPitch(&full_data_bFU, &bFU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
         		gpuErrchk(cudaMallocPitch(&full_data_bPR, &bPR_pitch, 3 * sizeof(T), mesh->local_mesh_size));
 		        gpuErrchk(cudaMallocPitch(&full_data_bVFU, &bVFU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-        		gpuErrchk(cudaMallocPitch(&full_data_bVPR, &bVPR_pitch, 3 * sizeof(T), mesh->local_mesh_size));
+        		gpuErrchk(cudaMallocPitch(&full_data_bVPR, &bVPR_pitch, 3 * sizeof(T), mesh->local_mesh_size));*/
+
+				/*gpuErrchk(cudaMallocPitch(&full_data_A, 9 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bU, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bV, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bW, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bP, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bTE, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bED, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bT, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bFU, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bPR, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bVFU, 3 * sizeof(T)));
+                gpuErrchk(cudaMallocPitch(&full_data_bVPR, 3 * sizeof(T)));*/
 			
 				cudaMemcpy(gpu_phi.U, phi.U, phi_array_size, 
 						   cudaMemcpyHostToDevice);
@@ -833,11 +864,13 @@ namespace minicombust::flow
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
 
 				//Create config for AMGX
-				AMGX_register_print_callback(&print_callback);
-				AMGX_install_signal_handler();
-				AMGX_config_create_from_file(&pressure_cfg, "solvers/CLASSICAL_V_CYCLE.json");
-				AMGX_config_create_from_file(&cfg, "solvers/PBICGSTAB_NOPREC.json");
-                AMGX_config_add_parameters(&cfg, "exception_handling=1");	
+				AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
+				AMGX_SAFE_CALL(AMGX_install_signal_handler());
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/scratch/space1/e609/suc/minicombust_app/test/solvers/FGMRES_PRESSURE.json"));
+				AMGX_SAFE_CALL(AMGX_config_add_parameters(&pressure_cfg, "exception_handling=1"));
+				
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "/scratch/space1/e609/suc/minicombust_app/test/solvers/PBICGSTAB_NOPREC.json"));
+                AMGX_SAFE_CALL(AMGX_config_add_parameters(&cfg, "exception_handling=1"));	
 				
 				AMGX_resources_create(&main_rsrc, cfg,
 									  &mpi_config->particle_flow_world, 1, &lrank);

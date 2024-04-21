@@ -128,7 +128,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     const uint64_t num_cubes        = elements_per_dim.x * elements_per_dim.y * elements_per_dim.z;
 
     // Work out dimensions for local 
-    int *prime_factors = (int *)malloc(ceil(log2(flow_ranks)) * sizeof(int));
+    int *prime_factors = (int *)malloc((ceil(log2(flow_ranks))+1) * sizeof(int));
     int nfactors       = get_prime_factors(flow_ranks, prime_factors);
     // printf("Ranks %d  PFranks %d flow ranks %d\n", mpi_config->rank, mpi_config->particle_flow_rank, flow_ranks );
 

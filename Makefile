@@ -1,6 +1,6 @@
 ## Compilers and Flags
 CC := mpicxx
-CFLAGS := -g -Wall -Wextra -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+CFLAGS := -fopenmp -g -G -Wall -Wextra -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 
 LIB := -Lbuild/
 INC := -Iinclude/
@@ -19,9 +19,9 @@ endif
 
 ifdef CUDA_INSTALL_PATH
 	CC := nvcc
-	CFLAGS := -pg -g -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+	CFLAGS := -fopenmp -pg -g -G -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 	NVCC := nvcc
-	NVFLAGS := --extended-lambda -pg -g -O0 -gencode arch=compute_90,code=sm_90
+	NVFLAGS := -forward-unknown-to-host-compiler -fopenmp --extended-lambda -pg -g -O0 -gencode arch=compute_70,code=sm_70
 	INC += -I$(CUDA_INSTALL_PATH)/include
 	LIB += -L$(CUDA_INSTALL_PATH)/lib64 -lcudart
 endif
@@ -60,7 +60,7 @@ $(EXE_GPU): $(OBJECTS) build/gpu_kernels.o
 	$(CC) $(CFLAGS) $(INC) $(SRC)/minicombust.cpp -Dhave_gpu -c -o build/minicombust.o
 	@echo ""
 	@echo "Linking..."
-	$(NVCC) $(LIB) $^ build/minicombust.o -Dhave_gpu -o $(EXE_GPU)
+	$(NVCC) -forward-unknown-to-host-compiler -fopenmp $(LIB) $^ build/minicombust.o -Dhave_gpu -o $(EXE_GPU)
 
 build/gpu_kernels.o: include/flow/gpu/gpu_kernels.cu
 	$(NVCC) $(NVFLAGS) $(INC) include/flow/gpu/gpu_kernels.cu -c -o $@
