@@ -866,10 +866,10 @@ namespace minicombust::flow
 				//Create config for AMGX
 				AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 				AMGX_SAFE_CALL(AMGX_install_signal_handler());
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/scratch/space1/e609/suc/minicombust_app/test/solvers/FGMRES_PRESSURE.json"));
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/home/scratch.hwaugh_gpu/repos/minicombust_app/AMGX_Solvers/FGMRES_AGGREGATION.json"));
 				AMGX_SAFE_CALL(AMGX_config_add_parameters(&pressure_cfg, "exception_handling=1"));
 				
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "/scratch/space1/e609/suc/minicombust_app/test/solvers/PBICGSTAB_NOPREC.json"));
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "/home/scratch.hwaugh_gpu/repos/minicombust_app/AMGX_Solvers/PBICGSTAB_NOPREC.json"));
                 AMGX_SAFE_CALL(AMGX_config_add_parameters(&cfg, "exception_handling=1"));	
 				
 				AMGX_resources_create(&main_rsrc, cfg,

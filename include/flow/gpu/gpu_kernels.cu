@@ -1442,11 +1442,15 @@ __global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_
 	if(face >= (local_mesh_size + nhalos)) return;
 	double Ar = (A_phi.U[face] != 0.0) ? 1.0 / A_phi.U[face] : 0.0;
 	double fact = cell_volumes[face] * Ar;
-		phi.P[face] += 0.2*phi.PP[face];
+		
+        if (timestep_count == 0)
+        {
+                phi.P[face] += 0.2*phi.PP[face];
 	
 		phi.U[face] -= phi_grad.PP[face].x * fact;
 		phi.V[face] -= phi_grad.PP[face].y * fact;
 		phi.W[face] -= phi_grad.PP[face].z * fact;
+        }
 }
 
 __global__ void kernel_Update_P(uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, double *phi_component, vec<double> *phi_grad_component)

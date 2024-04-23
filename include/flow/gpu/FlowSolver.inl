@@ -764,7 +764,7 @@ namespace minicombust::flow
 		//wait for matrix values
 		gpuErrchk(cudaDeviceSynchronize());
 		
-		/*int cpu_nnz = mesh->local_mesh_size*(mesh->faces_per_cell+1);
+		int cpu_nnz = mesh->local_mesh_size*(mesh->faces_per_cell+1);
 		gpuErrchk(cudaMemcpy(nnz, &cpu_nnz, sizeof(int),
 		                  cudaMemcpyHostToDevice));
 		for(int i = 0; i < mpi_config->particle_flow_world_size; i++){
@@ -774,12 +774,12 @@ namespace minicombust::flow
 			MPI_Barrier (mpi_config->particle_flow_world);
 		}
 		MPI_Barrier (mpi_config->particle_flow_world);
-		*///int cpu_nnz = 0;
+		//int cpu_nnz = 0;
 		//gpuErrchk(cudaMemcpy(nnz, &cpu_nnz, sizeof(int),cudaMemcpyHostToDevice));
 		//C_kernel_test_values(nnz, values, rows_ptr, col_indices, mesh->local_mesh_size, gpu_S_phi.U, gpu_phi.U);
 		//gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
 		//			cudaMemcpyDeviceToHost));
-		
+	        //static bool first_mat=true;	
 		if(first_mat)
 		{
 			//find partition vector
