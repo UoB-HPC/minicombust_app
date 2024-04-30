@@ -10,6 +10,35 @@
 #include "particles/ParticleSolver.inl"
 #ifdef have_gpu
 	#include "flow/gpu/FlowSolver.inl"
+    #include <cuda.h>
+    #include "cuda_runtime.h"
+
+    #define AMGX_SAFE_CALL(rc) \
+    { \
+    AMGX_RC err;     \
+    char msg[4096];   \
+    switch(err = (rc)) {    \
+    case AMGX_RC_OK: \
+        break; \
+    default: \
+        fprintf(stderr, "AMGX ERROR: file %s line %6d\n", __FILE__, __LINE__); \
+        AMGX_get_error_string(err, msg, 4096);\
+        fprintf(stderr, "AMGX ERROR: %s\n", msg); \
+        AMGX_abort(NULL,1);\
+        break; \
+    } \
+    }
+
+    // #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+    // inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+    // {
+    // if (code != cudaSuccess) 
+    // {
+    //     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+    //     if (abort) exit(code);
+    // }
+    // }
+
 #else
 	#include "flow/FlowSolver.inl"
 #endif
@@ -19,14 +48,30 @@ using namespace minicombust::flow;
 using namespace minicombust::particles;
 using namespace minicombust::visit;
 
+
 int main (int argc, char ** argv)
 {
 	//TODO:reduce mega long lines
 	//TODO:sort out vtk_output.
 	//TODO:ideal flow tanks seem to cause a segfault
-	
+
+    int gpu_count = 0;
+    char *buf = getenv("OMPI_COMM_WORLD_LOCAL_RANK");
+    int lrank = atoi(buf); 
+
+
+    cudaFree(0);
+    if (lrank > 0) 
+    {
+        // int cuda_dev = lrank - 104;
+        int cuda_dev = 0;
+        gpuErrchk( cudaSetDevice(cuda_dev));
+        gpuErrchk( cudaGetDeviceCount(&gpu_count));
+        printf("Process %d selecting device %d of %d\n", lrank, cuda_dev, gpu_count);
+    }
+
     // MPI Initialisation 
-    MPI_Init(NULL, NULL);
+    MPI_Init(&argc, &argv);
     MPI_Config mpi_config;
 
     mpi_config.world = MPI_COMM_WORLD;
@@ -108,7 +153,7 @@ int main (int argc, char ** argv)
     else
     {
 		#ifdef have_gpu
-			AMGX_initialize();
+			AMGX_SAFE_CALL(AMGX_initialize());
 		#else
 			PETSC_COMM_WORLD = mpi_config.particle_flow_world;
 			PetscInitialize(&argc, &argv, nullptr, nullptr);
@@ -142,7 +187,7 @@ int main (int argc, char ** argv)
         {
             particle_solver->timestep();
             
-            if (((int64_t)(t % output_iteration) == output_iteration - 1) or t == 0)  
+            if (((int64_t)(t % output_iteration) == output_iteration - 1))  
             {
                 output_time -= MPI_Wtime();
                 particle_solver->output_data(t+1);
@@ -153,7 +198,7 @@ int main (int argc, char ** argv)
 		{
             flow_solver->timestep();
 			
-			if (((int64_t)(t % output_iteration) == output_iteration - 1) or t == 0)
+			if (((int64_t)(t % output_iteration) == output_iteration - 1))
             {
                 output_time -= MPI_Wtime();
 				flow_solver->output_data(t+1);
@@ -245,7 +290,7 @@ int main (int argc, char ** argv)
 	{
 		#ifdef have_gpu
 			flow_solver->AMGX_free();
-			AMGX_finalize();
+			AMGX_SAFE_CALL(AMGX_finalize());
 		#else
 			PetscFinalize();
 		#endif

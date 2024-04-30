@@ -4,6 +4,8 @@
 #include "flow/gpu/FlowSolver.hpp"
 #include "flow/gpu/gpu_kernels.cuh"
 
+#include <nvToolsExt.h>
+
 using namespace std;
 
 namespace minicombust::flow 
@@ -95,40 +97,41 @@ namespace minicombust::flow
 		int num_requests = 11;
 		
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
-        	MPI_Request recv_requests[halo_ranks.size() * num_requests];
+		MPI_Request recv_requests[halo_ranks.size() * num_requests];
         
-		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-		{
-			MPI_Isend( gpu_phi_grad.U,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-            		MPI_Isend( gpu_phi_grad.V,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
-            		MPI_Isend( gpu_phi_grad.W,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
-            		MPI_Isend( gpu_phi_grad.P,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
-            		MPI_Isend( gpu_phi_grad.TE,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );
-            		MPI_Isend( gpu_phi_grad.ED,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
-            		MPI_Isend( gpu_phi_grad.TEM, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
-            		MPI_Isend( gpu_phi_grad.FUL, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] );
-            		MPI_Isend( gpu_phi_grad.PRO, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
-			MPI_Isend( gpu_phi_grad.VARF, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 9, mpi_config->particle_flow_world, &send_requests[num_requests*r + 9] );
-			MPI_Isend( gpu_phi_grad.VARP, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );	
-		}
-
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
         	{
 			MPI_Irecv( &gpu_phi_grad.U[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
-            		MPI_Irecv( &gpu_phi_grad.V[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 1, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 1] );
-            		MPI_Irecv( &gpu_phi_grad.W[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 2, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 2] );
-            		MPI_Irecv( &gpu_phi_grad.P[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 3, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 3] );
-            		MPI_Irecv( &gpu_phi_grad.TE[mesh->local_mesh_size + halo_disps[r]],  3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 4, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 4] );
-            		MPI_Irecv( &gpu_phi_grad.ED[mesh->local_mesh_size + halo_disps[r]],  3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 5, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 5] );
-            		MPI_Irecv( &gpu_phi_grad.TEM[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
-            		MPI_Irecv( &gpu_phi_grad.FUL[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
-            		MPI_Irecv( &gpu_phi_grad.PRO[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
+			MPI_Irecv( &gpu_phi_grad.V[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 1, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 1] );
+			MPI_Irecv( &gpu_phi_grad.W[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 2, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 2] );
+			MPI_Irecv( &gpu_phi_grad.P[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 3, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 3] );
+			MPI_Irecv( &gpu_phi_grad.TE[mesh->local_mesh_size + halo_disps[r]],  3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 4, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 4] );
+			MPI_Irecv( &gpu_phi_grad.ED[mesh->local_mesh_size + halo_disps[r]],  3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 5, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 5] );
+			MPI_Irecv( &gpu_phi_grad.TEM[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
+			MPI_Irecv( &gpu_phi_grad.FUL[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
+			MPI_Irecv( &gpu_phi_grad.PRO[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
 			MPI_Irecv( &gpu_phi_grad.VARF[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
 			MPI_Irecv( &gpu_phi_grad.VARP[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
 		}
 
+		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+		{
+			MPI_Isend( gpu_phi_grad.U,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
+			MPI_Isend( gpu_phi_grad.V,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
+			MPI_Isend( gpu_phi_grad.W,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
+			MPI_Isend( gpu_phi_grad.P,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
+			MPI_Isend( gpu_phi_grad.TE,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );
+			MPI_Isend( gpu_phi_grad.ED,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
+			MPI_Isend( gpu_phi_grad.TEM, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
+			MPI_Isend( gpu_phi_grad.FUL, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] );
+			MPI_Isend( gpu_phi_grad.PRO, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
+			MPI_Isend( gpu_phi_grad.VARF, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 9, mpi_config->particle_flow_world, &send_requests[num_requests*r + 9] );
+			MPI_Isend( gpu_phi_grad.VARP, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );	
+		}
+
+
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
-        	MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
+		MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
 	}
 
 	template<typename T> void FlowSolver<T>::exchange_phi_halos_cpu ()
@@ -180,20 +183,6 @@ namespace minicombust::flow
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
         MPI_Request recv_requests[halo_ranks.size() * num_requests];
 
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
-            MPI_Isend( gpu_phi.U,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-            MPI_Isend( gpu_phi.V,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
-            MPI_Isend( gpu_phi.W,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
-            MPI_Isend( gpu_phi.P,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
-			MPI_Isend( gpu_phi.TE,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );	
-			MPI_Isend( gpu_phi.ED,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
-			MPI_Isend( gpu_phi.TEM,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
-			MPI_Isend( gpu_phi.FUL,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] ); 
-			MPI_Isend( gpu_phi.PRO,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
-			MPI_Isend( gpu_phi.VARF,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 9, mpi_config->particle_flow_world, &send_requests[num_requests*r + 9] );
-			MPI_Isend( gpu_phi.VARP,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );
-		}
 
         for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
         {
@@ -208,6 +197,21 @@ namespace minicombust::flow
 			MPI_Irecv( &gpu_phi.PRO[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
 			MPI_Irecv( &gpu_phi.VARF[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
 			MPI_Irecv( &gpu_phi.VARP[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
+		}
+
+        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+        {
+            MPI_Isend( gpu_phi.U,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
+            MPI_Isend( gpu_phi.V,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
+            MPI_Isend( gpu_phi.W,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
+            MPI_Isend( gpu_phi.P,         1, halo_mpi_double_datatypes[r],     halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
+			MPI_Isend( gpu_phi.TE,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );	
+			MPI_Isend( gpu_phi.ED,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
+			MPI_Isend( gpu_phi.TEM,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
+			MPI_Isend( gpu_phi.FUL,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] ); 
+			MPI_Isend( gpu_phi.PRO,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
+			MPI_Isend( gpu_phi.VARF,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 9, mpi_config->particle_flow_world, &send_requests[num_requests*r + 9] );
+			MPI_Isend( gpu_phi.VARP,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 10, mpi_config->particle_flow_world, &send_requests[num_requests*r + 10] );
 		}
 		
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
@@ -804,7 +808,7 @@ namespace minicombust::flow
             printf("\n");
 	*/		
 			first_mat = false;
-			AMGX_matrix_upload_all_global(A, mesh->mesh_size, mesh->local_mesh_size, cpu_nnz, 1, 1, rows_ptr, col_indices, values, NULL, 1, 1, partition_vector);
+			AMGX_SAFE_CALL(AMGX_matrix_upload_all_global(A, mesh->mesh_size, mesh->local_mesh_size, cpu_nnz, 1, 1, rows_ptr, col_indices, values, NULL, 1, 1, partition_vector));
 
 			/*for(int i = 0; i < mesh->mesh_size; i++)
 			{
@@ -812,22 +816,22 @@ namespace minicombust::flow
 			}
 			printf("\n");	
 	*/
-			AMGX_vector_bind(u, A);
-			AMGX_vector_bind(b, A);
+			AMGX_SAFE_CALL(AMGX_vector_bind(u, A));
+			AMGX_SAFE_CALL(AMGX_vector_bind(b, A));
 			
-			AMGX_solver_setup(solver, A);
+			AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		}
 		else
 		{
-			AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL);
-			AMGX_solver_setup(solver, A);
+			AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL));
+			AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		}
 
-		AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U);
-        AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1);
+		AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
+        AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
 
-		AMGX_solver_solve(solver, b, u);
-		AMGX_vector_download(u, gpu_phi.U);
+		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
+		AMGX_SAFE_CALL(AMGX_vector_download(u, gpu_phi.U));
 
 		/*for(int i = 0; i < mpi_config->particle_flow_world_size; i++){
             if(mpi_config->particle_flow_rank == i){
@@ -846,13 +850,13 @@ namespace minicombust::flow
 		//wait for matrix values
 		gpuErrchk(cudaDeviceSynchronize());
 
-		AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL);
-		AMGX_vector_upload(b, (mesh->local_mesh_size +  nhalos), 1, gpu_S_phi.V);
-		AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1);
-		AMGX_solver_setup(solver, A);
+		AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL));
+		AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size +  nhalos), 1, gpu_S_phi.V));
+		AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
+		AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		
-		AMGX_solver_solve(solver, b, u);
-		AMGX_vector_download(u, gpu_phi.V);
+		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
+		AMGX_SAFE_CALL(AMGX_vector_download(u, gpu_phi.V));
 
 		//Solve for W
 		C_kernel_update_sparse_matrix(block_count, thread_count, UVW_URFactor, mesh->local_mesh_size, gpu_A_phi.W, values, rows_ptr, gpu_S_phi.W, gpu_phi.W, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_map_keys, gpu_boundary_map_values, mesh->local_cells_disp, (gpu_Face<double> *) gpu_face_fields, mesh->mesh_size);
@@ -860,13 +864,13 @@ namespace minicombust::flow
 		//wait for matrix values
 		gpuErrchk(cudaDeviceSynchronize());
 
-		AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL);
-	    	AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.W);
-		AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1);
-	    	AMGX_solver_setup(solver, A);
+		AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL));
+	    	AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.W));
+		AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
+	    	AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		
-		AMGX_solver_solve(solver, b, u);
-	    	AMGX_vector_download(u, gpu_phi.W);
+		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
+	    	AMGX_SAFE_CALL(AMGX_vector_download(u, gpu_phi.W));
 	}
 
 	template<typename T> void FlowSolver<T>::precomp_AU()
@@ -991,19 +995,19 @@ namespace minicombust::flow
 		if(first_press)
 		{
 			first_press = false;
-			AMGX_matrix_upload_all_global(pressure_A, mesh->mesh_size, mesh->local_mesh_size, cpu_nnz, 1, 1, rows_ptr, col_indices, values, NULL, 1, 1, partition_vector);
+			AMGX_SAFE_CALL(AMGX_matrix_upload_all_global(pressure_A, mesh->mesh_size, mesh->local_mesh_size, cpu_nnz, 1, 1, rows_ptr, col_indices, values, NULL, 1, 1, partition_vector));
 
 			free(partition_vector);
 
-			AMGX_vector_bind(pressure_u, pressure_A);
-			AMGX_vector_bind(pressure_b, pressure_A);
+			AMGX_SAFE_CALL(AMGX_vector_bind(pressure_u, pressure_A));
+			AMGX_SAFE_CALL(AMGX_vector_bind(pressure_b, pressure_A));
 	
 		}
 		else
 		{
-			AMGX_matrix_replace_coefficients(pressure_A, mesh->local_mesh_size, cpu_nnz, values, NULL);
+			AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(pressure_A, mesh->local_mesh_size, cpu_nnz, values, NULL));
 		}
-		AMGX_solver_setup(pressure_solver, pressure_A);
+		AMGX_SAFE_CALL(AMGX_solver_setup(pressure_solver, pressure_A));
 
 		thread_count = min((uint64_t) 256,mesh->faces_size);
 		block_count = max(1,(int) ceil((double) mesh->faces_size/(double) thread_count));
@@ -1014,11 +1018,11 @@ namespace minicombust::flow
 			cpu_Pressure_correction_max = 0.0;
 			
 			//Solve first pressure update
-			AMGX_vector_upload(pressure_b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U);
-			AMGX_vector_set_zero(pressure_u, (mesh->local_mesh_size + nhalos), 1);
+			AMGX_SAFE_CALL(AMGX_vector_upload(pressure_b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
+			AMGX_SAFE_CALL(AMGX_vector_set_zero(pressure_u, (mesh->local_mesh_size + nhalos), 1));
 		
-			AMGX_solver_solve(pressure_solver, pressure_b, pressure_u);
-			AMGX_vector_download(pressure_u, gpu_phi.PP);
+			AMGX_SAFE_CALL(AMGX_solver_solve(pressure_solver, pressure_b, pressure_u));
+			AMGX_SAFE_CALL(AMGX_vector_download(pressure_u, gpu_phi.PP));
 
 			C_kernel_find_pressure_correction_max(1, 1, &cpu_Pressure_correction_max, gpu_phi.PP, mesh->local_mesh_size);
 			//printf("max is %f\n",cpu_Pressure_correction_max);
@@ -1147,13 +1151,13 @@ namespace minicombust::flow
         //gpuErrchk(cudaMemcpy(&cpu_nnz, nnz, sizeof(int),
         //            cudaMemcpyDeviceToHost));
 
-		AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL);
-	    AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U);
-		AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1);
-	    AMGX_solver_setup(solver, A);
+		AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL));
+	    AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
+		AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
+	    AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 
-		AMGX_solver_solve(solver, b, u);
-		AMGX_vector_download(u, phi_component);
+		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
+		AMGX_SAFE_CALL(AMGX_vector_download(u, phi_component));
 	}
 
 	template<typename T> void FlowSolver<T>::set_up_field()
@@ -1265,6 +1269,7 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::timestep()
     {
+		nvtxRangePush(__FUNCTION__);
 		/*High level function to advance the flow solver one timestep.*/
         if (FLOW_SOLVER_DEBUG)  printf("\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
 
@@ -1306,29 +1311,44 @@ namespace minicombust::flow
         
 		// Note: After pointer swap, last iterations phi is now in phi.
 		//TODO: Should we be doing this?
+
+		nvtxRangePush("exchange_phi_halos");
+
 		compute_time -= MPI_Wtime();
 		exchange_phi_halos();
+		nvtxRangePop();
+
+		nvtxRangePush("get_phi_gradients");
 
 		flow_timings[0] -= MPI_Wtime();
 		get_phi_gradients();
 		flow_timings[0] += MPI_Wtime();
+		nvtxRangePop();
 
 		//C_kernel_vec_print(gpu_phi_grad.U, mesh->local_mesh_size);
 
 //		if(FLOW_SOLVER_LIMIT_GRAD)
 //			limit_phi_gradients();
+		nvtxRangePush("exchange_grad_halos");
 
 		exchange_grad_halos();
+		nvtxRangePop();
 	
+		nvtxRangePush("set_up_field");
+
 		if(timestep_count == 0)
 		{
 			set_up_field();
 			set_up_fgm_table();
 		}
+		nvtxRangePop();
 
 		compute_time += MPI_Wtime();
       
 		flow_timings[1] -= MPI_Wtime();
+
+		nvtxRangePush("update_flow_field");
+		
 		if ((timestep_count % comms_timestep) == 0)
 		{
 			gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
@@ -1346,14 +1366,24 @@ namespace minicombust::flow
                        mesh->local_mesh_size * sizeof(particle_aos<T>),
                        cudaMemcpyHostToDevice));
 		}
+		nvtxRangePop();
+
+
 		flow_timings[1] += MPI_Wtime();
 		compute_time -= MPI_Wtime();
 
 		flow_timings[2] -= MPI_Wtime();
+		nvtxRangePush("calculate_UVW");
+
 		calculate_UVW();
+		nvtxRangePop();
 		flow_timings[2] += MPI_Wtime();
 
+		nvtxRangePush("exchange_phi_halos");
+
+
 		exchange_phi_halos(); //exchange new UVW values.
+		nvtxRangePop();
 
 		//printf("We finish pressure\n");
 		MPI_Barrier(mpi_config->particle_flow_world);
@@ -1401,9 +1431,16 @@ namespace minicombust::flow
             }
         }
 */
+
+		nvtxRangePush("calculate_pressure");
+
 		flow_timings[3] -= MPI_Wtime();
 		calculate_pressure(); 
 		flow_timings[3] += MPI_Wtime();
+
+		nvtxRangePop();
+
+		nvtxRangePush("Scalar_solve");
 
 
 		flow_timings[4] -= MPI_Wtime();
@@ -1439,11 +1476,19 @@ namespace minicombust::flow
 		Scalar_solve(VARPR, gpu_phi.VARP, gpu_phi_grad.VARP);
 		flow_timings[10] += MPI_Wtime();		
 
+		nvtxRangePop();
+
+		nvtxRangePush("FGM_look_up");
+
 		fgm_lookup_time -= MPI_Wtime();
 		//Look up results from the FGM look-up table
 		FGM_look_up();
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
+
+		nvtxRangePop();
+
+
 
 	/*	if(((timestep_count + 1) % 1) == 0)
 		{
@@ -1554,5 +1599,8 @@ namespace minicombust::flow
         
 		if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
         timestep_count++;
+
+		nvtxRangePop();
+
     }
 }

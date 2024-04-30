@@ -13,6 +13,7 @@
         "convergence": "RELATIVE_INI_CORE", 
         "scope": "main", 
         "tolerance": 0.1, 
-        "norm": "L2"
+        "norm": "L2",
+	"communicator": "MPI_DIRECT"
     }
 }

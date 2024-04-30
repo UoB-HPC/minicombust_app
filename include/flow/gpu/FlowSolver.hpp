@@ -3,6 +3,11 @@
 #include "amgx_c.h"
 #include "cuda_runtime.h"
 
+#include <mpi.h>                                                                  
+#include <mpi-ext.h>                                                              
+#include <cuda_runtime_api.h>                                                     
+#include <cuda.h>    
+
 #define AMGX_SAFE_CALL(rc) \
 { \
   AMGX_RC err;     \
@@ -273,8 +278,32 @@ namespace minicombust::flow
                 cudaGetDeviceCount(&gpu_count);
                 int rank = mpi_config->particle_flow_rank;
                 int lrank = rank % gpu_count;
-                printf("Process %d selecting device %d of %d\n", rank, lrank, gpu_count);
-                cudaSetDevice(lrank);
+                // printf("Process %d selecting device %d of %d\n", rank, lrank, gpu_count);
+            //     cudaSetDevice(lrank);
+            //    cudaError_t ret1;                      
+            //    for (int i = 0; i < gpu_count; i++)                                       
+            //        ret1 = cudaDeviceEnablePeerAccess ( i, 0);  
+
+                printf("Compile time check:\n");                                              
+                #if defined(MPIX_CUDA_AWARE_SUPPORT) && MPIX_CUDA_AWARE_SUPPORT                   
+                    printf("This MPI library has CUDA-aware support.\n", MPIX_CUDA_AWARE_SUPPORT);
+                #elif defined(MPIX_CUDA_AWARE_SUPPORT) && !MPIX_CUDA_AWARE_SUPPORT                
+                    printf("This MPI library does not have CUDA-aware support.\n");               
+                #else                                                                             
+                    printf("This MPI library cannot determine if there is CUDA-aware support.\n"); 
+                #endif /* MPIX_CUDA_AWARE_SUPPORT */                                                    
+                                                                                                        
+                    printf("Run time check:\n");                                                        
+                #if defined(MPIX_CUDA_AWARE_SUPPORT)                                                    
+                    if (1 == MPIX_Query_cuda_support()) {                                               
+                        printf("This MPI library has CUDA-aware support.\n");                           
+                    } else {                                                                            
+                        printf("This MPI library does not have CUDA-aware support.\n");                 
+                    }                                                                                   
+                #else /* !defined(MPIX_CUDA_AWARE_SUPPORT) */                                           
+                    printf("This MPI library cannot determine if there is CUDA-aware support.\n");      
+                #endif /* MPIX_CUDA_AWARE_SUPPORT */      
+                                                                                        
  
 				partition_vector_size = mesh->mesh_size;
             	partition_vector = (int *)malloc(partition_vector_size * sizeof(int));
@@ -866,32 +895,32 @@ namespace minicombust::flow
 				//Create config for AMGX
 				AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 				AMGX_SAFE_CALL(AMGX_install_signal_handler());
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/home/scratch.hwaugh_gpu/repos/minicombust_app/AMGX_Solvers/FGMRES_AGGREGATION.json"));
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/AMGX_Solvers/PCGF_CLASSICAL_V_JACOBI.json"));
 				AMGX_SAFE_CALL(AMGX_config_add_parameters(&pressure_cfg, "exception_handling=1"));
 				
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "/home/scratch.hwaugh_gpu/repos/minicombust_app/AMGX_Solvers/PBICGSTAB_NOPREC.json"));
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "//lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/AMGX_Solvers/PBICGSTAB_NOPREC.json"));
                 AMGX_SAFE_CALL(AMGX_config_add_parameters(&cfg, "exception_handling=1"));	
 				
-				AMGX_resources_create(&main_rsrc, cfg,
-									  &mpi_config->particle_flow_world, 1, &lrank);
-				AMGX_resources_create(&pressure_rsrc, pressure_cfg,
-                                      &mpi_config->particle_flow_world, 1, &lrank);	
+				AMGX_SAFE_CALL(AMGX_resources_create(&main_rsrc, cfg,
+									  &mpi_config->particle_flow_world, 1, &lrank));
+				AMGX_SAFE_CALL(AMGX_resources_create(&pressure_rsrc, pressure_cfg,
+                                      &mpi_config->particle_flow_world, 1, &lrank));	
 				
 				//Create matrix and vectors for AMGX
-				AMGX_matrix_create(&A, main_rsrc, mode);
-				AMGX_vector_create(&u, main_rsrc, mode);
-				AMGX_vector_create(&b, main_rsrc, mode);
+				AMGX_SAFE_CALL(AMGX_matrix_create(&A, main_rsrc, mode));
+				AMGX_SAFE_CALL(AMGX_vector_create(&u, main_rsrc, mode));
+				AMGX_SAFE_CALL(AMGX_vector_create(&b, main_rsrc, mode));
 
-				AMGX_matrix_create(&pressure_A, pressure_rsrc, mode);
-                AMGX_vector_create(&pressure_u, pressure_rsrc, mode);
-                AMGX_vector_create(&pressure_b, pressure_rsrc, mode);
+				AMGX_SAFE_CALL(AMGX_matrix_create(&pressure_A, pressure_rsrc, mode));
+                AMGX_SAFE_CALL(AMGX_vector_create(&pressure_u, pressure_rsrc, mode));
+                AMGX_SAFE_CALL(AMGX_vector_create(&pressure_b, pressure_rsrc, mode));
 				
 				//Create solvers for AMGX
-				AMGX_solver_create(&solver, main_rsrc, mode, cfg);
-				AMGX_solver_create(&pressure_solver, pressure_rsrc, mode, cfg);
+				AMGX_SAFE_CALL(AMGX_solver_create(&solver, main_rsrc, mode, cfg));
+				AMGX_SAFE_CALL(AMGX_solver_create(&pressure_solver, pressure_rsrc, mode, cfg));
 
 
-				AMGX_config_get_default_number_of_rings(cfg, &nrings);
+				AMGX_SAFE_CALL(AMGX_config_get_default_number_of_rings(cfg, &nrings));
 
                 send_requests.push_back ( MPI_REQUEST_NULL );
                 send_requests.push_back ( MPI_REQUEST_NULL );
@@ -1255,22 +1284,22 @@ namespace minicombust::flow
 
 			void AMGX_free()
 			{
-				AMGX_solver_destroy(solver);
-				AMGX_solver_destroy(pressure_solver);
+				AMGX_SAFE_CALL(AMGX_solver_destroy(solver));
+				AMGX_SAFE_CALL(AMGX_solver_destroy(pressure_solver));
 
-				AMGX_vector_destroy(u);
-				AMGX_vector_destroy(b);
-				AMGX_vector_destroy(pressure_b);
-				AMGX_vector_destroy(pressure_u);
+				AMGX_SAFE_CALL(AMGX_vector_destroy(u));
+				AMGX_SAFE_CALL(AMGX_vector_destroy(b));
+				AMGX_SAFE_CALL(AMGX_vector_destroy(pressure_b));
+				AMGX_SAFE_CALL(AMGX_vector_destroy(pressure_u));
 
-				AMGX_matrix_destroy(A);
-				AMGX_matrix_destroy(pressure_A);
+				AMGX_SAFE_CALL(AMGX_matrix_destroy(A));
+				AMGX_SAFE_CALL(AMGX_matrix_destroy(pressure_A));
 
-				AMGX_resources_destroy(main_rsrc);
-				AMGX_resources_destroy(pressure_rsrc);
+				AMGX_SAFE_CALL(AMGX_resources_destroy(main_rsrc));
+				AMGX_SAFE_CALL(AMGX_resources_destroy(pressure_rsrc));
 
-				AMGX_config_destroy(cfg);
-				AMGX_config_destroy(pressure_cfg);
+				AMGX_SAFE_CALL(AMGX_config_destroy(cfg));
+				AMGX_SAFE_CALL(AMGX_config_destroy(pressure_cfg));
 			}
 			
             void resize_send_buffers_nodes_arrays (uint64_t elements)

@@ -23,7 +23,7 @@ ifdef CUDA_INSTALL_PATH
 	NVCC := nvcc
 	NVFLAGS := -forward-unknown-to-host-compiler -fopenmp --extended-lambda -pg -g -O0 -gencode arch=compute_90,code=sm_90
 	INC += -I$(CUDA_INSTALL_PATH)/include
-	LIB += -L$(CUDA_INSTALL_PATH)/lib64 -lcudart
+	LIB += -L$(CUDA_INSTALL_PATH)/lib64 -lcudart -lnvToolsExt
 endif
 
 ifdef PETSC_INSTALL_PATH

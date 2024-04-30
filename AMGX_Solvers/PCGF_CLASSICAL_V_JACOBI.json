@@ -30,6 +30,7 @@
         "convergence": "ABSOLUTE", 
         "scope": "main", 
         "tolerance": 1e-06, 
-        "norm": "L2"
+        "norm": "L2",
+	"communicator": "MPI_DIRECT"
     }
 }
