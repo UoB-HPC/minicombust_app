@@ -55,18 +55,22 @@ int main (int argc, char ** argv)
 	//TODO:sort out vtk_output.
 	//TODO:ideal flow tanks seem to cause a segfault
 
-    int gpu_count = 0;
+    // int gpu_count = cudaGetDeviceCount(&gpu_count);
     char *buf = getenv("OMPI_COMM_WORLD_LOCAL_RANK");
     int lrank = atoi(buf); 
+    buf = getenv("OMPI_COMM_WORLD_SIZE");
+    int lsize = atoi(buf); 
+    buf = getenv("MINICOMBUST_GPUS");
+    int gpu_count = atoi(buf); 
 
 
     cudaFree(0);
-    if (lrank > 0) 
+    if (lrank > (lsize-gpu_count-1)) 
     {
         // int cuda_dev = lrank - 104;
         int cuda_dev = 0;
         gpuErrchk( cudaSetDevice(cuda_dev));
-        gpuErrchk( cudaGetDeviceCount(&gpu_count));
+        // gpuErrchk( );
         printf("Process %d selecting device %d of %d\n", lrank, cuda_dev, gpu_count);
     }
 

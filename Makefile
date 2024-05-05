@@ -19,7 +19,7 @@ endif
 
 ifdef CUDA_INSTALL_PATH
 	CC := nvcc
-	CFLAGS := -fopenmp -pg -g -G -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+	CFLAGS := -fopenmp --generate-line-info  -pg -g -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O0 -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 	NVCC := nvcc
 	NVFLAGS := -forward-unknown-to-host-compiler -fopenmp --extended-lambda -pg -g -O0 -gencode arch=compute_90,code=sm_90
 	INC += -I$(CUDA_INSTALL_PATH)/include

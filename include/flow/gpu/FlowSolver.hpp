@@ -103,9 +103,9 @@ namespace minicombust::flow
 			T inlet_effective_viscosity;
 
 			//GPU stuff
-			phi_vector<T>        gpu_phi;
 			phi_vector<T>	     gpu_A_phi;
 			phi_vector<T>	     gpu_S_phi;
+			phi_vector<T>        gpu_phi;
 			phi_vector<vec<T>>   gpu_phi_grad;
 			Face<uint64_t>	     *gpu_faces;
 			uint64_t		     *gpu_cell_faces;
@@ -127,8 +127,6 @@ namespace minicombust::flow
 			int					 *gpu_halo_ranks;
 			int					 *gpu_halo_sizes;
 			int					 *gpu_halo_disps;
-			MPI_Datatype		 *gpu_halo_mpi_vec_double_datatypes;
-			MPI_Datatype		 *gpu_halo_mpi_double_datatypes;
 			double				 *gpu_fgm_table;
 
 			int partition_vector_size;
@@ -209,6 +207,10 @@ namespace minicombust::flow
             vector<MPI_Datatype> halo_mpi_vec_double_datatypes;
             vector<vector<uint64_t>> halo_rank_recv_indexes;
             unordered_map<uint64_t, uint64_t> boundary_map;
+
+            vector<uint64_t*>            gpu_halo_indexes;
+            vector<phi_vector<T>>        gpu_phi_send_buffers;
+			vector<phi_vector<vec<T>>>   gpu_phi_grad_send_buffers;
 
             MPI_Request bcast_request;
             vector<MPI_Status>  statuses;
@@ -323,7 +325,7 @@ namespace minicombust::flow
                 send_buffers_node_index_array_size   = max_storage * sizeof(uint64_t);
                 send_buffers_node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
 
-                async_locks = (bool*)malloc((4 * mesh->num_blocks)+1 * sizeof(bool));
+                async_locks = (bool*)malloc((4 * particle_ranks + 1) * sizeof(bool));
                 
                 send_counts    =              (uint64_t*) malloc(mesh->num_blocks * sizeof(uint64_t));
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
@@ -698,8 +700,8 @@ namespace minicombust::flow
 				cudaMalloc(&gpu_halo_ranks, halo_ranks.size() * sizeof(int));
 				cudaMalloc(&gpu_halo_sizes, halo_sizes.size() * sizeof(int));
 				cudaMalloc(&gpu_halo_disps, halo_disps.size() * sizeof(int));
-				cudaMalloc(&gpu_halo_mpi_double_datatypes, halo_mpi_double_datatypes.size() * sizeof(MPI_Datatype));
-				cudaMalloc(&gpu_halo_mpi_vec_double_datatypes, halo_mpi_vec_double_datatypes.size() * sizeof(MPI_Datatype));
+				// cudaMalloc(&gpu_halo_mpi_double_datatypes, halo_mpi_double_datatypes.size() * sizeof(MPI_Datatype));
+				// cudaMalloc(&gpu_halo_mpi_vec_double_datatypes, halo_mpi_vec_double_datatypes.size() * sizeof(MPI_Datatype));
 
 				//async_locks = (bool*)malloc(halo_ranks.size() * sizeof(bool));
 
@@ -801,15 +803,15 @@ namespace minicombust::flow
 				tmp = &halo_disps[0];
 				cudaMemcpy(gpu_halo_disps, tmp, halo_disps.size() * sizeof(int),
 						   cudaMemcpyHostToDevice);
-				MPI_Datatype* type_tmp;
-				type_tmp = &halo_mpi_double_datatypes[0];
-				cudaMemcpy(gpu_halo_mpi_double_datatypes, type_tmp, 
-						   halo_mpi_double_datatypes.size() * sizeof(MPI_Datatype),
-						   cudaMemcpyHostToDevice);
-				type_tmp = &halo_mpi_vec_double_datatypes[0];
-				cudaMemcpy(gpu_halo_mpi_vec_double_datatypes, type_tmp,
-						   halo_mpi_vec_double_datatypes.size() * sizeof(MPI_Datatype),
-						   cudaMemcpyHostToDevice);
+				// MPI_Datatype* type_tmp;
+				// type_tmp = &halo_mpi_double_datatypes[0];
+				// cudaMemcpy(gpu_halo_mpi_double_datatypes, type_tmp, 
+				// 		   halo_mpi_double_datatypes.size() * sizeof(MPI_Datatype),
+				// 		   cudaMemcpyHostToDevice);
+				// type_tmp = &halo_mpi_vec_double_datatypes[0];
+				// cudaMemcpy(gpu_halo_mpi_vec_double_datatypes, type_tmp,
+				// 		   halo_mpi_vec_double_datatypes.size() * sizeof(MPI_Datatype),
+				// 		   cudaMemcpyHostToDevice);
 
                 cudaMalloc(&gpu_phi_grad.U, phi_grad_array_size);
                 cudaMalloc(&gpu_phi_grad.V, phi_grad_array_size);
@@ -862,7 +864,7 @@ namespace minicombust::flow
 					full_boundary_map_values[map_index] = n.second;
 					map_index++;
 				}
-
+                printf()
 				cudaMemcpy(gpu_boundary_map_keys, full_boundary_map_keys,
 							boundary_map.size() * sizeof(uint64_t), 
 							cudaMemcpyHostToDevice);
@@ -1126,7 +1128,6 @@ namespace minicombust::flow
                     process_halo_neighbour(unique_neighbours, around_front_neighbour);      // Immediate neighbour cell indexes are correct   
                     process_halo_neighbour(unique_neighbours, around_back_neighbour);       // Immediate neighbour cell indexes are correct   
 
-
 					//TODO: do we need this bit I don't think we need it.
                     // Get 8 cells neighbours around
                     if ( around_left_neighbour != MESH_BOUNDARY  )   // If neighbour isn't edge of mesh and isn't a halo cell
@@ -1221,17 +1222,18 @@ namespace minicombust::flow
 
                 MPI_Status status;
                 int buff_size = halo_rank_recv_indexes[0].size() + 1;
-                int      *buffer      = (int *)      malloc(buff_size * sizeof(int));
+                int *buffer           = (int *)      malloc(buff_size * sizeof(int));
                 uint64_t *uint_buffer = (uint64_t *) malloc(buff_size * sizeof(uint64_t));
                 for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
                 {
                     int num_indexes;
                     MPI_Probe (halo_ranks[r], 0, mpi_config->particle_flow_world, &status );
                     MPI_Get_count( &status, MPI_UINT64_T, &num_indexes );
+
                     if ( num_indexes > buff_size )
                     {
                         buff_size = num_indexes;
-                        buffer      = (int *)      realloc(buffer,      (buff_size + 1) * sizeof(int));
+                        buffer      = (int *)      realloc(buffer, (buff_size + 1) * sizeof(int));
                         uint_buffer = (uint64_t *) realloc(uint_buffer, (buff_size + 1) * sizeof(uint64_t));
                     }
 
@@ -1239,9 +1241,48 @@ namespace minicombust::flow
 
                     for (int i = 0; i < num_indexes; i++)
                     {
-                        buffer[i] = (int)(uint_buffer[i] - mesh->local_cells_disp); 
+                        buffer[i]      = (int)(uint_buffer[i] - mesh->local_cells_disp); 
+                        uint_buffer[i] = uint_buffer[i] - mesh->local_cells_disp; 
                     }
+                    uint64_t *tmp;
+                    cudaMalloc((void**)&tmp, sizeof(uint64_t) * num_indexes);
+                    cudaMemcpy(tmp, uint_buffer, num_indexes * sizeof(uint64_t), cudaMemcpyHostToDevice);
+                    gpu_halo_indexes.push_back(tmp);
 
+                    phi_vector<T> phi_tmp;
+                    phi_vector<vec<T>> phi_grad_tmp;
+
+                    cudaMalloc(&phi_tmp.U,         sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.V,         sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.W,         sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.P,         sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.PP,        sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.TE,        sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.ED,        sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.TP,        sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.TEM,       sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.FUL,       sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.PRO,       sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.VARF,      sizeof(T) * num_indexes);
+                    cudaMalloc(&phi_tmp.VARP,      sizeof(T) * num_indexes);
+
+                    cudaMalloc(&phi_grad_tmp.U,    sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.V,    sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.W,    sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.P,    sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.PP,   sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.TE,   sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.ED,   sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.TEM,  sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.FUL,  sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.PRO,  sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.VARF, sizeof(vec<T>) * num_indexes);
+                    cudaMalloc(&phi_grad_tmp.VARP, sizeof(vec<T>) * num_indexes);
+
+                    gpu_phi_send_buffers.push_back(phi_tmp);
+                    gpu_phi_grad_send_buffers.push_back(phi_grad_tmp);
+
+                    // GPU
                     MPI_Datatype indexed_type, vec_indexed_type;
                     MPI_Type_create_indexed_block(num_indexes, 1, buffer, MPI_DOUBLE,                    &indexed_type);
                     MPI_Type_create_indexed_block(num_indexes, 1, buffer, mpi_config->MPI_VEC_STRUCTURE, &vec_indexed_type);
@@ -1255,6 +1296,7 @@ namespace minicombust::flow
                 halo_rank_recv_indexes.clear();
 
                 free(buffer);
+                free(uint_buffer);
             }
 
 

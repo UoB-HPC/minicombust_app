@@ -2,6 +2,7 @@
 #include "particles/ParticleSolver.hpp"
 #include "visit/VisitWriter.hpp"
 
+#include <nvToolsExt.h>
 
 
 namespace minicombust::particles 
@@ -488,6 +489,8 @@ namespace minicombust::particles
     template<class T> 
     void ParticleSolver<T>::timestep()
     {
+		nvtxRangePush(__FUNCTION__);
+
         static int count = 0;
         const int  comms_timestep = 1;
 
@@ -522,22 +525,34 @@ namespace minicombust::particles
 
 		particle_timing[0] -= MPI_Wtime();
 		compute_time -= MPI_Wtime();
+		nvtxRangePush("particle_release");
         particle_release();
+		nvtxRangePop();
 		compute_time += MPI_Wtime();
 		particle_timing[0] += MPI_Wtime();
 
 		particle_timing[1] -= MPI_Wtime();
         if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
+        {
+            nvtxRangePush("update_flow_field");
             update_flow_field();
+		    nvtxRangePop();
+
+
+        }
 		particle_timing[1] += MPI_Wtime();        
 
 		particle_timing[2] -= MPI_Wtime();
 		compute_time -= MPI_Wtime();
+        nvtxRangePush("solve_spray_equations");
         solve_spray_equations();
+        nvtxRangePop();
 		particle_timing[2] += MPI_Wtime();
 
 		particle_timing[3] -= MPI_Wtime();
+        nvtxRangePush("update_particle_positions");
         update_particle_positions();
+        nvtxRangePop();
 		compute_time += MPI_Wtime();
 		particle_timing[3] += MPI_Wtime();
         logger.avg_particles += (double)particles.size() / (double)num_timesteps;
@@ -562,6 +577,7 @@ namespace minicombust::particles
         }
 
         count++;
+		nvtxRangePop();
 
         if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("Rank %d: Stop particle timestep\n", mpi_config->rank);
     }
