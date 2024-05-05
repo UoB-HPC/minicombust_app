@@ -31,9 +31,9 @@ fi
 if [ $OMPI_COMM_WORLD_RANK -gt $(( OMPI_COMM_WORLD_SIZE-2 ))  ]; then
 	outfile="MINICOMBUST_RANKS$MINICOMBUST_RANKS-MINICOMBUST_GPUS$MINICOMBUST_GPUS-MINICOMBUST_CELLS$MINICOMBUST_CELLS-MINICOMBUST_PARTICLES-$MINICOMBUST_PARTICLES-MINICOMBUST_ITERS$MINICOMBUST_ITERS"
   prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$OMPI_COMM_WORLD_RANK.log " 
-  prof_cmd="" 
-  prof_cmd="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --cpuctxsw=none --trace=osrt,openacc,cuda,nvtx,mpi --force-overwrite=true -o $outfile " 
   prof_cmd="ncu -f --set full  --kernel-name kernel_get_phi_gradient --launch-count 1 --launch-skip 6 -o $outfile " 
+  prof_cmd="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --cpuctxsw=none --trace=osrt,openacc,cuda,nvtx,mpi --force-overwrite=true -o $outfile " 
+  prof_cmd="" 
 	echo "prof_cmd:  $prof_cmd"
 	echo "cmd:  $prof_cmd"
 	echo ""

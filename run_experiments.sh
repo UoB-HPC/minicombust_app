@@ -2,15 +2,15 @@
 
 export LD_LIBRARY_PATH=/lustre/fsw/coreai_devtech_all/hwaugh/repos/AMGX/install/lib/:$LD_LIBRARY_PATH
 
-for x in {2,1}
+for x in {1,2,4,8}
 do
 	echo "RUNNING EXPERIMENT with $x GPUS"
 	export MINICOMBUST_GPUS=$x
 	export MINICOMBUST_RANKS=112
 	export MINICOMBUST_PRANKS=$(( MINICOMBUST_RANKS - MINICOMBUST_GPUS ))
 	export MINICOMBUST_CELLS=241
-	export MINICOMBUST_PARTICLES=8000
-	export MINICOMBUST_ITERS=5
+	export MINICOMBUST_PARTICLES=80000
+	export MINICOMBUST_ITERS=100
 
 	echo ""	
   	echo "MINICOMBUST_GPUS      $MINICOMBUST_GPUS "

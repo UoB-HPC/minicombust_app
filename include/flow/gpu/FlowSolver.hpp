@@ -3,10 +3,8 @@
 #include "amgx_c.h"
 #include "cuda_runtime.h"
 
-#include <mpi.h>                                                                  
-#include <mpi-ext.h>                                                              
-#include <cuda_runtime_api.h>                                                     
-#include <cuda.h>    
+// #include <cuco/detail/static_map/static_map_ref.inl>
+#include "flow/gpu/gpu_kernels.cuh"
 
 #define AMGX_SAFE_CALL(rc) \
 { \
@@ -109,6 +107,7 @@ namespace minicombust::flow
 			phi_vector<vec<T>>   gpu_phi_grad;
 			Face<uint64_t>	     *gpu_faces;
 			uint64_t		     *gpu_cell_faces;
+			uint64_t		     *gpu_boundary_map;
 			uint64_t		     *gpu_boundary_map_keys;
 			uint64_t		     *gpu_boundary_map_values;
 			vec<T>   		     *gpu_face_centers;
@@ -692,6 +691,7 @@ namespace minicombust::flow
 				cudaMalloc(&gpu_boundary_types, 6 * sizeof(uint64_t));
 				cudaMalloc(&gpu_face_lambdas, face_lambdas_array_size);
 				cudaMalloc(&gpu_face_normals, face_normals_array_size);
+				cudaMalloc(&gpu_boundary_map, mesh->mesh_size * sizeof(uint64_t));
 				cudaMalloc(&gpu_boundary_map_keys, boundary_map.size() * sizeof(uint64_t));
 				cudaMalloc(&gpu_boundary_map_values, boundary_map.size() * sizeof(uint64_t));
 				cudaMalloc(&gpu_face_areas, face_areas_array_size);
@@ -864,7 +864,7 @@ namespace minicombust::flow
 					full_boundary_map_values[map_index] = n.second;
 					map_index++;
 				}
-                printf()
+
 				cudaMemcpy(gpu_boundary_map_keys, full_boundary_map_keys,
 							boundary_map.size() * sizeof(uint64_t), 
 							cudaMemcpyHostToDevice);
@@ -874,6 +874,14 @@ namespace minicombust::flow
 
 				free(full_boundary_map_keys);
 				free(full_boundary_map_values);
+
+                if (boundary_map.size() != 0)
+                {
+                    int thread_count = min( (int) 32, (int)boundary_map.size());
+                    int block_count  = max(1, (int) ceil((double) (boundary_map.size()) / (double) thread_count));
+                    C_create_map(block_count, thread_count, gpu_boundary_map, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size());
+		            gpuErrchk( cudaPeekAtLastError() );
+                }
 
 				//cell centers to gpu
 				full_cell_centers = (vec<T> *) malloc(mesh->mesh_size * sizeof(vec<T>));
