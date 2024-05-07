@@ -1,6 +1,6 @@
 ## Compilers and Flags
 CC := mpicxx
-CFLAGS := -fopenmp -g -G -Wall -Wextra -std=c++2a -O0 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+CFLAGS := -fopenmp -g -G -Wall -Wextra -std=c++2a -O3 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 
 LIB := -Lbuild/
 INC := -Iinclude/
@@ -19,7 +19,7 @@ endif
 
 ifdef CUDA_INSTALL_PATH
 	CC := nvcc
-	CFLAGS := --expt-relaxed-constexpr --expt-extended-lambda -fopenmp --generate-line-info  -pg -g -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O0 -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion --expt-relaxed-constexpr --expt-extended-lambda
+	CFLAGS := --expt-relaxed-constexpr --expt-extended-lambda -fopenmp --generate-line-info  -pg -g -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O3 -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion --expt-relaxed-constexpr --expt-extended-lambda
 	NVCC := nvcc
 	NVFLAGS := --expt-relaxed-constexpr --expt-extended-lambda -forward-unknown-to-host-compiler -fopenmp --extended-lambda -pg -g -O0 -gencode arch=compute_90,code=sm_90 
 	INC += -I$(CUDA_INSTALL_PATH)/include -IcuCollections/include/

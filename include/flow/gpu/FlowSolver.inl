@@ -551,6 +551,8 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::update_flow_field()
     {
+		nvtxRangePush("Waiting time: update_flow_field");
+
 		//TODO: we should collect the correct temp values and maybe the grad values.
 		/*Collect and send cell values to particle solve and receive
 		  values from particle solve.*/
@@ -561,6 +563,8 @@ namespace minicombust::flow
         new_cells_set.clear();
         ranks.clear();
 
+		// memset(mesh->particle_terms,         0, sizeof(particle_aos<T>)*mesh->local_mesh_size);
+		cudaMemset(gpu_particle_terms, 0, sizeof(particle_aos<T>)*mesh->local_mesh_size);
         for (uint64_t i = 0; i < local_particle_node_sets.size(); i++)
         {
             local_particle_node_sets[i].clear();
@@ -579,6 +583,7 @@ namespace minicombust::flow
         int message_waiting = 0;
         MPI_Iprobe(MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
 
+		bool first_msg_recv        = false;
         bool  all_processed        = false;
         bool *processed_neighbours = async_locks;
         while(!all_processed)
@@ -586,6 +591,16 @@ namespace minicombust::flow
             time0 -= MPI_Wtime(); //1
             if ( message_waiting )
             {
+
+				if (!first_msg_recv)
+				{
+					nvtxRangePop();
+					nvtxRangePush("nowait_update_flow_field ");
+					nvtxRangePush("update_flow::loop1_recv_get_neighbours");
+					first_msg_recv = true;
+				}
+				
+
                 uint64_t rank_slot = ranks.size();
                 ranks.push_back(statuses[rank_slot].MPI_SOURCE);
                 MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
@@ -614,12 +629,19 @@ namespace minicombust::flow
                     neighbour_indexes.push_back((uint64_t*)         malloc(cell_index_array_size.back()));
                     cell_particle_aos.push_back((particle_aos<T> * )malloc(cell_particle_array_size.back()));
 
+					uint64_t *cuda_pointer_tmp;
+					particle_aos<T> *cuda_pointer_tmp2;
+					cudaMalloc(&cuda_pointer_tmp,  cell_index_array_size.back());
+					cudaMalloc(&cuda_pointer_tmp2, cell_particle_array_size.back());
+					gpu_neighbour_indexes.push_back(cuda_pointer_tmp);
+					gpu_cell_particle_aos.push_back(cuda_pointer_tmp2);
+
                     local_particle_node_sets.push_back(unordered_set<uint64_t>());
                 }
                 message_waiting = 0;
                 MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
                 continue;
-             }
+			}
 
             time0 += MPI_Wtime(); //1
             time1 -= MPI_Wtime(); //1
@@ -653,6 +675,7 @@ namespace minicombust::flow
 			time2 += MPI_Wtime(); //1
         }
 
+
         logger.reduced_recieved_cells += new_cells_set.size();
 
         if ( FLOW_SOLVER_DEBUG ) printf("\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
@@ -667,9 +690,15 @@ namespace minicombust::flow
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //4
-        
+		nvtxRangePush("update_flow::finish_memcpy");
+		// Synchronize with default stream to make sure phi data is on CPU
+		cudaStreamSynchronize(0);
+		nvtxRangePop();
+		nvtxRangePush("update_flow::interpolate_to_nodes");
         interpolate_to_nodes ();
+		nvtxRangePop();
 
+		nvtxRangePush("update_flow::pack_and_post_buffers");
         // Send size of reduced neighbours of cells back to ranks.
         uint64_t neighbour_point_size = node_to_position_map.size();
 
@@ -710,6 +739,7 @@ namespace minicombust::flow
 
             recv_time2  += MPI_Wtime();
         }
+		nvtxRangePop();
         
         recv_time3  -= MPI_Wtime();
 
@@ -728,14 +758,25 @@ namespace minicombust::flow
 
                 if ( recieved_indexes && !processed_neighbours[p] )
                 {
-                    if ( FLOW_SOLVER_DEBUG )  printf("\tFlow block %d: Processing %d cell fields from %d .\n", mpi_config->particle_flow_rank, elements[p], ranks[p]);
-                    for (int i = 0; i < elements[p]; i++)
-                    {
-                        mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].momentum += cell_particle_aos[p][i].momentum;
-                        mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].energy   += cell_particle_aos[p][i].energy;
-                        mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].fuel     += cell_particle_aos[p][i].fuel;
-                    }
+            		gpuErrchk(cudaMemcpyAsync(gpu_neighbour_indexes[p], neighbour_indexes[p], elements[p]*sizeof(uint64_t),        cudaMemcpyHostToDevice, (cudaStream_t) 0));
+            		gpuErrchk(cudaMemcpyAsync(gpu_cell_particle_aos[p], cell_particle_aos[p], elements[p]*sizeof(particle_aos<T>), cudaMemcpyHostToDevice, (cudaStream_t) 0));
+					
+
+					int thread_count = min(32, max(1, elements[p]));
+					int block_count = max(1,(int) ceil((double) elements[p] / (double) thread_count));
+
+					C_kernel_process_particle_fields(block_count, thread_count, gpu_neighbour_indexes[p], gpu_cell_particle_aos[p], gpu_particle_terms, elements[p], mesh->local_cells_disp);
+					gpuErrchk( cudaPeekAtLastError() );
+
+                    // if ( FLOW_SOLVER_DEBUG )  printf("\tFlow block %d: Processing %d cell fields from %d .\n", mpi_config->particle_flow_rank, elements[p], ranks[p]);
+                    // for (int i = 0; i < elements[p]; i++)
+                    // {
+                    //     mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].momentum += cell_particle_aos[p][i].momentum;
+                    //     mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].energy   += cell_particle_aos[p][i].energy;
+                    //     mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].fuel     += cell_particle_aos[p][i].fuel;
+                    // }
 					//printf("p is %lu\n",p);
+
                     processed_cell_fields[p] = true;
                 }
 				//printf("p is %lu\n",p);
@@ -744,13 +785,20 @@ namespace minicombust::flow
             if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
         }
 
+		// memcpys back to GPU.
+		// gpuErrchk(cudaMemcpy(gpu_particle_terms, mesh->particle_terms,
+        //                mesh->local_mesh_size * sizeof(particle_aos<T>),
+        //                cudaMemcpyHostToDevice));
+
+        MPI_Barrier(mpi_config->particle_flow_world);
+
+		nvtxRangePop();
         recv_time3 += MPI_Wtime();
 
-        MPI_Waitall(send_requests.size() - 2, send_requests.data(), MPI_STATUSES_IGNORE); // Check field values later on!
+        // MPI_Waitall(send_requests.size() - 2, send_requests.data(), MPI_STATUSES_IGNORE); // Check field values later on!
 
         if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Processed cell particle fields .\n", mpi_config->rank);
 
-        MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //6
 
@@ -824,6 +872,8 @@ namespace minicombust::flow
         gpuErrchk(cudaMemset(full_data_bPR, 0.0, 3 * sizeof(T)));
         gpuErrchk(cudaMemset(full_data_bVFU, 0.0, 3 * sizeof(T)));
         gpuErrchk(cudaMemset(full_data_bVPR, 0.0, 3 * sizeof(T)));*/
+
+
 
 		//generate all the data arrays
 		C_kernel_get_phi_gradients(block_count, thread_count, gpu_phi, gpu_phi_grad, mesh->local_mesh_size, mesh->local_cells_disp, mesh->faces_per_cell, (gpu_Face<uint64_t> *) gpu_faces, gpu_cell_faces, gpu_cell_centers, mesh->mesh_size, gpu_boundary_map, gpu_boundary_map_values, boundary_map.size(), gpu_face_centers, nhalos);
@@ -1433,27 +1483,17 @@ namespace minicombust::flow
       
 		flow_timings[1] -= MPI_Wtime();
 
-		nvtxRangePush("update_flow_field");
 		
 		if ((timestep_count % comms_timestep) == 0)
 		{
-			gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
-					   cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
-                       cudaMemcpyDeviceToHost));  
+			gpuErrchk(cudaMemcpyAsync(phi.U, gpu_phi.U,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0)); // Asynchronous memcpy to default stream
+            gpuErrchk(cudaMemcpyAsync(phi.V, gpu_phi.V,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+            gpuErrchk(cudaMemcpyAsync(phi.W, gpu_phi.W,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+            gpuErrchk(cudaMemcpyAsync(phi.P, gpu_phi.P,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+            gpuErrchk(cudaMemcpyAsync(phi.TEM, gpu_phi.TEM, phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));  
             update_flow_field();
-			gpuErrchk(cudaMemcpy(gpu_particle_terms, mesh->particle_terms,
-                       mesh->local_mesh_size * sizeof(particle_aos<T>),
-                       cudaMemcpyHostToDevice));
+			
 		}
-		nvtxRangePop();
-
 
 		flow_timings[1] += MPI_Wtime();
 		compute_time -= MPI_Wtime();

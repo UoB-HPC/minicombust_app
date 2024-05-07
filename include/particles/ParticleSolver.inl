@@ -112,6 +112,8 @@ namespace minicombust::particles
     {
         performance_logger.my_papi_start();
 
+        nvtxRangePush("Particle update_flow_field");
+
         active_blocks.clear();
 
         double avg_sent_cells  = 0.;
@@ -211,6 +213,7 @@ namespace minicombust::particles
                 logger.nodes_recieved += neighbours_size[block_id];
                 int active_block_index = find(active_blocks.begin(), active_blocks.end(), block_id) - active_blocks.begin(); 
 
+                if (mpi_config->rank == 0) printf( "Recving %d node values from %lu. Particles size %lu\n", neighbours_size[block_id], send_rank, particles.size() );
                 if ( PARTICLE_SOLVER_DEBUG )  printf("\tRank %d: Posted %d recieves (ptr %p) for flow block %lu (slots %d %ld max %ld) .\n", mpi_config->rank, neighbours_size[block_id], all_interp_node_indexes[block_id], block_id, active_block_index, active_block_index + active_blocks.size(), recv_requests.size() );
                 MPI_Irecv ( all_interp_node_indexes[block_id],     neighbours_size[block_id], MPI_UINT64_T,                   send_rank, 0, mpi_config->world, &recv_requests[active_block_index] );
                 MPI_Irecv ( all_interp_node_flow_fields[block_id], neighbours_size[block_id], mpi_config->MPI_FLOW_STRUCTURE, send_rank, 1, mpi_config->world, &recv_requests[active_block_index + active_blocks.size()] );
@@ -266,6 +269,9 @@ namespace minicombust::particles
 
         MPI_Waitall( recv_requests.size(), recv_requests.data(), MPI_STATUSES_IGNORE);
 
+        nvtxRangePop();
+
+
         logger.useful_nodes_proportion += node_to_field_address_map.size();
         
         // MPI_Barrier(mpi_config->world);
@@ -304,6 +310,7 @@ namespace minicombust::particles
         const uint64_t particles_size  = particles.size(); 
 
         performance_logger.my_papi_start();
+        nvtxRangePush("solve_spray::interpolation");
         
 		// Solve spray equations
         #pragma ivdep
@@ -365,6 +372,10 @@ namespace minicombust::particles
         performance_logger.my_papi_stop(performance_logger.particle_interpolation_event_counts, &performance_logger.particle_interpolation_time);
         performance_logger.my_papi_start();
 
+        nvtxRangePop();
+        nvtxRangePush("solve_spray::main");
+
+
         vector<uint64_t> decayed_particles;
         #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
@@ -376,6 +387,10 @@ namespace minicombust::particles
 			}
         }
 
+        nvtxRangePop();
+        nvtxRangePush("solve_spray::decayed");
+
+
         const uint64_t decayed_particles_size = decayed_particles.size();
 		#pragma ivdep
         for (int128_t i = decayed_particles_size - 1; i >= 0; i--)
@@ -383,6 +398,8 @@ namespace minicombust::particles
             particles[decayed_particles[i]] = particles.back();
             particles.pop_back();
         }
+        nvtxRangePop();
+
 
         performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_time);
     }
@@ -534,11 +551,7 @@ namespace minicombust::particles
 		particle_timing[1] -= MPI_Wtime();
         if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
         {
-            nvtxRangePush("update_flow_field");
             update_flow_field();
-		    nvtxRangePop();
-
-
         }
 		particle_timing[1] += MPI_Wtime();        
 

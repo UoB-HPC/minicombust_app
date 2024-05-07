@@ -137,6 +137,18 @@ __global__ void kernel_create_map(uint64_t *map, uint64_t *keys, uint64_t *value
 
 }
 
+__global__ void kernel_process_particle_fields(uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp)
+{
+	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
+	if (tid >= num_fields) return;
+	
+	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.x += sent_particle_fields[tid].momentum.x;
+	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.y += sent_particle_fields[tid].momentum.y;
+	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.z += sent_particle_fields[tid].momentum.z;
+	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].energy     += sent_particle_fields[tid].energy;
+	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].fuel       += sent_particle_fields[tid].fuel;
+
+}
 
 __global__ void kernel_pack_phi_halo_buffer(phi_vector<double> send_buffer, phi_vector<double> phi, uint64_t *indexes, uint64_t buf_size)
 {
@@ -202,7 +214,7 @@ __global__ void kernel_pack_PP_grad_halo_buffer(phi_vector<vec<double>> send_buf
 
 // __global__ __launch_bounds__(256, MIN_BLOCKS_PER_MP)
 
-__global__ void kernel_get_phi_gradient(double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, vec<double> *grad_component)
+__global__ void kernel_get_phi_gradient(double *phi_component, bool pressure_solve, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, vec<double> *grad_component)
 {
     const uint64_t block_cell = (blockIdx.x * blockDim.x) + threadIdx.x;
     if(block_cell >= local_mesh_size) return;
@@ -253,10 +265,18 @@ __global__ void kernel_get_phi_gradient(double *phi_component, uint64_t local_me
         }
         else  //boundary face
         {
-            //const uint64_t boundary_cell = faces[face].cell1 - mesh_size;
+            const uint64_t boundary_cell = faces[face].cell1 - mesh_size;
+
+			if (pressure_solve)
+			{
+            	dphi = 0.0;
+			}
+			else
+			{
+				dphi = phi_component[local_mesh_size + nhalos + boundary_cell] - phi_component[block_cell0];
+			}
 
 			//We only ever single compute a pressure grad.
-            dphi = 0.0;
 
             dX.x = face_centers[face].x - cell_centers[faces[face].cell0].x;
             dX.y = face_centers[face].y - cell_centers[faces[face].cell0].y;
@@ -2106,7 +2126,35 @@ void C_kernel_precomp_AU(int block_count, int thread_count, uint64_t faces_size,
 
 void C_kernel_get_phi_gradients(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos)
 { 
-	kernel_get_phi_gradients<<<block_count,thread_count>>>(phi, phi_grad, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos);
+
+	size_t free, total;
+	cudaMemGetInfo( &free, &total );
+
+	if (free < 0 )
+	// if (free < 2'000'000'000 )
+	{
+		printf("Warning: Operating on phi gradients to reduce memory. This is a hack and should be removed.\n");
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.U, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.U);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.V, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.V);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.W, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.W);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.P, true,  local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.P);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.TE, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.TE);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.ED, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.ED);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.TEM, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.TEM);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.FUL, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.FUL);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.PRO, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.PRO);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.VARF, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.VARF);
+		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.VARP, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.VARP);
+
+	}
+	else
+	{
+		kernel_get_phi_gradients<<<block_count,thread_count>>>(phi, phi_grad, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos);
+	}
+
+
+
+
 }
 
 void C_kernel_calculate_flux_UVW(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, phi_vector<double> A_phi, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel, double effective_viscosity, double *face_rlencos, double inlet_effective_viscosity, double *face_areas)
@@ -2213,7 +2261,7 @@ void C_kernel_Update_P_at_boundaries(int block_count, int thread_count, uint64_t
 
 void C_kernel_get_phi_gradient(int block_count, int thread_count, double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, vec<double> *grad_component)
 {
-	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi_component, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, grad_component);
+	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi_component, true, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, grad_component);
 }
 
 void C_kernel_update_vel_and_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<double> *face_fields, uint64_t mesh_size, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> phi, double *cell_volumes, phi_vector<vec<double>> phi_grad, int timestep_count) 
@@ -2282,6 +2330,10 @@ void C_create_map(int block_count, int thread_count, uint64_t *boundary_map,  ui
 	kernel_create_map<<<block_count, thread_count>>>(boundary_map, gpu_keys, gpu_values, size);
 }
 
+void C_kernel_process_particle_fields(uint64_t block_count, int thread_count, uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp)
+{
+	kernel_process_particle_fields<<<block_count, thread_count>>>(sent_cell_indexes, sent_particle_fields, particle_fields, num_fields, local_mesh_disp);
+}
 
 // void C_create_cuco_map(int block_count, int thread_count, uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size)
 // {

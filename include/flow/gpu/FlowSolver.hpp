@@ -60,6 +60,9 @@ namespace minicombust::flow
             vector<uint64_t *>        neighbour_indexes;
             vector<particle_aos<T> *> cell_particle_aos;
 
+            vector<uint64_t *>        gpu_neighbour_indexes;
+            vector<particle_aos<T> *> gpu_cell_particle_aos;
+
             T turbulence_field;
             T combustion_field;
             T flow_field;
@@ -309,7 +312,7 @@ namespace minicombust::flow
 				partition_vector_size = mesh->mesh_size;
             	partition_vector = (int *)malloc(partition_vector_size * sizeof(int));
 
-                const float fraction  = 0.125;
+                const float fraction  = 0.000125;
                 max_storage           = max((uint64_t)(fraction * mesh->local_mesh_size), 1UL);
 
                 int particle_ranks = mpi_config->world_size - mpi_config->particle_flow_world_size;
@@ -336,6 +339,12 @@ namespace minicombust::flow
                 // Allocate arrays
                 neighbour_indexes.push_back((uint64_t*)         malloc(cell_index_array_size[0]));
                 cell_particle_aos.push_back((particle_aos<T> * )malloc(cell_particle_array_size[0]));
+                uint64_t *cuda_pointer_tmp;
+                particle_aos<T> *cuda_pointer_tmp2;
+                cudaMalloc(&cuda_pointer_tmp,  cell_index_array_size[0]);
+                cudaMalloc(&cuda_pointer_tmp2, cell_particle_array_size[0]);
+                gpu_neighbour_indexes.push_back(cuda_pointer_tmp);
+                gpu_cell_particle_aos.push_back(cuda_pointer_tmp2);
 
                 local_particle_node_sets.push_back(unordered_set<uint64_t>());
 
@@ -373,19 +382,19 @@ namespace minicombust::flow
                 phi_grad_array_size   = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(vec<T>);
                 source_phi_array_size = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
 
-                phi.U           = (T *)malloc(phi_array_size);
-                phi.V           = (T *)malloc(phi_array_size);
-                phi.W           = (T *)malloc(phi_array_size);
-                phi.P           = (T *)malloc(phi_array_size);
-				phi.PP          = (T *)malloc(phi_array_size);
-				phi.TE          = (T *)malloc(phi_array_size);
-				phi.ED          = (T *)malloc(phi_array_size);
-				phi.TP          = (T *)malloc(phi_array_size);
-                phi.TEM         = (T *)malloc(phi_array_size);
-				phi.FUL			= (T *)malloc(phi_array_size);
-				phi.PRO			= (T *)malloc(phi_array_size);
-				phi.VARF		= (T *)malloc(phi_array_size);
-				phi.VARP		= (T *)malloc(phi_array_size);
+                cudaMallocHost(&phi.U          , phi_array_size);
+                cudaMallocHost(&phi.V          , phi_array_size);
+                cudaMallocHost(&phi.W          , phi_array_size);
+                cudaMallocHost(&phi.P          , phi_array_size);
+				cudaMallocHost(&phi.PP         , phi_array_size);
+				cudaMallocHost(&phi.TE         , phi_array_size);
+				cudaMallocHost(&phi.ED         , phi_array_size);
+				cudaMallocHost(&phi.TP         , phi_array_size);
+                cudaMallocHost(&phi.TEM        , phi_array_size);
+				cudaMallocHost(&phi.FUL		, phi_array_size);
+				cudaMallocHost(&phi.PRO		, phi_array_size);
+				cudaMallocHost(&phi.VARF	, phi_array_size);
+				cudaMallocHost(&phi.VARP	, phi_array_size);
                 phi_grad.U      = (vec<T> *)malloc(phi_grad_array_size);
                 phi_grad.V      = (vec<T> *)malloc(phi_grad_array_size);
                 phi_grad.W      = (vec<T> *)malloc(phi_grad_array_size);
@@ -1317,6 +1326,11 @@ namespace minicombust::flow
 
                     neighbour_indexes[index] = (uint64_t *)       realloc(neighbour_indexes[index],  cell_index_array_size[index]);
                     cell_particle_aos[index] = (particle_aos<T> *)realloc(cell_particle_aos[index],  cell_particle_array_size[index]);
+
+                    cudaFree(gpu_neighbour_indexes[index]);
+                    cudaFree(gpu_cell_particle_aos[index]);
+                    cudaMalloc(&gpu_neighbour_indexes[index], cell_index_array_size[index]);
+                    cudaMalloc(&gpu_cell_particle_aos[index], cell_particle_array_size[index]);
                 }
             }
 
