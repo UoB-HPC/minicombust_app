@@ -307,7 +307,6 @@ namespace minicombust::flow
                 #else /* !defined(MPIX_CUDA_AWARE_SUPPORT) */                                           
                     printf("This MPI library cannot determine if there is CUDA-aware support.\n");      
                 #endif /* MPIX_CUDA_AWARE_SUPPORT */      
-                                                                                        
  
 				partition_vector_size = mesh->mesh_size;
             	partition_vector = (int *)malloc(partition_vector_size * sizeof(int));

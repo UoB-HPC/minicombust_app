@@ -223,6 +223,9 @@ namespace minicombust::particles
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
 
+                if (mpi_config->particle_flow_rank == 0) printf("\tParticle solver setup done\n" );
+
+
             }
 
             // void resize_cell_indexes (uint64_t *elements, uint64_t ***new_cell_indexes)

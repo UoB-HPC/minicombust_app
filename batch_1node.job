@@ -1,0 +1,53 @@
+#!/bin/bash
+#SBATCH -A coreai_devtech_all   #account
+#SBATCH -p batch                #partition
+#SBATCH -t 00:10:00             #wall time limit, hr:min:sec
+#SBATCH -N1                     #number of nodes
+#SBATCH --ntasks-per-node=112
+#SBATCH -J coreai_devtech_all-hpc-hemelb: #job name
+  
+CONT='/lustre/fsw/coreai_devtech_all/hwaugh/containers/devtech.sqsh'
+IMG="gitlab-master.nvidia.com/dtcomp-nv-internal/imgs-released/x86_64-ubuntu22.04-gcc-cuda12.4.1:20240429"
+echo "Running on hosts: $(echo $(scontrol show hostname))"
+
+echo "RUNNING EXPERIMENT with $x GPUS"
+export MINICOMBUST_NODES=1
+export MINICOMBUST_GPUS=8
+export MINICOMBUST_RANKS=$(( 14*MINICOMBUST_GPUS*MINICOMBUST_NODES ))
+export MINICOMBUST_PRANKS=$(( MINICOMBUST_RANKS - MINICOMBUST_GPUS*MINICOMBUST_NODES ))
+export MINICOMBUST_CELLS=505
+export MINICOMBUST_PARTICLES=280000
+export MINICOMBUST_ITERS=20
+
+echo ""	
+echo "MINICOMBUST_GPUS      $MINICOMBUST_GPUS"
+echo "MINICOMBUST_RANKS     $MINICOMBUST_RANKS "
+echo "MINICOMBUST_PRANKS    $MINICOMBUST_PRANKS "
+echo "MINICOMBUST_CELLS     $MINICOMBUST_CELLS "
+echo "MINICOMBUST_PARTICLES $MINICOMBUST_PARTICLES "
+echo "MINICOMBUST_ITERS     $MINICOMBUST_ITERS "	
+echo "MINICOMBUST_ITERS     $MINICOMBUST_ITERS "	
+echo ""	
+
+for x in $(seq 0 $(( MINICOMBUST_GPUS*MINICOMBUST_NODES-1 )));
+do
+     export CPU_BIND_MAP_NEW=`seq -s, $(( x*13 )) $(( x*13+12 ))`
+     if [ $x = 0 ];
+     then
+          export CPU_BIND_MAP="$(( MINICOMBUST_RANKS-1-x )),$CPU_BIND_MAP_NEW"
+     else
+          export CPU_BIND_MAP="$CPU_BIND_MAP,$(( MINICOMBUST_RANKS-1-x )),$CPU_BIND_MAP_NEW"
+     fi
+done
+echo "CPU_BIND_MAP $CPU_BIND_MAP"
+
+  
+cmd="./bin/gpu_minicombust $MINICOMBUST_PRANKS $MINICOMBUST_PARTICLES $MINICOMBUST_CELLS -1 $MINICOMBUST_ITERS"
+filename="STRONG-RANKS$MINICOMBUST_RANKS-GPUS$MINICOMBUST_GPUS-CELLS$MINICOMBUST_CELLS-PARTICLES-$MINICOMBUST_PARTICLES-ITERS$MINICOMBUST_ITERS.log"
+cd /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/
+srun --container-image="${CONT}" \
+     --container-mounts=/lustre/fsw/coreai_devtech_all/hwaugh/:/lustre/fsw/coreai_devtech_all/hwaugh/ \
+    --container-workdir /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/ \
+     --ntasks-per-node=112 \
+     --cpu-bind=none \
+     --mpi=pmix bash -c "source slurm_env.sh; ./slurm_wrapper.sh $cmd" 

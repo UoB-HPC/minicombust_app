@@ -55,14 +55,12 @@ int main (int argc, char ** argv)
 	//TODO:sort out vtk_output.
 	//TODO:ideal flow tanks seem to cause a segfault
 
-    // int gpu_count = cudaGetDeviceCount(&gpu_count);
-    char *buf = getenv("OMPI_COMM_WORLD_LOCAL_RANK");
+    char *buf = getenv("MINICOMBUST_RANK_ID");
     int lrank = atoi(buf); 
-    buf = getenv("OMPI_COMM_WORLD_SIZE");
+    buf = getenv("MINICOMBUST_RANKS");
     int lsize = atoi(buf); 
-    buf = getenv("MINICOMBUST_GPUS");
+    buf = getenv("MINICOMBUST_FRANKS");
     int gpu_count = atoi(buf); 
-
 
     cudaFree(0);
     if (lrank > (lsize-gpu_count-1)) 
@@ -88,6 +86,7 @@ int main (int argc, char ** argv)
     int flow_ranks     = mpi_config.world_size - particle_ranks;
 
     // If rank < given number of particle ranks.
+    // mpi_config.solver_type = ((lrank % 14) != 1); // 1 for particle, 0 for flow
     mpi_config.solver_type = (mpi_config.rank < particle_ranks); // 1 for particle, 0 for flow
     MPI_Comm_split(mpi_config.world, mpi_config.solver_type, mpi_config.rank, &mpi_config.particle_flow_world);
     MPI_Comm_rank(mpi_config.particle_flow_world,  &mpi_config.particle_flow_rank);

@@ -279,10 +279,8 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
     MPI_Aint shmem_points_winsize           = (shmem_point_disps[mpi_config->node_rank+1] - shmem_point_disps[mpi_config->node_rank]) * sizeof(vec<double>);
     MPI_Aint shmem_cells_per_points_winsize = (shmem_point_disps[mpi_config->node_rank+1] - shmem_point_disps[mpi_config->node_rank]) * sizeof(uint8_t);
 
-
     MPI_Win_allocate_shared ( shmem_points_winsize,           sizeof(vec<double>), MPI_INFO_NULL, mpi_config->node_world, &shmem_points,          &mpi_config->win_points );
     MPI_Win_allocate_shared ( shmem_cells_per_points_winsize, sizeof(uint8_t),     MPI_INFO_NULL, mpi_config->node_world, &shmem_cells_per_point, &mpi_config->win_cells_per_point );
-
 
     #pragma ivdep
     for ( uint64_t index = shmem_point_disps[mpi_config->node_rank]; index < shmem_point_disps[mpi_config->node_rank+1]; index++ )

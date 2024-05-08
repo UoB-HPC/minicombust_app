@@ -7,6 +7,8 @@
 
 using namespace std;
 
+// #define FLOW_SOLVER_DEBUG 1
+
 namespace minicombust::flow 
 {
 
@@ -355,6 +357,8 @@ namespace minicombust::flow
         #pragma ivdep
         for (int i = 0; i < elements[recv_id]; i++)
         {
+			nvtxRangePush("get_neighbours::part1"); 
+
             uint64_t cell = neighbour_indexes[recv_id][i];
 
             #pragma ivdep
@@ -368,7 +372,9 @@ namespace minicombust::flow
 
             new_cells_set.insert(cell);
             unordered_neighbours_set[0].insert(cell);   
+			nvtxRangePop(); 
             
+			nvtxRangePush("get_neighbours::boundary_fields"); 
 
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
@@ -390,6 +396,10 @@ namespace minicombust::flow
                     node_to_position_map[node_id]     = position;
                 }
             }
+			nvtxRangePop(); 
+
+			nvtxRangePush("get_neighbours::insert_neighbours"); 
+
 
             // Get 6 immediate neighbours
             const uint64_t below_neighbour                = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + DOWN_FACE];
@@ -473,6 +483,8 @@ namespace minicombust::flow
                     unordered_neighbours_set[0].insert(above_right_back_neighbour);     
                 }
             }
+			nvtxRangePop(); 
+
         }
 
         unordered_neighbours_set[0].erase(MESH_BOUNDARY);
@@ -551,6 +563,8 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::update_flow_field()
     {
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function update_flow_field.\n", mpi_config->rank);
+
 		nvtxRangePush("Waiting time: update_flow_field");
 
 		//TODO: we should collect the correct temp values and maybe the grad values.
@@ -578,7 +592,10 @@ namespace minicombust::flow
         static double recv_time1=0., recv_time2=0., recv_time3=0.;
 
         int recvs_complete = 0;
+		if (FLOW_SOLVER_DEBUG)  printf("\tFLOW Rank %d: Before BCAST.\n", mpi_config->rank);
+
         MPI_Ibcast(&recvs_complete, 1, MPI_INT, 0, mpi_config->world, &bcast_request);       
+		if (FLOW_SOLVER_DEBUG)  printf("\tFLOW Rank %d: After BCAST.\n", mpi_config->rank);
  
         int message_waiting = 0;
         MPI_Iprobe(MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
@@ -594,6 +611,8 @@ namespace minicombust::flow
 
 				if (!first_msg_recv)
 				{
+					if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: RECV first message.\n", mpi_config->rank);
+
 					nvtxRangePop();
 					nvtxRangePush("nowait_update_flow_field ");
 					nvtxRangePush("update_flow::loop1_recv_get_neighbours");
@@ -650,18 +669,21 @@ namespace minicombust::flow
             for ( uint64_t p = 0; p < ranks.size(); p++ )
             {
                 int recieved_indexes = 0;
-                MPI_Test(&recv_requests[2*p], &recieved_indexes, MPI_STATUS_IGNORE);
+				if (!processed_neighbours[p])
+				{
+					MPI_Test(&recv_requests[2*p], &recieved_indexes, MPI_STATUS_IGNORE);
 
-                if ( recieved_indexes && !processed_neighbours[p] )  // Invalid read
-                {
-                    if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
-                    
-                    get_neighbour_cells (p);
-                    processed_neighbours[p] = true;  // Invalid write
+					if ( recieved_indexes)  // Invalid read
+					{
+						if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
+						nvtxRangePush("get_neighbour_cells ");
+						get_neighbour_cells (p);
+						nvtxRangePop();
 
-                }
-
-                all_processed &= processed_neighbours[p]; //Invalid read
+						processed_neighbours[p] = true;  // Invalid write
+					}
+					all_processed = false; //Invalid read
+				}
             }
 
             time1 += MPI_Wtime(); //1
@@ -674,6 +696,11 @@ namespace minicombust::flow
             all_processed = all_processed & !message_waiting & recvs_complete;
 			time2 += MPI_Wtime(); //1
         }
+
+		if (first_msg_recv)
+		{
+			nvtxRangePop(); //loop1_recv_get_neighbours
+		}
 
 
         logger.reduced_recieved_cells += new_cells_set.size();
@@ -690,10 +717,12 @@ namespace minicombust::flow
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //4
-		nvtxRangePush("update_flow::finish_memcpy");
+		nvtxRangePush("update_flow::finish_memcpy"); 
 		// Synchronize with default stream to make sure phi data is on CPU
 		cudaStreamSynchronize(0);
 		nvtxRangePop();
+		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function interpolate_to_nodes.\n", mpi_config->rank);
+
 		nvtxRangePush("update_flow::interpolate_to_nodes");
         interpolate_to_nodes ();
 		nvtxRangePop();
@@ -1084,7 +1113,7 @@ namespace minicombust::flow
 
 		
 		MPI_Allreduce(MPI_IN_PLACE, areaout, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
-		MPI_Allreduce(MPI_IN_PLACE, FlowIn, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
+		MPI_Allreduce(MPI_IN_PLACE, FlowIn,  1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		MPI_Allreduce(MPI_IN_PLACE, FlowOut, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 
 		C_kernel_correct_flow(block_count, thread_count, count_out, FlowOut, FlowIn, areaout, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->mesh_size, gpu_boundary_types, gpu_face_mass_fluxes, gpu_face_areas, gpu_cell_densities, gpu_phi, mesh->local_mesh_size, nhalos, gpu_face_normals, mesh->local_cells_disp, gpu_S_phi, FlowFact);
@@ -1300,7 +1329,11 @@ namespace minicombust::flow
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function set_up_field.\n", mpi_config->rank);
 
 		precomp_AU();
+        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function exchange_A_halos.\n", mpi_config->rank);
+
         exchange_A_halos(gpu_A_phi.U);
+        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_mass_flux.\n", mpi_config->rank);
+
 		calculate_mass_flux();
 	}
 
@@ -1475,6 +1508,8 @@ namespace minicombust::flow
 		if(timestep_count == 0)
 		{
 			set_up_field();
+        	if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function set_up_fgm_table.\n", mpi_config->rank);
+
 			set_up_fgm_table();
 		}
 		nvtxRangePop();

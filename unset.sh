@@ -1,0 +1,3 @@
+#!/bin/bash
+unset OMPI_MCA_btl OMPI_MCA_btl_tcp_if_include  OMPI_MCA_pml OMPI_MCA_btl_openib_warn_default_gid_prefix
+unset UCX_IB_PCI_RELAXED_ORDERING UCX_MAX_RNDV_RAILS UCX_MEMTYPE_CACHE UCX_TLS

@@ -9,10 +9,10 @@
 UCX_TLS=^gdr_copy
 
 export CUDA_VISIBLE_DEVICES=
-if [ $OMPI_COMM_WORLD_RANK -gt $(( MINICOMBUST_PRANKS-1 )) ]; then
-  export CUDA_VISIBLE_DEVICES=$(( OMPI_COMM_WORLD_RANK - MINICOMBUST_PRANKS ))
+if [ $SLURM_PROCID -gt $(( MINICOMBUST_PRANKS-1 )) ]; then
+  export CUDA_VISIBLE_DEVICES=$(( SLURM_PROCID % MINICOMBUST_GPUS ))
   # UCX_CUDA_COPY_DMABUF=no
-  echo "RANK $OMPI_COMM_WORLD_RANK VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+  echo "RANK $SLURM_PROCID VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES hostname=" `hostname`
 
   echo ""
   echo "OMPI_MCA_pml                 $OMPI_MCA_pml "
@@ -27,21 +27,23 @@ if [ $OMPI_COMM_WORLD_RANK -gt $(( MINICOMBUST_PRANKS-1 )) ]; then
 fi
 
 export MINICOMBUST_FRANKS=$(( MINICOMBUST_NODES * MINICOMBUST_GPUS ))
-export MINICOMBUST_RANK_ID=$OMPI_COMM_WORLD_RANK
+export MINICOMBUST_RANK_ID=$SLURM_PROCID
+
+
 
 # Use $PMI_RANK for MPICH and $SLURM_PROCID with srun.
-if [ $OMPI_COMM_WORLD_RANK = $MINICOMBUST_PRANKS  ] || [ $OMPI_COMM_WORLD_RANK = 0 ]; then
-	outfile="RANK$OMPI_COMM_WORLD_RANK-RANKS$MINICOMBUST_RANKS-GPUS$MINICOMBUST_GPUS-CELLS$MINICOMBUST_CELLS-PARTICLES-$MINICOMBUST_PARTICLES-ITERS$MINICOMBUST_ITERS"
-  prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$OMPI_COMM_WORLD_RANK.log " 
+if [ $SLURM_PROCID = $MINICOMBUST_PRANKS  ] || [ $SLURM_PROCID = 0 ]; then
+	outfile="RANK$SLURM_PROCID-RANKS$MINICOMBUST_RANKS-GPUS$MINICOMBUST_GPUS-CELLS$MINICOMBUST_CELLS-PARTICLES-$MINICOMBUST_PARTICLES-ITERS$MINICOMBUST_ITERS"
+  prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$SLURM_PROCID.log " 
   prof_cmd="ncu -f --set full  --kernel-name kernel_get_phi_gradient --launch-count 1 --launch-skip 6 -o $outfile " 
   prof_cmd="" 
   prof_cmd="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --sample=none --cpuctxsw=none --trace=cuda,nvtx,mpi --force-overwrite=true -o $outfile " 
-	echo "$OMPI_COMM_WORLD_RANK rank prof_cmd:  $prof_cmd"
+	echo "$SLURM_PROCID rank prof_cmd:  $prof_cmd"
 	echo "cmd:  $prof_cmd"
 	echo ""
   NSYS_CONFIG_DIRECTIVES='AgentLaunchTimeoutSec=120' $prof_cmd "$@"
 else
-  prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$OMPI_COMM_WORLD_RANK.log "  
+  prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$SLURM_PROCID.log "  
   prof_cmd="" 
   $prof_cmd "$@"
 fi

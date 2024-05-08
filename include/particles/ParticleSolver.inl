@@ -4,6 +4,7 @@
 
 #include <nvToolsExt.h>
 
+// #define PARTICLE_SOLVER_DEBUG 1
 
 namespace minicombust::particles 
 {
@@ -151,30 +152,30 @@ namespace minicombust::particles
         // MPI_Barrier(mpi_config->world);
 
 
-        if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_flow_field.\n", mpi_config->rank);
-        if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Sending index sizes.\n", mpi_config->rank);
+        if ( PARTICLE_SOLVER_DEBUG  )  printf("\tParticle Rank %d: Running fn: update_flow_field.\n", mpi_config->rank);
+        if ( PARTICLE_SOLVER_DEBUG  )  printf("\tParticle Rank %d: Sending index sizes.\n", mpi_config->rank);
 
         uint64_t count = 0;
-        for (uint64_t b : active_blocks)
+        for (uint64_t b : active_blocks)    
         {
             neighbours_size[b] = cell_particle_field_map[b].size();
-            if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )
+            if ( PARTICLE_SOLVER_DEBUG )
 			{  
-				printf("\tRank %d: Sending %d indexes to block %lu.\n", mpi_config->rank, neighbours_size[b], b);
+				printf("\tParticle Rank %d: Sending %d indexes to block %lu.\n", mpi_config->rank, neighbours_size[b], b);
 			}
 	
             MPI_Issend(cell_particle_indexes[b], neighbours_size[b], MPI_UINT64_T,                        mpi_config->particle_flow_world_size + b, 0, mpi_config->world, &send_requests[count  + 0*active_blocks.size()] );
-            MPI_Isend(cell_particle_aos[b],     neighbours_size[b], mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->particle_flow_world_size + b, 2, mpi_config->world, &send_requests[count++ + 1*active_blocks.size()] );
+            MPI_Isend(cell_particle_aos[b],     neighbours_size[b], mpi_config->MPI_PARTICLE_STRUCTURE,   mpi_config->particle_flow_world_size + b, 2, mpi_config->world, &send_requests[count++ + 1*active_blocks.size()] );
         }
 
 
         MPI_Waitall(active_blocks.size(), send_requests.data(), MPI_STATUSES_IGNORE);
 
-        if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Wait has returned successfully\n", mpi_config->rank);
+        if ( PARTICLE_SOLVER_DEBUG )  printf("\tParticle Rank %d: Wait has returned successfully\n", mpi_config->rank);
         MPI_Barrier(mpi_config->particle_flow_world);
 
         int sends_done = 1;
-        if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: All index sizes sent.\n", mpi_config->rank);
+        if ( PARTICLE_SOLVER_DEBUG )  printf("\tParticle Rank %d: All index sizes sent.\n", mpi_config->rank);
         
         MPI_Ibcast(&sends_done, 1, MPI_INT, 0, mpi_config->world, &bcast_request);
 
@@ -214,7 +215,7 @@ namespace minicombust::particles
                 int active_block_index = find(active_blocks.begin(), active_blocks.end(), block_id) - active_blocks.begin(); 
 
                 if (mpi_config->rank == 0) printf( "Recving %d node values from %lu. Particles size %lu\n", neighbours_size[block_id], send_rank, particles.size() );
-                if ( PARTICLE_SOLVER_DEBUG )  printf("\tRank %d: Posted %d recieves (ptr %p) for flow block %lu (slots %d %ld max %ld) .\n", mpi_config->rank, neighbours_size[block_id], all_interp_node_indexes[block_id], block_id, active_block_index, active_block_index + active_blocks.size(), recv_requests.size() );
+                if ( PARTICLE_SOLVER_DEBUG )  printf("\tParticle Rank %d: Posted %d recieves (ptr %p) for flow block %lu (slots %d %ld max %ld) .\n", mpi_config->rank, neighbours_size[block_id], all_interp_node_indexes[block_id], block_id, active_block_index, active_block_index + active_blocks.size(), recv_requests.size() );
                 MPI_Irecv ( all_interp_node_indexes[block_id],     neighbours_size[block_id], MPI_UINT64_T,                   send_rank, 0, mpi_config->world, &recv_requests[active_block_index] );
                 MPI_Irecv ( all_interp_node_flow_fields[block_id], neighbours_size[block_id], mpi_config->MPI_FLOW_STRUCTURE, send_rank, 1, mpi_config->world, &recv_requests[active_block_index + active_blocks.size()] );
 
@@ -232,7 +233,7 @@ namespace minicombust::particles
 
                 // if ( PARTICLE_SOLVER_DEBUG )  
                 // {
-                //     printf("\tRank %d: Indexes (%p ptr) load finished for flow block %lu (slots %lu ) .\n", mpi_config->rank, all_interp_node_indexes[bi], bi, ba );
+                //     printf("\tParticle Rank %d: Indexes (%p ptr) load finished for flow block %lu (slots %lu ) .\n", mpi_config->rank, all_interp_node_indexes[bi], bi, ba );
 
                 //     if      ( (uint64_t) neighbours_size[bi]  >= (node_flow_array_sizes[bi]   / sizeof(flow_aos<T>)) )
                 //         {printf("ERROR RECV VALS : Rank %d Block %lu will write indexes to unallocated memory required size %d max %lu\n", mpi_config->rank, bi, neighbours_size[bi], node_flow_array_sizes[bi] / sizeof(flow_aos<T>)); exit(1);}
@@ -254,7 +255,7 @@ namespace minicombust::particles
 
 				/*if (PARTICLE_SOLVER_DEBUG && size_before != node_to_field_address_map.size())
                 {
-					printf("\tRank %d: Recieving wrong amount of data(+%lu). Block %lu Node map size %ld sent size %d.\n", 
+					printf("\tParticle Rank %d: Recieving wrong amount of data(+%lu). Block %lu Node map size %ld sent size %d.\n", 
 							mpi_config->rank, node_to_field_address_map.size() - size_before, bi, 
 							node_to_field_address_map.size(), neighbours_size[bi] ); 
 					exit(1);
@@ -275,9 +276,9 @@ namespace minicombust::particles
         logger.useful_nodes_proportion += node_to_field_address_map.size();
         
         // MPI_Barrier(mpi_config->world);
-        if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )
+        if ( PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )
 		{
-			printf("\tRank %d: Completed comms.\n", mpi_config->rank);
+			printf("\tParticle Rank %d: Completed comms.\n", mpi_config->rank);
         }
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
@@ -289,9 +290,9 @@ namespace minicombust::particles
         performance_logger.my_papi_start();
 
         // TODO: Reuse decaying particle space
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  
 		{
-			printf("\tRank %d: Running fn: particle_release.\n", mpi_config->rank);
+			printf("\tParticle Rank %d: Running fn: particle_release.\n", mpi_config->rank);
         }
 		function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
 
@@ -304,7 +305,7 @@ namespace minicombust::particles
     template<class T> 
     void ParticleSolver<T>::solve_spray_equations()
     {
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: solve_spray_equations.\n", mpi_config->rank);
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  printf("\tParticle Rank %d: Running fn: solve_spray_equations.\n", mpi_config->rank);
 
         const uint64_t cell_size       = mesh->cell_size; 
         const uint64_t particles_size  = particles.size(); 
@@ -361,7 +362,7 @@ namespace minicombust::particles
 			if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Interpolated particle value ", &particles[p].local_flow_value, &mesh->dummy_flow_field, p );
         }
 
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Finished interpolation. Starting spray computation.\n", mpi_config->rank);
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  printf("\tParticle Rank %d: Finished interpolation. Starting spray computation.\n", mpi_config->rank);
 
         node_to_field_address_map.clear(); // TODO move this? 
 
@@ -409,7 +410,7 @@ namespace minicombust::particles
     {
         performance_logger.my_papi_start();
 
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_particle_positions.\n", mpi_config->rank);
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  printf("\tParticle Rank %d: Running fn: update_particle_positions.\n", mpi_config->rank);
         const uint64_t particles_size  = particles.size();
 
         uint64_t elements [mesh->num_blocks];
@@ -484,13 +485,13 @@ namespace minicombust::particles
     template<class T>
     void ParticleSolver<T>::update_spray_source_terms()
     {
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_spray_source_terms.\n", mpi_config->rank);
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  printf("\tParticle Rank %d: Running fn: update_spray_source_terms.\n", mpi_config->rank);
     }
 
     template<class T> 
     void ParticleSolver<T>::map_source_terms_to_grid()
     {
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: map_source_terms_to_grid.\n", mpi_config->rank);
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  printf("\tParticle Rank %d: Running fn: map_source_terms_to_grid.\n", mpi_config->rank);
     }
 
     template<class T> 
@@ -498,7 +499,7 @@ namespace minicombust::particles
     {
         performance_logger.my_papi_start();
 
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: interpolate_data.\n", mpi_config->rank);
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  printf("\tParticle Rank %d: Running fn: interpolate_data.\n", mpi_config->rank);
 
         performance_logger.my_papi_stop(performance_logger.interpolation_kernel_event_counts, &performance_logger.interpolation_time);
     }
@@ -511,7 +512,7 @@ namespace minicombust::particles
         static int count = 0;
         const int  comms_timestep = 1;
 
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("Rank %d: Start particle timestep\n", mpi_config->rank);
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  printf("Rank %d: Start particle timestep\n", mpi_config->rank);
         if ( ((count + 1) % 100) == 0 )
         {
             uint64_t particles_in_simulation = particles.size();
@@ -592,6 +593,6 @@ namespace minicombust::particles
         count++;
 		nvtxRangePop();
 
-        if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("Rank %d: Stop particle timestep\n", mpi_config->rank);
+        if (PARTICLE_SOLVER_DEBUG && 0 == mpi_config->particle_flow_rank )  printf("Rank %d: Stop particle timestep\n", mpi_config->rank);
     }
 }   // namespace minicombust::particles 
