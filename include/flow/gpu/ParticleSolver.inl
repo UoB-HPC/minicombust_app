@@ -251,7 +251,7 @@ namespace minicombust::particles
 					// 	printf("ERROR RECV VALS : Rank %d Flow block %lu Value %lu out of range at %d\n", 
 					// 			mpi_config->rank, bi, all_interp_node_indexes[bi][i], i); 
 					// 	exit(1);
-					// })
+					// }
                 }
 
 				/*if (PARTICLE_SOLVER_DEBUG && size_before != node_to_field_address_map.size())
@@ -336,13 +336,13 @@ namespace minicombust::particles
                 uint64_t node = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n];
                 const uint64_t block_id = mesh->get_block_id(particles[p].cell);
 
-                // if (!PARTICLE_SOLVER_DEBUG && node_to_field_address_map.count(node))
-                // {
-                //     printf("ERROR: PARTICLE RANK %lu DOESN'T HAVE NODE %lu for cell %lu\n", mpi_config->particle_flow_rank, node, particles[p].cell);
-                //     exit(1);
-                // }
+                if (!node_to_field_address_map.count(node))
+                {
+                    printf("ERROR: PARTICLE RANK DOESN'T HAVE NODE %lu for cell %lu\n", node, particles[p].cell);
+                    exit(1);
+                }
 
-                // if (node_to_field_address_map[node] == 0x2)
+                // if (node_to_field_address_map[node] == (void*)0x2)
                 // {
                 //     printf("ERROR: PARTICLE RANK HAS WEIRD ADDRESS %lu for cell %lu\n", node, particles[p].cell);
                 //     exit(1);
@@ -484,6 +484,7 @@ namespace minicombust::particles
 
                 }
             }
+
         }
 
         const uint64_t decayed_particles_size = decayed_particles.size();

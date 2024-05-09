@@ -211,6 +211,7 @@ namespace minicombust::flow
             T *cell_volumes;
 
             vector<int> ranks;
+            vector<int> processed_ranks;
             int      *elements;
             uint64_t *element_disps;
 

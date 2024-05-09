@@ -366,9 +366,16 @@ namespace minicombust::flow
                 const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
 				if (!local_particle_node_sets[recv_id].contains(node_id))
 				{
+					if (!global_node_to_local_node_map.contains(node_id))
+					{
+						printf("FRANK %lu has non local node %lu produced by cell %lu local_mesh_disp %lu lmesh_size %lu\n", mpi_config->particle_flow_rank, node_id, cell, mesh->local_cells_disp, mesh->local_mesh_size);
+						continue;
+					}
+
                 	local_particle_node_sets[recv_id].insert(node_id);
 					send_buffers_interp_node_indexes[send_buffer_disp + local_disp] = node_id;
 					local_disp++;
+
 				}
             }
 
@@ -483,32 +490,47 @@ namespace minicombust::flow
             }
         }
 
+		// if (mpi_config->particle_flow_rank == 0)
+		// {
+		// 	printf("FIRST Flow rank %lu processing rank_slot %lu start_slot %lu size \n", mpi_config->particle_flow_rank, recv_id,  send_buffer_disp, local_particle_node_sets[recv_id].size() );
+		// }
 
 		if (local_disp != 0){
-			
-
 
 			int thread_count = min( (int) 32, (int)local_particle_node_sets[recv_id].size());
 			int block_count = max(1, (int) ceil((double) (local_particle_node_sets[recv_id].size()) / (double) thread_count));
 
-			// printf("Block size %lu, thread count %lu\n", block_count, thread_count);
-			// gpuErrchk( cudaPeekAtLastError() );
 
 			if ((send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t) >= gpu_send_buffers_node_index_array_size )
 			{
 				printf("GPU BUFFER OVERFLOW : %lu > \n", (send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t), gpu_send_buffers_node_index_array_size );
-
 			}
 
+			// for ( uint64_t i = 0; i < local_particle_node_sets[recv_id].size(); i++ )
+			// {
+			// 	uint64_t node = send_buffers_interp_node_indexes[send_buffer_disp + i];
+
+			// 	if (node == 0)
+			// 	{
+			// 		printf("FIRST Flow rank %lu found node %lu for PRANK %lu rank_slot %lu start_slot %lu local slot %lu! set size %lu\n", mpi_config->particle_flow_rank, node, ranks[recv_id], recv_id, send_buffer_disp, send_buffer_disp + i, local_particle_node_sets[recv_id].size() );
+			// 	}
+			// }
+
 			gpuErrchk(cudaMemcpyAsync(&gpu_send_buffers_interp_node_indexes[send_buffer_disp], &send_buffers_interp_node_indexes[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(uint64_t), cudaMemcpyHostToDevice, (cudaStream_t) 0));
-			C_kernel_pack_flow_field_buffer(block_count, thread_count, &gpu_send_buffers_interp_node_indexes[send_buffer_disp] , gpu_phi_nodes, &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], gpu_node_map, local_particle_node_sets[recv_id].size(), global_node_to_local_node_map.size());
+			C_kernel_pack_flow_field_buffer(block_count, thread_count, &gpu_send_buffers_interp_node_indexes[send_buffer_disp] , gpu_phi_nodes, &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], gpu_node_map, local_particle_node_sets[recv_id].size(), global_node_to_local_node_map.size(), recv_id);
 			// gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-			
 			gpuErrchk( cudaPeekAtLastError() );
+			
+			gpuErrchk(cudaMemcpy(&check_send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost));
 
-			send_buffer_disp += local_particle_node_sets[recv_id].size();
+			cudaDeviceSynchronize();
 
+			
 		}
+
+		
+
+		send_buffer_disp += local_particle_node_sets[recv_id].size();
 		
         unordered_neighbours_set[0].erase(MESH_BOUNDARY);
     }
@@ -677,38 +699,19 @@ namespace minicombust::flow
                     local_particle_node_sets.push_back(unordered_set<uint64_t>());
                 }
                 message_waiting = 0;
+				MPI_Wait(&recv_requests[2*rank_slot], MPI_STATUS_IGNORE);
+				get_neighbour_cells (rank_slot);
+				processed_neighbours[rank_slot] = true;
+
                 MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
                 continue;
 			}
-
-            time0 += MPI_Wtime(); //1
-            time1 -= MPI_Wtime(); //1
-            
-            all_processed = true;
-            for ( uint64_t p = 0; p < ranks.size(); p++ )
-            {
-                int recieved_indexes = 0;
-                MPI_Test(&recv_requests[2*p], &recieved_indexes, MPI_STATUS_IGNORE);
-
-                if ( recieved_indexes && !processed_neighbours[p] )  // Invalid read
-                {
-                    if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
-                    
-                    get_neighbour_cells (p);
-                    processed_neighbours[p] = true;  // Invalid write
-                }
-                all_processed &= processed_neighbours[p]; //Invalid read
-            }
-
-            time1 += MPI_Wtime(); //1
-            time2 -= MPI_Wtime(); //1
 
             MPI_Test ( &bcast_request, &recvs_complete, MPI_STATUS_IGNORE );
             MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
 
             if ( FLOW_SOLVER_DEBUG && recvs_complete ) if(recvs_complete) printf("\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
-            all_processed = all_processed & !message_waiting & recvs_complete;
-			time2 += MPI_Wtime(); //1
+            all_processed = !message_waiting & recvs_complete;
         }
 		if (first_msg_recv)
 		{
@@ -728,12 +731,15 @@ namespace minicombust::flow
         }
 		printf("Flow rank requires %lu items in buffer\n", max_send_buffer_size);
 
+		
+
 		// Synchronize with default stream to make sure phi data is on CPU
 		cudaStreamSynchronize(0);
 		nvtxRangePop();
 		nvtxRangePush("update_flow::interpolate_to_nodes");
         interpolate_to_nodes ();
 		nvtxRangePop();
+        
 
 		// Send size of reduced neighbours of cells back to ranks.
         uint64_t neighbour_point_size = node_to_position_map.size();
@@ -742,46 +748,17 @@ namespace minicombust::flow
 
 		nvtxRangePush("update_flow::pack_and_post_buffers");
 
-        uint64_t ptr_disp = 0;
+		uint64_t ptr_disp = 0;
         bool *processed_cell_fields = async_locks;
         for (uint64_t p = 0; p < ranks.size(); p++)
         {
             uint64_t local_disp = 0;
 
-			gpuErrchk(cudaMemcpy(&check_send_buffers_interp_node_flow_fields[ptr_disp], &gpu_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost));
-			cudaDeviceSynchronize();
+			MPI_Isend ( &send_buffers_interp_node_indexes[ptr_disp],           local_particle_node_sets[p].size(), MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
+            MPI_Isend ( &check_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size(), mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
+            // MPI_Isend ( &send_buffers_interp_node_flow_fields[ptr_disp],  local_particle_node_sets[p].size(), mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
 
-            #pragma ivdep
-            for ( uint64_t node : local_particle_node_sets[p] )
-            // for ( uint64_t i = 0; i < local_particle_node_sets[p].size(); i++ )
-            {
-				// uint64_t node = send_buffers_interp_node_indexes[ptr_disp + local_disp];
-
-
-                send_buffers_interp_node_indexes[ptr_disp     + local_disp] = interp_node_indexes[node_to_position_map[node]];
-                send_buffers_interp_node_flow_fields[ptr_disp + local_disp] = interp_node_flow_fields[node_to_position_map[node]];
-				// send_buffers_interp_node_indexes[ptr_disp     + local_disp] = node;
-
-
-                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.x    = phi_nodes.U[global_node_to_local_node_map[node]];
-                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.y    = phi_nodes.V[global_node_to_local_node_map[node]];
-                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.z    = phi_nodes.W[global_node_to_local_node_map[node]];
-                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].pressure = phi_nodes.P[global_node_to_local_node_map[node]];
-                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].temp     = phi_nodes.TEM[global_node_to_local_node_map[node]];
-
-				// check_flow_field_exit("CPU_GPU_BUFFER WRONG", &check_send_buffers_interp_node_flow_fields[ptr_disp + local_disp], &send_buffers_interp_node_flow_fields[ptr_disp + local_disp], ptr_disp+local_disp);
-
-                local_disp++;
-            }
-
-			// // gpuErrchk(cudaMemcpy(&send_buffers_interp_node_indexes[ptr_disp],     &gpu_send_buffers_interp_node_indexes[ptr_disp],     local_particle_node_sets[p].size()*sizeof(uint64_t),    cudaMemcpyDeviceToHost));
-			// // gpuErrchk(cudaMemcpy(&send_buffers_interp_node_flow_fields[ptr_disp], &gpu_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost));
-			
-
-			MPI_Isend ( &send_buffers_interp_node_indexes[ptr_disp],      local_particle_node_sets[p].size(), MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
-            MPI_Isend ( &send_buffers_interp_node_flow_fields[ptr_disp],  local_particle_node_sets[p].size(), mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
-            // MPI_Isend ( &check_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size(), mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
-
+			// Send direct from GPU?
             // MPI_Isend ( &gpu_send_buffers_interp_node_indexes[ptr_disp],     local_particle_node_sets[p].size(), MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
             // MPI_Isend ( &gpu_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size(), mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
             

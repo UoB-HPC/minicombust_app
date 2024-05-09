@@ -163,7 +163,7 @@ __global__ void kernel_process_particle_fields(uint64_t *sent_cell_indexes, part
 
 }
 
-__global__ void kernel_pack_flow_field_buffer(uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size)
+__global__ void kernel_pack_flow_field_buffer(uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size, uint64_t rank_slot)
 {
 	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= buf_size) return;
@@ -172,7 +172,7 @@ __global__ void kernel_pack_flow_field_buffer(uint64_t *index_buffer, phi_vector
 
 	if (node_map[node_id] > node_map_size)
 	{
-		printf("ERROR: Index %lu global_node %lu local_node %lu\n", tid, node_id, node_map[node_id]);
+		printf("ERROR: Rank slot %lu Index %d global_node %lu local_node %lu node_map_size %lu\n", rank_slot, tid, node_id, node_map[node_id], node_map_size);
 	}
 
 	flow_buffer[tid].vel.x    = phi_nodes.U[node_map[node_id]];
@@ -2159,9 +2159,9 @@ void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_ve
 	kernel_interpolate_phi_to_nodes<<<block_count, thread_count>>> (phi, phi_grad, phi_nodes, points, points_map, cells_per_point, cells, cell_centers, local_mesh_size, cell_disp, local_points_size, nhalos);
 }
 
-void C_kernel_pack_flow_field_buffer(int block_count, int thread_count, uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size)
+void C_kernel_pack_flow_field_buffer(int block_count, int thread_count, uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size, uint64_t rank_slot)
 {
-	kernel_pack_flow_field_buffer<<<block_count, thread_count>>> (index_buffer, phi_nodes, flow_buffer, node_map, buf_size, node_map_size);
+	kernel_pack_flow_field_buffer<<<block_count, thread_count>>> (index_buffer, phi_nodes, flow_buffer, node_map, buf_size, node_map_size, rank_slot);
 }
 
 void C_kernel_vec_print(vec<double> *to_print, uint64_t num_print)
