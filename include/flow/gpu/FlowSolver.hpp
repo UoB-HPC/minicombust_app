@@ -71,6 +71,7 @@ namespace minicombust::flow
             unordered_set<uint64_t>                     new_cells_set;
             vector<unordered_map<uint64_t, uint64_t>>   cell_particle_field_map;
             unordered_map<uint64_t, uint64_t>           node_to_position_map;
+            unordered_map<uint64_t, uint64_t>           global_node_to_local_node_map;
             vector<unordered_set<uint64_t>>             local_particle_node_sets;
 
             uint64_t    *interp_node_indexes;
@@ -95,6 +96,7 @@ namespace minicombust::flow
             vec<T>        *face_centers;
             phi_vector<T>  A_phi;
             phi_vector<T>  phi;
+            phi_vector<T>  phi_nodes;
 			
             //phi_vector<T>  old_phi;
             phi_vector<T>  S_phi;
@@ -107,15 +109,22 @@ namespace minicombust::flow
 			phi_vector<T>	     gpu_A_phi;
 			phi_vector<T>	     gpu_S_phi;
 			phi_vector<T>        gpu_phi;
+			phi_vector<T>        gpu_phi_nodes;
 			phi_vector<vec<T>>   gpu_phi_grad;
 			Face<uint64_t>	     *gpu_faces;
 			uint64_t		     *gpu_cell_faces;
 			uint64_t		     *gpu_boundary_map;
 			uint64_t		     *gpu_boundary_map_keys;
 			uint64_t		     *gpu_boundary_map_values;
+            uint64_t		     *gpu_node_map;
+			uint64_t		     *gpu_node_map_keys;
+			uint64_t		     *gpu_node_map_values;
 			vec<T>   		     *gpu_face_centers;
 			vec<T>			     *full_cell_centers;
 		    vec<T>			     *gpu_cell_centers;
+		    vec<T>			     *gpu_local_nodes;
+		    uint8_t			     *gpu_cells_per_point;
+		    uint64_t			 *gpu_local_cells;
 			T				     *gpu_face_rlencos;
 			T				     *gpu_face_mass_fluxes;
 			T				     *gpu_cell_densities;
@@ -244,6 +253,7 @@ namespace minicombust::flow
             size_t face_rlencos_array_size;
             size_t face_normals_array_size;
             size_t phi_array_size;
+            size_t phi_nodes_array_size;
             size_t phi_grad_array_size;
             size_t source_phi_array_size;
             
@@ -377,9 +387,41 @@ namespace minicombust::flow
 
                 setup_halos();
 
+                // Create global node to local node map
+                for (uint64_t local_cell = 0; local_cell < mesh->local_mesh_size; local_cell++)
+                {
+                    uint64_t cell = local_cell + mesh->local_cells_disp;
+
+                    #pragma ivdep
+                    for (uint64_t n = 0; n < mesh->cell_size; n++)
+                    {
+                        uint64_t node = mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + n];
+                        
+                        if (!global_node_to_local_node_map.contains(node))
+                        {
+                            global_node_to_local_node_map[node] = global_node_to_local_node_map.size();
+                        }
+                    }
+                }
+
+
+
                 phi_array_size        = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
+                phi_nodes_array_size  = (global_node_to_local_node_map.size()) * sizeof(T);
                 phi_grad_array_size   = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(vec<T>);
                 source_phi_array_size = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
+
+                cudaMallocHost(&phi_nodes.U          , phi_nodes_array_size);
+                cudaMallocHost(&phi_nodes.V          , phi_nodes_array_size);
+                cudaMallocHost(&phi_nodes.W          , phi_nodes_array_size);
+                cudaMallocHost(&phi_nodes.P          , phi_nodes_array_size);
+                cudaMallocHost(&phi_nodes.TEM        , phi_nodes_array_size);
+
+                cudaMalloc(&gpu_phi_nodes.U          , phi_nodes_array_size);
+                cudaMalloc(&gpu_phi_nodes.V          , phi_nodes_array_size);
+                cudaMalloc(&gpu_phi_nodes.W          , phi_nodes_array_size);
+                cudaMalloc(&gpu_phi_nodes.P          , phi_nodes_array_size);
+                cudaMalloc(&gpu_phi_nodes.TEM        , phi_nodes_array_size);
 
                 cudaMallocHost(&phi.U          , phi_array_size);
                 cudaMallocHost(&phi.V          , phi_array_size);
@@ -672,42 +714,49 @@ namespace minicombust::flow
 					phi_grad.VARP[block_cell] = {0.0, 0.0, 0.0}; 
                 }
 
+                
+
 				//Transfer data to GPU
-				cudaMalloc(&gpu_phi.U, phi_array_size);
-                cudaMalloc(&gpu_phi.V, phi_array_size);
-                cudaMalloc(&gpu_phi.W, phi_array_size);
-				cudaMalloc(&gpu_phi.P, phi_array_size);
-				cudaMalloc(&gpu_phi.PP, phi_array_size);
-				cudaMalloc(&gpu_phi.TE, phi_array_size);
-				cudaMalloc(&gpu_phi.ED, phi_array_size);
-				cudaMalloc(&gpu_phi.TP, phi_array_size);
-				cudaMalloc(&gpu_phi.TEM, phi_array_size);
-				cudaMalloc(&gpu_phi.FUL, phi_array_size);
-				cudaMalloc(&gpu_phi.PRO, phi_array_size);
-				cudaMalloc(&gpu_phi.VARF, phi_array_size);
-				cudaMalloc(&gpu_phi.VARP, phi_array_size);
-				cudaMalloc(&gpu_A_phi.U, source_phi_array_size);
-				cudaMalloc(&gpu_A_phi.V, source_phi_array_size);
-				cudaMalloc(&gpu_A_phi.W, source_phi_array_size);
-				cudaMalloc(&gpu_S_phi.U, source_phi_array_size);
-				cudaMalloc(&gpu_S_phi.V, source_phi_array_size);
-				cudaMalloc(&gpu_S_phi.W, source_phi_array_size);
-				cudaMalloc(&gpu_face_rlencos, face_rlencos_array_size);
-				cudaMalloc(&gpu_face_mass_fluxes, face_mass_fluxes_array_size);
-				cudaMalloc(&gpu_cell_densities, density_array_size);
-				cudaMalloc(&gpu_cell_volumes, volume_array_size);
-				cudaMalloc(&gpu_boundary_types, 6 * sizeof(uint64_t));
-				cudaMalloc(&gpu_face_lambdas, face_lambdas_array_size);
-				cudaMalloc(&gpu_face_normals, face_normals_array_size);
-				cudaMalloc(&gpu_boundary_map, mesh->mesh_size * sizeof(uint64_t));
-				cudaMalloc(&gpu_boundary_map_keys, boundary_map.size() * sizeof(uint64_t));
-				cudaMalloc(&gpu_boundary_map_values, boundary_map.size() * sizeof(uint64_t));
-				cudaMalloc(&gpu_face_areas, face_areas_array_size);
-				cudaMalloc(&gpu_face_fields, face_field_array_size);
-				cudaMalloc(&gpu_particle_terms, mesh->local_mesh_size * sizeof(particle_aos<T>));
-				cudaMalloc(&gpu_halo_ranks, halo_ranks.size() * sizeof(int));
-				cudaMalloc(&gpu_halo_sizes, halo_sizes.size() * sizeof(int));
-				cudaMalloc(&gpu_halo_disps, halo_disps.size() * sizeof(int));
+				gpuErrchk( cudaMalloc(&gpu_phi.U, phi_array_size));
+                gpuErrchk( cudaMalloc(&gpu_phi.V, phi_array_size));
+                gpuErrchk( cudaMalloc(&gpu_phi.W, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.P, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.PP, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.TE, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.ED, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.TP, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.TEM, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.FUL, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.PRO, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.VARF, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_phi.VARP, phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_A_phi.U, source_phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_A_phi.V, source_phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_A_phi.W, source_phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_S_phi.U, source_phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_S_phi.V, source_phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_S_phi.W, source_phi_array_size));
+				gpuErrchk( cudaMalloc(&gpu_face_rlencos, face_rlencos_array_size));
+				gpuErrchk( cudaMalloc(&gpu_face_mass_fluxes, face_mass_fluxes_array_size));
+				gpuErrchk( cudaMalloc(&gpu_cell_densities, density_array_size));
+				gpuErrchk( cudaMalloc(&gpu_cell_volumes, volume_array_size));
+				gpuErrchk( cudaMalloc(&gpu_boundary_types, 6 * sizeof(uint64_t)));
+				gpuErrchk( cudaMalloc(&gpu_face_lambdas, face_lambdas_array_size));
+				gpuErrchk( cudaMalloc(&gpu_face_normals, face_normals_array_size));
+				gpuErrchk( cudaMalloc(&gpu_boundary_map, mesh->mesh_size * sizeof(uint64_t)));
+				gpuErrchk( cudaMalloc(&gpu_boundary_map_keys, boundary_map.size() * sizeof(uint64_t)));
+				gpuErrchk( cudaMalloc(&gpu_boundary_map_values, boundary_map.size() * sizeof(uint64_t)));
+                printf("global_node_to_local_node_map_size %lu ps %lu\n", global_node_to_local_node_map.size(), mesh->points_size);
+
+                gpuErrchk( cudaMalloc(&gpu_node_map,        mesh->points_size * sizeof(uint64_t)));
+				gpuErrchk( cudaMalloc(&gpu_node_map_keys,   global_node_to_local_node_map.size() * sizeof(uint64_t)));
+				gpuErrchk( cudaMalloc(&gpu_node_map_values, global_node_to_local_node_map.size() * sizeof(uint64_t)));
+				gpuErrchk( cudaMalloc(&gpu_face_areas, face_areas_array_size));
+				gpuErrchk( cudaMalloc(&gpu_face_fields, face_field_array_size));
+				gpuErrchk( cudaMalloc(&gpu_particle_terms, mesh->local_mesh_size * sizeof(particle_aos<T>)));
+				gpuErrchk( cudaMalloc(&gpu_halo_ranks, halo_ranks.size() * sizeof(int)));
+				gpuErrchk( cudaMalloc(&gpu_halo_sizes, halo_sizes.size() * sizeof(int)));
+				gpuErrchk( cudaMalloc(&gpu_halo_disps, halo_disps.size() * sizeof(int)));
 				// cudaMalloc(&gpu_halo_mpi_double_datatypes, halo_mpi_double_datatypes.size() * sizeof(MPI_Datatype));
 				// cudaMalloc(&gpu_halo_mpi_vec_double_datatypes, halo_mpi_vec_double_datatypes.size() * sizeof(MPI_Datatype));
 
@@ -718,68 +767,26 @@ namespace minicombust::flow
         		gpuErrchk(cudaMalloc(&values, sizeof(T) * (mesh->local_mesh_size*7)));
         		gpuErrchk(cudaMalloc(&nnz, sizeof(int)));
 
-				//Allocate big data arrays Note: the storage for these is fairly large.
-        		/*gpuErrchk(cudaMallocPitch(&full_data_A, &A_pitch, 9 * sizeof(T), mesh->local_mesh_size));
-  		      	gpuErrchk(cudaMallocPitch(&full_data_bU, &bU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-        		gpuErrchk(cudaMallocPitch(&full_data_bV, &bV_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-		        gpuErrchk(cudaMallocPitch(&full_data_bW, &bW_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-		        gpuErrchk(cudaMallocPitch(&full_data_bP, &bP_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-        		gpuErrchk(cudaMallocPitch(&full_data_bTE, &bTE_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-		        gpuErrchk(cudaMallocPitch(&full_data_bED, &bED_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-        		gpuErrchk(cudaMallocPitch(&full_data_bT, &bT_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-		        gpuErrchk(cudaMallocPitch(&full_data_bFU, &bFU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-        		gpuErrchk(cudaMallocPitch(&full_data_bPR, &bPR_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-		        gpuErrchk(cudaMallocPitch(&full_data_bVFU, &bVFU_pitch, 3 * sizeof(T), mesh->local_mesh_size));
-        		gpuErrchk(cudaMallocPitch(&full_data_bVPR, &bVPR_pitch, 3 * sizeof(T), mesh->local_mesh_size));*/
-
-				/*gpuErrchk(cudaMallocPitch(&full_data_A, 9 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bU, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bV, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bW, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bP, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bTE, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bED, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bT, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bFU, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bPR, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bVFU, 3 * sizeof(T)));
-                gpuErrchk(cudaMallocPitch(&full_data_bVPR, 3 * sizeof(T)));*/
 			
-				cudaMemcpy(gpu_phi.U, phi.U, phi_array_size, 
-						   cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.V, phi.V, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.W, phi.W, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.P, phi.P, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.PP, phi.PP, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.TE, phi.TE, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.ED, phi.ED, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.TP, phi.TP, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.TEM, phi.TEM, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.FUL, phi.FUL, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.PRO, phi.PRO, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.VARF, phi.VARF, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_phi.VARP, phi.VARP, phi_array_size,
-                           cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_A_phi.U, A_phi.U, source_phi_array_size,
-						   cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_A_phi.V, A_phi.V, source_phi_array_size,
-						   cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_A_phi.W, A_phi.W, source_phi_array_size,
-						   cudaMemcpyHostToDevice);
-				cudaMemset(gpu_S_phi.U, 0.0, source_phi_array_size);
-                cudaMemset(gpu_S_phi.V, 0.0, source_phi_array_size);
-                cudaMemset(gpu_S_phi.W, 0.0, source_phi_array_size);
+				gpuErrchk( cudaMemcpy(gpu_phi.U, phi.U, phi_array_size,  cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.V, phi.V, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.W, phi.W, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.P, phi.P, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.PP, phi.PP, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.TE, phi.TE, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.ED, phi.ED, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.TP, phi.TP, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.TEM, phi.TEM, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.FUL, phi.FUL, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.PRO, phi.PRO, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.VARF, phi.VARF, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_phi.VARP, phi.VARP, phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_A_phi.U, A_phi.U, source_phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_A_phi.V, A_phi.V, source_phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_A_phi.W, A_phi.W, source_phi_array_size, cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemset(gpu_S_phi.U, 0.0, source_phi_array_size));
+                gpuErrchk( cudaMemset(gpu_S_phi.V, 0.0, source_phi_array_size));
+                gpuErrchk( cudaMemset(gpu_S_phi.W, 0.0, source_phi_array_size));
 				cudaMemcpy(gpu_face_rlencos, face_rlencos, face_rlencos_array_size,
 						   cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_face_mass_fluxes, face_mass_fluxes,
@@ -859,12 +866,16 @@ namespace minicombust::flow
                 cudaMemcpy(gpu_phi_grad.VARP, phi_grad.VARP, phi_grad_array_size,
                            cudaMemcpyHostToDevice);
 
-				cudaMalloc(&gpu_face_centers, mesh->faces_size * sizeof(vec<T>));
-                cudaMalloc(&gpu_cell_centers, mesh->mesh_size * sizeof(vec<T>));
+				cudaMalloc(&gpu_face_centers,    mesh->faces_size      * sizeof(vec<T>));
+                cudaMalloc(&gpu_cell_centers,    mesh->mesh_size       * sizeof(vec<T>));
+                cudaMalloc(&gpu_local_nodes,     mesh->points_size     * sizeof(vec<T>));
+                cudaMalloc(&gpu_cells_per_point, mesh->points_size     * sizeof(uint8_t));
+                cudaMalloc(&gpu_local_cells,     mesh->local_mesh_size * mesh->cell_size * sizeof(uint64_t));
 
 				//boundary map to gpu
 				uint64_t * full_boundary_map_keys = (uint64_t *) malloc(boundary_map.size() * sizeof(uint64_t));
 				uint64_t * full_boundary_map_values = (uint64_t *) malloc(boundary_map.size() * sizeof(uint64_t));
+
 				int map_index = 0;
 				for(const std::pair<uint64_t, uint64_t>& n : boundary_map)
 				{
@@ -873,15 +884,12 @@ namespace minicombust::flow
 					map_index++;
 				}
 
-				cudaMemcpy(gpu_boundary_map_keys, full_boundary_map_keys,
+				gpuErrchk( cudaMemcpy(gpu_boundary_map_keys, full_boundary_map_keys,
 							boundary_map.size() * sizeof(uint64_t), 
-							cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_boundary_map_values, full_boundary_map_values,
+							cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_boundary_map_values, full_boundary_map_values,
 							boundary_map.size() * sizeof(uint64_t),
-							cudaMemcpyHostToDevice);
-
-				free(full_boundary_map_keys);
-				free(full_boundary_map_values);
+							cudaMemcpyHostToDevice));
 
                 if (boundary_map.size() != 0)
                 {
@@ -891,22 +899,72 @@ namespace minicombust::flow
 		            gpuErrchk( cudaPeekAtLastError() );
                 }
 
-				//cell centers to gpu
-				full_cell_centers = (vec<T> *) malloc(mesh->mesh_size * sizeof(vec<T>));
-				for(uint64_t i = 0; i < mesh->mesh_size; i++)
+                free(full_boundary_map_keys);
+				free(full_boundary_map_values);
+
+
+                //node map to gpu
+				uint64_t * full_node_map_keys = (uint64_t *) malloc(global_node_to_local_node_map.size() * sizeof(uint64_t));
+				uint64_t * full_node_map_values = (uint64_t *) malloc(global_node_to_local_node_map.size() * sizeof(uint64_t));
+
+				map_index = 0;
+				for(const std::pair<uint64_t, uint64_t>& n : global_node_to_local_node_map)
 				{
-					const uint64_t cell = i - mesh->shmem_cell_disp;
-					full_cell_centers[i] = mesh->cell_centers[cell];
-					//printf("the center of cell %lu is (%3.8f,%3.8f,%3.8f)\n",i,full_cell_centers[i].x,full_cell_centers[i].y,full_cell_centers[i].z);
-				} 
+					full_node_map_keys[map_index] = n.first;
+					full_node_map_values[map_index] = n.second;
+					map_index++;
+				}
+				gpuErrchk( cudaMemcpy(gpu_node_map_keys,   full_node_map_keys,  global_node_to_local_node_map.size()  * sizeof(uint64_t),  cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_node_map_values, full_node_map_values, global_node_to_local_node_map.size() * sizeof(uint64_t), cudaMemcpyHostToDevice));
 
-				cudaMemcpy(gpu_face_centers, face_centers, mesh->faces_size * sizeof(vec<T>),
-						   cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_cell_centers, full_cell_centers, 
+                if (global_node_to_local_node_map.size() != 0)
+                {
+                    int thread_count = min( (int) 32, (int)global_node_to_local_node_map.size());
+                    int block_count  = max(1, (int) ceil((double) (global_node_to_local_node_map.size()) / (double) thread_count));
+
+                    C_create_map(block_count, thread_count, gpu_node_map, gpu_node_map_keys, gpu_node_map_values, global_node_to_local_node_map.size());
+                    gpuErrchk( cudaPeekAtLastError() );
+                }
+                cudaStreamSynchronize(0);
+                gpuErrchk( cudaPeekAtLastError() );
+
+                free(full_node_map_keys);
+				free(full_node_map_values);
+
+                cudaFree(gpu_boundary_map_keys);
+                cudaFree(gpu_boundary_map_values);
+
+                // gpuErrchk( cudaFree(gpu_node_map_keys));
+                // gpuErrchk( cudaFree(gpu_node_map_values));
+
+				//cell centers to gpu
+				// full_cell_centers = (vec<T> *) malloc(mesh->mesh_size * sizeof(vec<T>));
+				// for(uint64_t i = 0; i < mesh->mesh_size; i++)
+				// {
+				// 	const uint64_t cell = i - mesh->shmem_cell_disp;
+				// 	full_cell_centers[i] = mesh->cell_centers[cell];
+				// 	//printf("the center of cell %lu is (%3.8f,%3.8f,%3.8f)\n",i,full_cell_centers[i].x,full_cell_centers[i].y,full_cell_centers[i].z);
+				// } 
+
+				gpuErrchk( cudaMemcpy(gpu_face_centers, face_centers, mesh->faces_size * sizeof(vec<T>),
+						   cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_cell_centers, &mesh->cell_centers[-mesh->shmem_cell_disp], 
 						   mesh->mesh_size * sizeof(vec<T>),
-						   cudaMemcpyHostToDevice);
+						   cudaMemcpyHostToDevice));
 
-				free(full_cell_centers);
+                gpuErrchk( cudaMemcpy(gpu_local_nodes, &mesh->points[-mesh->shmem_point_disp],
+							mesh->points_size * sizeof(vec<T>),
+							cudaMemcpyHostToDevice));
+                gpuErrchk( cudaMemcpy(gpu_cells_per_point, &mesh->cells_per_point[-mesh->shmem_point_disp],
+							mesh->points_size * sizeof(uint8_t),
+							cudaMemcpyHostToDevice));
+
+                gpuErrchk( cudaMemcpy(gpu_local_cells, &mesh->cells[(mesh->local_cells_disp - mesh->shmem_cell_disp) * mesh->cell_size],
+							mesh->local_mesh_size * mesh->cell_size * sizeof(uint64_t),
+							cudaMemcpyHostToDevice));
+                
+
+				// free(full_cell_centers);
 
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
 
@@ -1090,6 +1148,14 @@ namespace minicombust::flow
 
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
+
+                size_t free, total;
+	            cudaMemGetInfo( &free, &total );
+
+                if (mpi_config->particle_flow_rank == 0)
+                {
+                    printf("GPU memory %lu free of %lu", free, total);
+                }
             }
 
 

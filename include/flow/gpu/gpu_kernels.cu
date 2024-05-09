@@ -77,6 +77,14 @@ __device__ double dot_product(const vec<double> lhs, const vec<double> rhs)
 	return (lhs.x*rhs.x)+(lhs.y*rhs.y)+(lhs.z*rhs.z);
 }
 
+__device__ double dot_product(const double lhs, const vec<double> rhs)
+{
+	return (lhs*rhs.x)+(lhs*rhs.y)+(lhs*rhs.z);
+}
+
+
+
+
 __device__ double magnitude(vec<double> a)
 {
 	return sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
@@ -132,8 +140,13 @@ __global__ void kernel_create_map(uint64_t *map, uint64_t *keys, uint64_t *value
 {
 	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= size) return;
-	
+
+	// if (keys[tid] >= 56652225)
+	// {
+	// 	printf("%lu key out of range\n", keys[tid]);
+	// }
 	map[keys[tid]] = values[tid];
+
 
 }
 
@@ -2030,6 +2043,68 @@ __global__ void kernel_vec_print(vec<double> *to_print, uint64_t num_print)
 	printf("\n");
 }
 
+__global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size)
+{
+  	auto phi_cell = threadIdx.x + blockIdx.x * blockDim.x;
+    if (phi_cell >= local_mesh_size) return;
+
+	const uint64_t cell_size = 8;
+	const uint64_t node_neighbours = 8;
+
+	if (phi_cell >= local_mesh_size) // Need a mapping from halos to global_nodes
+	{
+		// phi_cell is a halo index?
+
+		// How do we get the correct node id
+	}
+
+	// Every local cell and every halo contributes to the interpolation accumulation.
+
+	const vec<double> cell_center = cell_centers[phi_cell + cell_disp];
+
+	// printf("cell center (%f,%f,%f)\n",cell_center.x,cell_center.y,cell_center.z);
+
+	for (uint64_t n = 0; n < cell_size; n++)
+	{
+		const uint64_t node_id = cells[phi_cell*cell_size + n];
+		// printf("node_id (%d) phi_nodes.U[node_id] %f  points[node_id] %f, %f %f\n", node_id, phi_nodes.U[node_id], points[node_id].x, points[node_id].y, points[node_id].z);
+
+		const vec<double> direction      = vec_minus(points[node_id], cell_center);
+	
+		phi_nodes.U[points_map[node_id]]   += (phi.U[phi_cell]   + dot_product(phi_grad.U[phi_cell],   direction)) / node_neighbours;
+		phi_nodes.V[points_map[node_id]]   += (phi.V[phi_cell]   + dot_product(phi_grad.V[phi_cell],   direction)) / node_neighbours;
+		phi_nodes.W[points_map[node_id]]   += (phi.W[phi_cell]   + dot_product(phi_grad.W[phi_cell],   direction)) / node_neighbours;
+		phi_nodes.P[points_map[node_id]]   += (phi.P[phi_cell]   + dot_product(phi_grad.P[phi_cell],   direction)) / node_neighbours;
+		phi_nodes.TEM[points_map[node_id]] += (phi.TEM[phi_cell] + dot_product(phi_grad.TEM[phi_cell], direction)) / node_neighbours;
+	}
+}
+
+__global__ void kernel_interpolate_init_boundaries(phi_vector<double> phi_nodes, uint8_t *cells_per_point, uint64_t local_points_size)
+{
+	auto node_id = threadIdx.x + blockIdx.x * blockDim.x;
+    if (node_id >= local_points_size) return;
+
+	const uint64_t node_neighbours = 8;
+
+	// TODO THESE SHOULD BE MESH DUMMY TERMS
+
+	phi_nodes.U[node_id]   = (node_neighbours - cells_per_point[node_id]) * 50.0  / node_neighbours;
+	phi_nodes.V[node_id]   = (node_neighbours - cells_per_point[node_id]) * 0.0   / node_neighbours;
+	phi_nodes.W[node_id]   = (node_neighbours - cells_per_point[node_id]) * 0.0   / node_neighbours;
+	phi_nodes.P[node_id]   = (node_neighbours - cells_per_point[node_id]) * 100.0 / node_neighbours;
+	phi_nodes.TEM[node_id] = (node_neighbours - cells_per_point[node_id]) * 273.0 / node_neighbours;
+}
+
+void C_kernel_interpolate_init_boundaries(int block_count, int thread_count, phi_vector<double> phi_nodes, uint8_t *cells_per_point, uint64_t local_points_size)
+{
+	kernel_interpolate_init_boundaries<<<block_count, thread_count>>> (phi_nodes, cells_per_point, local_points_size);
+}
+
+void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size)
+{
+	kernel_interpolate_phi_to_nodes<<<block_count, thread_count>>> (phi, phi_grad, phi_nodes, points, points_map, cells_per_point, cells, cell_centers, local_mesh_size, cell_disp, local_points_size);
+}
+
 void C_kernel_vec_print(vec<double> *to_print, uint64_t num_print)
 {
 	kernel_vec_print<<<1,1>>>(to_print, num_print);
@@ -2127,30 +2202,30 @@ void C_kernel_precomp_AU(int block_count, int thread_count, uint64_t faces_size,
 void C_kernel_get_phi_gradients(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos)
 { 
 
+	kernel_get_phi_gradients<<<block_count,thread_count>>>(phi, phi_grad, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos);
 	size_t free, total;
 	cudaMemGetInfo( &free, &total );
 
-	if (free < 0 )
-	// if (free < 2'000'000'000 )
-	{
-		printf("Warning: Operating on phi gradients to reduce memory. This is a hack and should be removed.\n");
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.U, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.U);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.V, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.V);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.W, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.W);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.P, true,  local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.P);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.TE, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.TE);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.ED, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.ED);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.TEM, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.TEM);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.FUL, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.FUL);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.PRO, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.PRO);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.VARF, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.VARF);
-		kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.VARP, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.VARP);
+	// if (free < 0 )
+	// // if (free < 2'000'000'000 )
+	// {
+	// 	printf("Warning: Operating on phi gradients to reduce memory. This is a hack and should be removed.\n");
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.U, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.U);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.V, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.V);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.W, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.W);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.P, true,  local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.P);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.TE, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.TE);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.ED, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.ED);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.TEM, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.TEM);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.FUL, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.FUL);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.PRO, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.PRO);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.VARF, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.VARF);
+	// 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi.VARP, false, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, phi_grad.VARP);
 
-	}
-	else
-	{
-		kernel_get_phi_gradients<<<block_count,thread_count>>>(phi, phi_grad, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos);
-	}
+	// }
+	// else
+	// {
+	// }
 
 
 
@@ -2325,13 +2400,14 @@ void C_kernel_fgm_look_up(int block_count, int thread_count, double *fgm_table, 
 }
 
 
-void C_create_map(int block_count, int thread_count, uint64_t *boundary_map,  uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size)
+void C_create_map(int block_count, int thread_count, uint64_t *map,  uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size)
 {
-	kernel_create_map<<<block_count, thread_count>>>(boundary_map, gpu_keys, gpu_values, size);
+	kernel_create_map<<<block_count, thread_count>>>(map, gpu_keys, gpu_values, size);
 }
 
 void C_kernel_process_particle_fields(uint64_t block_count, int thread_count, uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp)
 {
+
 	kernel_process_particle_fields<<<block_count, thread_count>>>(sent_cell_indexes, sent_particle_fields, particle_fields, num_fields, local_mesh_disp);
 }
 

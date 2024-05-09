@@ -8,6 +8,10 @@ void C_kernel_vec_print(vec<double> *to_print, uint64_t num_print);
 
 void C_test_solve();
 
+void C_kernel_interpolate_init_boundaries(int block_count, int thread_count, phi_vector<double> phi_nodes, uint8_t *cells_per_point, uint64_t local_points_size);
+
+void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size);
+
 void C_kernel_process_particle_fields(uint64_t block_count, int thread_count, uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp);
 
 void C_kernel_test_particle_terms(particle_aos<double> *particle_terms, uint64_t local_mesh_size);
@@ -72,5 +76,5 @@ void C_kernel_pack_Aphi_halo_buffer(int block_count, int thread_count, phi_vecto
 void C_kernel_pack_PP_grad_halo_buffer(int block_count, int thread_count, phi_vector<vec<double>> send_buffer, phi_vector<vec<double>> phi_grad, uint64_t *indexes, uint64_t buf_size);
 
 void C_create_cuco_map(int block_count, int thread_count, uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size);
-void C_create_map(int block_count, int thread_count, uint64_t *boundary_map,  uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size);
+void C_create_map(int block_count, int thread_count, uint64_t *map,  uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size);
 

@@ -479,19 +479,18 @@ namespace minicombust::flow
             for ( uint64_t p = 0; p < ranks.size(); p++ )
             {
                 int recieved_indexes = 0;
-                if (!processed__neighbours[p])
-                {
-                    MPI_Test(&recv_requests[2*p], &recieved_indexes, MPI_STATUS_IGNORE);
+                MPI_Test(&recv_requests[2*p], &recieved_indexes, MPI_STATUS_IGNORE);
 
-                    if ( recieved_indexes )
-                    {
-                        if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
-                        
-                        get_neighbour_cells (p);
-                        processed_neighbours[p] = true;
-                    }
-                    all_processed = false;
+                if ( recieved_indexes && !processed_neighbours[p] )
+                {
+                    if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
+                    
+                    get_neighbour_cells (p);
+                    processed_neighbours[p] = true;
+
                 }
+
+                all_processed &= processed_neighbours[p];
             }
 
             time1 += MPI_Wtime(); //1

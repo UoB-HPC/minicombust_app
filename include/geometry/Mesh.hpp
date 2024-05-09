@@ -80,6 +80,7 @@ namespace minicombust::geometry
             uint64_t shmem_point_disp;   // Number of points   in the mesh that a flow rank owns.
 
             uint64_t local_mesh_size;     // Number of polygons in the mesh that a flow rank owns.
+            uint64_t local_points_size;     // Number of polygons in the mesh that a flow rank owns.
             uint64_t local_cells_disp;    // Number of polygons in the mesh that a flow rank owns.
             
             
@@ -153,7 +154,7 @@ namespace minicombust::geometry
                 shmem_mesh_size   = shmem_cell_disps[mpi_config->node_rank + 1]  - shmem_cell_disp;
                 shmem_point_size  = shmem_point_disps[mpi_config->node_rank + 1] - shmem_point_disp;
                 local_mesh_size   = ( mpi_config->solver_type == FLOW ) ? block_element_disp[mpi_config->particle_flow_rank + 1] - local_cells_disp  : mesh_size;
-
+                local_points_size = ( mpi_config->solver_type == FLOW ) ? (flow_block_dim.x+1) * (flow_block_dim.y+1) * (flow_block_dim.z+1) : points_size;
                 // Allocate space for and calculate cell centre co-ordinates
                 points_array_size     = shmem_point_size * sizeof(vec<double>);
                 cells_per_point_size  = shmem_point_size * sizeof(uint8_t);
