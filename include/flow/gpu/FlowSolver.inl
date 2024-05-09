@@ -331,7 +331,7 @@ namespace minicombust::flow
 			int block_count = max(1, (int) ceil((double) (elements) / (double) thread_count));
 
 			C_kernel_pack_Aphi_halo_buffer(block_count, thread_count, gpu_phi_send_buffers[r], gpu_A_phi, gpu_halo_indexes[r], (uint64_t)(elements));
-		gpuErrchk( cudaPeekAtLastError() );
+			gpuErrchk( cudaPeekAtLastError() );
 
 			MPI_Isend( gpu_phi_send_buffers[r].U,    halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 0,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 0] );
         }
@@ -352,6 +352,9 @@ namespace minicombust::flow
 
         resize_nodes_arrays(node_to_position_map.size() + elements[recv_id] * cell_size + 1 );
 
+		int local_disp = 0;
+		// resize_send_buffers_nodes_arrays (send_buffer_disp + elements[recv_id] * cell_size + 1);
+
         #pragma ivdep
         for (int i = 0; i < elements[recv_id]; i++)
         {
@@ -361,120 +364,152 @@ namespace minicombust::flow
             for (uint64_t n = 0; n < cell_size; n++)
             {
                 const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
-                local_particle_node_sets[recv_id].insert(node_id);
+				if (!local_particle_node_sets[recv_id].contains(node_id))
+				{
+                	local_particle_node_sets[recv_id].insert(node_id);
+					send_buffers_interp_node_indexes[send_buffer_disp + local_disp] = node_id;
+					local_disp++;
+				}
             }
 
-            // if ( new_cells_set.contains(cell) )  continue;
+			if ( new_cells_set.contains(cell) )  continue;
 
-            // new_cells_set.insert(cell);
-            // unordered_neighbours_set[0].insert(cell);   
+            new_cells_set.insert(cell);
+            unordered_neighbours_set[0].insert(cell);   
             
 
-            // #pragma ivdep
-            // for (uint64_t n = 0; n < cell_size; n++)
-            // {
-            //     const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
+            #pragma ivdep
+            for (uint64_t n = 0; n < cell_size; n++)
+            {
+                const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
 
-            //     if (!node_to_position_map.count(node_id))
-            //     {
-            //         const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id - mesh->shmem_point_disp];
+                if (!node_to_position_map.count(node_id))
+                {
+                    const T boundary_neighbours = node_neighbours - mesh->cells_per_point[node_id - mesh->shmem_point_disp];
 
-            //         flow_aos<T> temp_term;
-            //         temp_term.vel      = mesh->dummy_gas_vel * (boundary_neighbours / node_neighbours);
-            //         temp_term.pressure = mesh->dummy_gas_pre * (boundary_neighbours / node_neighbours);
-            //         temp_term.temp     = mesh->dummy_gas_tem * (boundary_neighbours / node_neighbours);
+                    flow_aos<T> temp_term;
+                    temp_term.vel      = mesh->dummy_gas_vel * (boundary_neighbours / node_neighbours);
+                    temp_term.pressure = mesh->dummy_gas_pre * (boundary_neighbours / node_neighbours);
+                    temp_term.temp     = mesh->dummy_gas_tem * (boundary_neighbours / node_neighbours);
 
-            //         const uint64_t position = node_to_position_map.size();
-            //         interp_node_indexes[position]     = node_id;
-            //         interp_node_flow_fields[position] = temp_term; 
-            //         node_to_position_map[node_id]     = position;
-            //     }
-            // }
+                    const uint64_t position = node_to_position_map.size();
+                    interp_node_indexes[position]     = node_id;
+                    interp_node_flow_fields[position] = temp_term; 
+                    node_to_position_map[node_id]     = position;
+                }
+            }
 
-            // // Get 6 immediate neighbours
-            // const uint64_t below_neighbour                = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + DOWN_FACE];
-            // const uint64_t above_neighbour                = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + UP_FACE];
-            // const uint64_t around_left_neighbour          = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + LEFT_FACE];
-            // const uint64_t around_right_neighbour         = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + RIGHT_FACE];
-            // const uint64_t around_front_neighbour         = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + FRONT_FACE];
-            // const uint64_t around_back_neighbour          = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + BACK_FACE];
+            // Get 6 immediate neighbours
+            const uint64_t below_neighbour                = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + DOWN_FACE];
+            const uint64_t above_neighbour                = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + UP_FACE];
+            const uint64_t around_left_neighbour          = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + LEFT_FACE];
+            const uint64_t around_right_neighbour         = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + RIGHT_FACE];
+            const uint64_t around_front_neighbour         = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + FRONT_FACE];
+            const uint64_t around_back_neighbour          = mesh->cell_neighbours[ (cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + BACK_FACE];
 
-            // unordered_neighbours_set[0].insert(below_neighbour);             // Immediate neighbour cell indexes are correct   
-            // unordered_neighbours_set[0].insert(above_neighbour);             // Immediate neighbour cell indexes are correct  
-            // unordered_neighbours_set[0].insert(around_left_neighbour);       // Immediate neighbour cell indexes are correct   
-            // unordered_neighbours_set[0].insert(around_right_neighbour);      // Immediate neighbour cell indexes are correct   
-            // unordered_neighbours_set[0].insert(around_front_neighbour);      // Immediate neighbour cell indexes are correct   
-            // unordered_neighbours_set[0].insert(around_back_neighbour);       // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(below_neighbour);             // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(above_neighbour);             // Immediate neighbour cell indexes are correct  
+            unordered_neighbours_set[0].insert(around_left_neighbour);       // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(around_right_neighbour);      // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(around_front_neighbour);      // Immediate neighbour cell indexes are correct   
+            unordered_neighbours_set[0].insert(around_back_neighbour);       // Immediate neighbour cell indexes are correct   
 
-            // // Get 8 cells neighbours around
-            // if ( around_left_neighbour != MESH_BOUNDARY  )   // If neighbour isn't edge of mesh and isn't a halo cell
-            // {
-            //     const uint64_t around_left_front_neighbour    = mesh->cell_neighbours[ (around_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
-            //     const uint64_t around_left_back_neighbour     = mesh->cell_neighbours[ (around_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
-            //     unordered_neighbours_set[0].insert(around_left_front_neighbour);    
-            //     unordered_neighbours_set[0].insert(around_left_back_neighbour);     
-            // }
-            // if ( around_right_neighbour != MESH_BOUNDARY )
-            // {
-            //     const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[ (around_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell + FRONT_FACE] ;
-            //     const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[ (around_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell + BACK_FACE]  ;
-            //     unordered_neighbours_set[0].insert(around_right_front_neighbour);   
-            //     unordered_neighbours_set[0].insert(around_right_back_neighbour); 
-            // }
-            // if ( below_neighbour != MESH_BOUNDARY )
-            // {
-            //     // Get 8 cells around below cell
-            //     const uint64_t below_left_neighbour           = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
-            //     const uint64_t below_right_neighbour          = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + RIGHT_FACE] ;
-            //     const uint64_t below_front_neighbour          = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + FRONT_FACE] ;
-            //     const uint64_t below_back_neighbour           = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + BACK_FACE]  ;
-            //     unordered_neighbours_set[0].insert(below_left_neighbour);           
-            //     unordered_neighbours_set[0].insert(below_right_neighbour);          
-            //     unordered_neighbours_set[0].insert(below_front_neighbour);          
-            //     unordered_neighbours_set[0].insert(below_back_neighbour);           
-            //     if ( below_left_neighbour != MESH_BOUNDARY )
-            //     {
-            //         const uint64_t below_left_front_neighbour     = mesh->cell_neighbours[ (below_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
-            //         const uint64_t below_left_back_neighbour      = mesh->cell_neighbours[ (below_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
-            //         unordered_neighbours_set[0].insert(below_left_front_neighbour);     
-            //         unordered_neighbours_set[0].insert(below_left_back_neighbour);      
-            //     }
-            //     if ( below_right_neighbour != MESH_BOUNDARY )
-            //     {
-            //         const uint64_t below_right_front_neighbour    = mesh->cell_neighbours[ (below_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
-            //         const uint64_t below_right_back_neighbour     = mesh->cell_neighbours[ (below_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
-            //         unordered_neighbours_set[0].insert(below_right_front_neighbour);    
-            //         unordered_neighbours_set[0].insert(below_right_back_neighbour); 
-            //     }
-            // }
-            // if ( above_neighbour != MESH_BOUNDARY )
-            // {
-            //     // Get 8 cells neighbours above
-            //     const uint64_t above_left_neighbour           = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
-            //     const uint64_t above_right_neighbour          = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + RIGHT_FACE] ;
-            //     const uint64_t above_front_neighbour          = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + FRONT_FACE] ;
-            //     const uint64_t above_back_neighbour           = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + BACK_FACE]  ;
-            //     unordered_neighbours_set[0].insert(above_left_neighbour);           
-            //     unordered_neighbours_set[0].insert(above_right_neighbour);          
-            //     unordered_neighbours_set[0].insert(above_front_neighbour);          
-            //     unordered_neighbours_set[0].insert(above_back_neighbour);           
-            //     if ( above_left_neighbour != MESH_BOUNDARY )
-            //     {
-            //         const uint64_t above_left_front_neighbour     = mesh->cell_neighbours[ (above_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
-            //         const uint64_t above_left_back_neighbour      = mesh->cell_neighbours[ (above_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
-            //         unordered_neighbours_set[0].insert(above_left_front_neighbour);     
-            //         unordered_neighbours_set[0].insert(above_left_back_neighbour);      
-            //     }
-            //     if ( above_right_neighbour != MESH_BOUNDARY )
-            //     {
-            //         const uint64_t above_right_front_neighbour    = mesh->cell_neighbours[ (above_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
-            //         const uint64_t above_right_back_neighbour     = mesh->cell_neighbours[ (above_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
-            //         unordered_neighbours_set[0].insert(above_right_front_neighbour);    
-            //         unordered_neighbours_set[0].insert(above_right_back_neighbour);     
-            //     }
-            // }
+            // Get 8 cells neighbours around
+            if ( around_left_neighbour != MESH_BOUNDARY  )   // If neighbour isn't edge of mesh and isn't a halo cell
+            {
+                const uint64_t around_left_front_neighbour    = mesh->cell_neighbours[ (around_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                const uint64_t around_left_back_neighbour     = mesh->cell_neighbours[ (around_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                unordered_neighbours_set[0].insert(around_left_front_neighbour);    
+                unordered_neighbours_set[0].insert(around_left_back_neighbour);     
+            }
+            if ( around_right_neighbour != MESH_BOUNDARY )
+            {
+                const uint64_t around_right_front_neighbour   = mesh->cell_neighbours[ (around_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell + FRONT_FACE] ;
+                const uint64_t around_right_back_neighbour    = mesh->cell_neighbours[ (around_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell + BACK_FACE]  ;
+                unordered_neighbours_set[0].insert(around_right_front_neighbour);   
+                unordered_neighbours_set[0].insert(around_right_back_neighbour); 
+            }
+            if ( below_neighbour != MESH_BOUNDARY )
+            {
+                // Get 8 cells around below cell
+                const uint64_t below_left_neighbour           = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
+                const uint64_t below_right_neighbour          = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + RIGHT_FACE] ;
+                const uint64_t below_front_neighbour          = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + FRONT_FACE] ;
+                const uint64_t below_back_neighbour           = mesh->cell_neighbours[ (below_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + BACK_FACE]  ;
+                unordered_neighbours_set[0].insert(below_left_neighbour);           
+                unordered_neighbours_set[0].insert(below_right_neighbour);          
+                unordered_neighbours_set[0].insert(below_front_neighbour);          
+                unordered_neighbours_set[0].insert(below_back_neighbour);           
+                if ( below_left_neighbour != MESH_BOUNDARY )
+                {
+                    const uint64_t below_left_front_neighbour     = mesh->cell_neighbours[ (below_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
+                    const uint64_t below_left_back_neighbour      = mesh->cell_neighbours[ (below_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
+                    unordered_neighbours_set[0].insert(below_left_front_neighbour);     
+                    unordered_neighbours_set[0].insert(below_left_back_neighbour);      
+                }
+                if ( below_right_neighbour != MESH_BOUNDARY )
+                {
+                    const uint64_t below_right_front_neighbour    = mesh->cell_neighbours[ (below_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                    const uint64_t below_right_back_neighbour     = mesh->cell_neighbours[ (below_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                    unordered_neighbours_set[0].insert(below_right_front_neighbour);    
+                    unordered_neighbours_set[0].insert(below_right_back_neighbour); 
+                }
+            }
+            if ( above_neighbour != MESH_BOUNDARY )
+            {
+                // Get 8 cells neighbours above
+                const uint64_t above_left_neighbour           = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + LEFT_FACE]  ;
+                const uint64_t above_right_neighbour          = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + RIGHT_FACE] ;
+                const uint64_t above_front_neighbour          = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + FRONT_FACE] ;
+                const uint64_t above_back_neighbour           = mesh->cell_neighbours[ (above_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell        + BACK_FACE]  ;
+                unordered_neighbours_set[0].insert(above_left_neighbour);           
+                unordered_neighbours_set[0].insert(above_right_neighbour);          
+                unordered_neighbours_set[0].insert(above_front_neighbour);          
+                unordered_neighbours_set[0].insert(above_back_neighbour);           
+                if ( above_left_neighbour != MESH_BOUNDARY )
+                {
+                    const uint64_t above_left_front_neighbour     = mesh->cell_neighbours[ (above_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + FRONT_FACE] ;
+                    const uint64_t above_left_back_neighbour      = mesh->cell_neighbours[ (above_left_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell   + BACK_FACE]  ;
+                    unordered_neighbours_set[0].insert(above_left_front_neighbour);     
+                    unordered_neighbours_set[0].insert(above_left_back_neighbour);      
+                }
+                if ( above_right_neighbour != MESH_BOUNDARY )
+                {
+                    const uint64_t above_right_front_neighbour    = mesh->cell_neighbours[ (above_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + FRONT_FACE] ;
+                    const uint64_t above_right_back_neighbour     = mesh->cell_neighbours[ (above_right_neighbour - mesh->shmem_cell_disp) * mesh->faces_per_cell  + BACK_FACE]  ;
+                    unordered_neighbours_set[0].insert(above_right_front_neighbour);    
+                    unordered_neighbours_set[0].insert(above_right_back_neighbour);     
+                }
+            }
         }
 
+
+		if (local_disp != 0){
+			
+
+
+			int thread_count = min( (int) 32, (int)local_particle_node_sets[recv_id].size());
+			int block_count = max(1, (int) ceil((double) (local_particle_node_sets[recv_id].size()) / (double) thread_count));
+
+			// printf("Block size %lu, thread count %lu\n", block_count, thread_count);
+			// gpuErrchk( cudaPeekAtLastError() );
+
+			if ((send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t) >= gpu_send_buffers_node_index_array_size )
+			{
+				printf("GPU BUFFER OVERFLOW : %lu > \n", (send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t), gpu_send_buffers_node_index_array_size );
+
+			}
+
+			gpuErrchk(cudaMemcpyAsync(&gpu_send_buffers_interp_node_indexes[send_buffer_disp], &send_buffers_interp_node_indexes[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(uint64_t), cudaMemcpyHostToDevice, (cudaStream_t) 0));
+			C_kernel_pack_flow_field_buffer(block_count, thread_count, &gpu_send_buffers_interp_node_indexes[send_buffer_disp] , gpu_phi_nodes, &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], gpu_node_map, local_particle_node_sets[recv_id].size(), global_node_to_local_node_map.size());
+			// gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+			
+			gpuErrchk( cudaPeekAtLastError() );
+
+			send_buffer_disp += local_particle_node_sets[recv_id].size();
+
+		}
+		
         unordered_neighbours_set[0].erase(MESH_BOUNDARY);
     }
 
@@ -498,16 +533,18 @@ namespace minicombust::flow
 
             if (is_halo(cell)) 
             {
-                flow_term.temp          = mesh->dummy_gas_tem;      
-                flow_grad_term.temp     = 0.0;  
+                // flow_term.temp          = mesh->dummy_gas_tem;      
+                // flow_grad_term.temp     = 0.0;  
 
-                flow_term.pressure      = phi.P[boundary_map[cell]];      
-                flow_grad_term.pressure = 0.0; 
+                // flow_term.pressure      = phi.P[boundary_map[cell]];      
+                // flow_grad_term.pressure = 0.0; 
 
-                flow_term.vel.x         = phi.U[boundary_map[cell]]; 
-                flow_term.vel.y         = phi.V[boundary_map[cell]]; 
-                flow_term.vel.z         = phi.W[boundary_map[cell]]; 
-                flow_grad_term.vel = { 0.0, 0.0, 0.0 }; 
+                // flow_term.vel.x         = phi.U[boundary_map[cell]]; 
+                // flow_term.vel.y         = phi.V[boundary_map[cell]]; 
+                // flow_term.vel.z         = phi.W[boundary_map[cell]]; 
+                // flow_grad_term.vel = { 0.0, 0.0, 0.0 }; 
+
+				continue;
             }
             else
             {
@@ -516,7 +553,7 @@ namespace minicombust::flow
                 flow_term.vel.y    = phi.V[block_cell];
                 flow_term.vel.z    = phi.W[block_cell];
                 flow_term.pressure = phi.P[block_cell];
-                flow_term.temp     = mesh->flow_terms[block_cell].temp;
+                flow_term.temp     = phi.TEM[block_cell];
 
                 flow_grad_term = mesh->flow_grad_terms[block_cell]; 
             }
@@ -541,9 +578,11 @@ namespace minicombust::flow
                 {
                     const vec<T> direction      = mesh->points[node_id - mesh->shmem_point_disp] - cell_centre;
 
-                    interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
-                    interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-                    interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
+                    // interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
+                    // interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
+                    // interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
+
+					interp_node_flow_fields[node_to_position_map[node_id]]     = mesh->dummy_flow_field;
                 }
             }
         }
@@ -562,7 +601,7 @@ namespace minicombust::flow
         node_to_position_map.clear();
         new_cells_set.clear();
         ranks.clear();
-
+		send_buffer_disp = 0;
 		// memset(mesh->particle_terms,         0, sizeof(particle_aos<T>)*mesh->local_mesh_size);
 		cudaMemset(gpu_particle_terms, 0, sizeof(particle_aos<T>)*mesh->local_mesh_size);
         for (uint64_t i = 0; i < local_particle_node_sets.size(); i++)
@@ -599,7 +638,6 @@ namespace minicombust::flow
 					nvtxRangePush("update_flow::loop1_recv_get_neighbours");
 					first_msg_recv = true;
 				}
-				
 
                 uint64_t rank_slot = ranks.size();
                 ranks.push_back(statuses[rank_slot].MPI_SOURCE);
@@ -658,9 +696,7 @@ namespace minicombust::flow
                     
                     get_neighbour_cells (p);
                     processed_neighbours[p] = true;  // Invalid write
-
                 }
-
                 all_processed &= processed_neighbours[p]; //Invalid read
             }
 
@@ -685,33 +721,18 @@ namespace minicombust::flow
 
         if ( FLOW_SOLVER_DEBUG ) printf("\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
 
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //2
-
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //3
-        
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //4
-		
         uint64_t max_send_buffer_size = 0;
         for (uint64_t p = 0; p < ranks.size(); p++)
         {
             max_send_buffer_size += local_particle_node_sets[p].size();
         }
-        resize_send_buffers_nodes_arrays (max_send_buffer_size);
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //5
-
+		printf("Flow rank requires %lu items in buffer\n", max_send_buffer_size);
 
 		// Synchronize with default stream to make sure phi data is on CPU
 		cudaStreamSynchronize(0);
 		nvtxRangePop();
 		nvtxRangePush("update_flow::interpolate_to_nodes");
-        // interpolate_to_nodes ();
+        interpolate_to_nodes ();
 		nvtxRangePop();
 
 		// Send size of reduced neighbours of cells back to ranks.
@@ -725,28 +746,46 @@ namespace minicombust::flow
         bool *processed_cell_fields = async_locks;
         for (uint64_t p = 0; p < ranks.size(); p++)
         {
-            recv_time1  -= MPI_Wtime();
             uint64_t local_disp = 0;
+
+			gpuErrchk(cudaMemcpy(&check_send_buffers_interp_node_flow_fields[ptr_disp], &gpu_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost));
+			cudaDeviceSynchronize();
 
             #pragma ivdep
             for ( uint64_t node : local_particle_node_sets[p] )
+            // for ( uint64_t i = 0; i < local_particle_node_sets[p].size(); i++ )
             {
-                // send_buffers_interp_node_indexes[ptr_disp     + local_disp] = interp_node_indexes[node_to_position_map[node]];
-                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp] = interp_node_flow_fields[node_to_position_map[node]];
-				send_buffers_interp_node_indexes[ptr_disp     + local_disp] = node;
-                send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.x    = phi_nodes.U[global_node_to_local_node_map[node]];
-                send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.y    = phi_nodes.V[global_node_to_local_node_map[node]];
-                send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.z    = phi_nodes.W[global_node_to_local_node_map[node]];
-                send_buffers_interp_node_flow_fields[ptr_disp + local_disp].pressure = phi_nodes.P[global_node_to_local_node_map[node]];
-                send_buffers_interp_node_flow_fields[ptr_disp + local_disp].temp     = phi_nodes.TEM[global_node_to_local_node_map[node]];
+				// uint64_t node = send_buffers_interp_node_indexes[ptr_disp + local_disp];
+
+
+                send_buffers_interp_node_indexes[ptr_disp     + local_disp] = interp_node_indexes[node_to_position_map[node]];
+                send_buffers_interp_node_flow_fields[ptr_disp + local_disp] = interp_node_flow_fields[node_to_position_map[node]];
+				// send_buffers_interp_node_indexes[ptr_disp     + local_disp] = node;
+
+
+                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.x    = phi_nodes.U[global_node_to_local_node_map[node]];
+                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.y    = phi_nodes.V[global_node_to_local_node_map[node]];
+                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].vel.z    = phi_nodes.W[global_node_to_local_node_map[node]];
+                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].pressure = phi_nodes.P[global_node_to_local_node_map[node]];
+                // send_buffers_interp_node_flow_fields[ptr_disp + local_disp].temp     = phi_nodes.TEM[global_node_to_local_node_map[node]];
+
+				// check_flow_field_exit("CPU_GPU_BUFFER WRONG", &check_send_buffers_interp_node_flow_fields[ptr_disp + local_disp], &send_buffers_interp_node_flow_fields[ptr_disp + local_disp], ptr_disp+local_disp);
+
                 local_disp++;
             }
-            recv_time1  += MPI_Wtime();
-            recv_time2  -= MPI_Wtime();
 
-            MPI_Isend ( send_buffers_interp_node_indexes + ptr_disp,     local_disp, MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
-            MPI_Isend ( send_buffers_interp_node_flow_fields + ptr_disp, local_disp, mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
-            ptr_disp += local_disp;
+			// // gpuErrchk(cudaMemcpy(&send_buffers_interp_node_indexes[ptr_disp],     &gpu_send_buffers_interp_node_indexes[ptr_disp],     local_particle_node_sets[p].size()*sizeof(uint64_t),    cudaMemcpyDeviceToHost));
+			// // gpuErrchk(cudaMemcpy(&send_buffers_interp_node_flow_fields[ptr_disp], &gpu_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost));
+			
+
+			MPI_Isend ( &send_buffers_interp_node_indexes[ptr_disp],      local_particle_node_sets[p].size(), MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
+            MPI_Isend ( &send_buffers_interp_node_flow_fields[ptr_disp],  local_particle_node_sets[p].size(), mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
+            // MPI_Isend ( &check_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size(), mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
+
+            // MPI_Isend ( &gpu_send_buffers_interp_node_indexes[ptr_disp],     local_particle_node_sets[p].size(), MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
+            // MPI_Isend ( &gpu_send_buffers_interp_node_flow_fields[ptr_disp], local_particle_node_sets[p].size(), mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
+            
+			ptr_disp += local_particle_node_sets[p].size();
 
             processed_cell_fields[p] = false; // Invalid write
 
@@ -1502,20 +1541,22 @@ namespace minicombust::flow
 			int thread_count1 = min((uint64_t) 32, mesh->points_size);
 			int block_count1 = max(1,(int) ceil((double) mesh->points_size/(double) thread_count1));
 
-			int thread_count = min((uint64_t) 32, mesh->local_mesh_size);
-			int block_count = max(1,(int) ceil((double) mesh->local_mesh_size/(double) thread_count));
+			int thread_count = min((uint64_t) 32, (mesh->local_mesh_size + nhalos));
+			int block_count = max(1,(int) ceil((double) (mesh->local_mesh_size + nhalos)/(double) thread_count));
+			// int thread_count = min((uint64_t) 32, (mesh->local_mesh_size));
+			// int block_count = max(1,(int) ceil((double) (mesh->local_mesh_size)/(double) thread_count));
 
   			C_kernel_interpolate_init_boundaries(block_count1, thread_count1, gpu_phi_nodes, gpu_cells_per_point, global_node_to_local_node_map.size());
 			gpuErrchk( cudaPeekAtLastError() );
-			C_kernel_interpolate_phi_to_nodes(block_count, thread_count, gpu_phi, gpu_phi_grad, gpu_phi_nodes, gpu_local_nodes, gpu_node_map, gpu_cells_per_point, gpu_local_cells, gpu_cell_centers, mesh->local_mesh_size, mesh->local_cells_disp, global_node_to_local_node_map.size());
+			C_kernel_interpolate_phi_to_nodes(block_count, thread_count, gpu_phi, gpu_phi_grad, gpu_phi_nodes, gpu_local_nodes, gpu_node_map, gpu_cells_per_point, gpu_local_cells, gpu_cell_centers, mesh->local_mesh_size, mesh->local_cells_disp, global_node_to_local_node_map.size(), nhalos);
 			gpuErrchk( cudaPeekAtLastError() );
 
-			// gpuErrchk(cudaMemcpyAsync(phi.U, gpu_phi.U,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0)); // Asynchronous memcpy to default stream
-            // gpuErrchk(cudaMemcpyAsync(phi.V, gpu_phi.V,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi.W, gpu_phi.W,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi.P, gpu_phi.P,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi.TEM, gpu_phi.TEM, phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));  
-			// gpuErrchk( cudaPeekAtLastError() );
+			gpuErrchk(cudaMemcpyAsync(phi.U, gpu_phi.U,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0)); // Asynchronous memcpy to default stream
+            gpuErrchk(cudaMemcpyAsync(phi.V, gpu_phi.V,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+            gpuErrchk(cudaMemcpyAsync(phi.W, gpu_phi.W,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+            gpuErrchk(cudaMemcpyAsync(phi.P, gpu_phi.P,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+            gpuErrchk(cudaMemcpyAsync(phi.TEM, gpu_phi.TEM, phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));  
+			gpuErrchk( cudaPeekAtLastError() );
 
 
 			gpuErrchk(cudaMemcpyAsync(phi_nodes.U,   gpu_phi_nodes.U,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0)); // Asynchronous memcpy to default stream

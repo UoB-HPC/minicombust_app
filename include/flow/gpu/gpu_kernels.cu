@@ -163,6 +163,25 @@ __global__ void kernel_process_particle_fields(uint64_t *sent_cell_indexes, part
 
 }
 
+__global__ void kernel_pack_flow_field_buffer(uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size)
+{
+	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
+	if (tid >= buf_size) return;
+
+	const uint64_t node_id = index_buffer[tid];
+
+	if (node_map[node_id] > node_map_size)
+	{
+		printf("ERROR: Index %lu global_node %lu local_node %lu\n", tid, node_id, node_map[node_id]);
+	}
+
+	flow_buffer[tid].vel.x    = phi_nodes.U[node_map[node_id]];
+	flow_buffer[tid].vel.y    = phi_nodes.V[node_map[node_id]];
+	flow_buffer[tid].vel.z    = phi_nodes.W[node_map[node_id]];
+	flow_buffer[tid].pressure = phi_nodes.P[node_map[node_id]];
+	flow_buffer[tid].temp     = phi_nodes.TEM[node_map[node_id]];
+}
+
 __global__ void kernel_pack_phi_halo_buffer(phi_vector<double> send_buffer, phi_vector<double> phi, uint64_t *indexes, uint64_t buf_size)
 {
 	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -2043,40 +2062,75 @@ __global__ void kernel_vec_print(vec<double> *to_print, uint64_t num_print)
 	printf("\n");
 }
 
-__global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size)
+__global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
 {
   	auto phi_cell = threadIdx.x + blockIdx.x * blockDim.x;
+    // if (phi_cell >= local_mesh_size + nhalos) return;
     if (phi_cell >= local_mesh_size) return;
 
 	const uint64_t cell_size = 8;
 	const uint64_t node_neighbours = 8;
 
-	if (phi_cell >= local_mesh_size) // Need a mapping from halos to global_nodes
-	{
-		// phi_cell is a halo index?
+	double U, V, W, T, P;
+	vec<double> Ug, Vg, Wg, Tg, Pg;
 
-		// How do we get the correct node id
+	bool halo = (phi_cell >= local_mesh_size);
+
+	if (halo) // Need a mapping from halos to global_nodes
+	{
+		U=50.0;
+		V=0.0;
+		W=0.0;
+		T=273.0;
+		P=100.0;
+		Ug = {0.0, 0.0, 0.0};
+		Vg = {0.0, 0.0, 0.0};
+		Wg = {0.0, 0.0, 0.0};
+		Tg = {0.0, 0.0, 0.0};
+		Pg = {0.0, 0.0, 0.0};
+
+	}
+	else
+	{
+		U = phi.U[phi_cell];
+		V = phi.V[phi_cell];
+		W = phi.W[phi_cell];
+		P = phi.P[phi_cell];
+		T = phi.TEM[phi_cell];
+
+		Ug = phi_grad.U[phi_cell];
+		Vg = phi_grad.V[phi_cell];
+		Wg = phi_grad.W[phi_cell];
+		Pg = phi_grad.P[phi_cell];
+		Tg = phi_grad.TEM[phi_cell];
+
 	}
 
 	// Every local cell and every halo contributes to the interpolation accumulation.
 
 	const vec<double> cell_center = cell_centers[phi_cell + cell_disp];
 
-	// printf("cell center (%f,%f,%f)\n",cell_center.x,cell_center.y,cell_center.z);
-
 	for (uint64_t n = 0; n < cell_size; n++)
 	{
 		const uint64_t node_id = cells[phi_cell*cell_size + n];
-		// printf("node_id (%d) phi_nodes.U[node_id] %f  points[node_id] %f, %f %f\n", node_id, phi_nodes.U[node_id], points[node_id].x, points[node_id].y, points[node_id].z);
-
 		const vec<double> direction      = vec_minus(points[node_id], cell_center);
+
+		if (halo && points_map[node_id] == UINT64_MAX) continue; 
 	
-		phi_nodes.U[points_map[node_id]]   += (phi.U[phi_cell]   + dot_product(phi_grad.U[phi_cell],   direction)) / node_neighbours;
-		phi_nodes.V[points_map[node_id]]   += (phi.V[phi_cell]   + dot_product(phi_grad.V[phi_cell],   direction)) / node_neighbours;
-		phi_nodes.W[points_map[node_id]]   += (phi.W[phi_cell]   + dot_product(phi_grad.W[phi_cell],   direction)) / node_neighbours;
-		phi_nodes.P[points_map[node_id]]   += (phi.P[phi_cell]   + dot_product(phi_grad.P[phi_cell],   direction)) / node_neighbours;
-		phi_nodes.TEM[points_map[node_id]] += (phi.TEM[phi_cell] + dot_product(phi_grad.TEM[phi_cell], direction)) / node_neighbours;
+		// phi_nodes.U[points_map[node_id]]   += (U + dot_product(Ug,   direction)) / node_neighbours;
+		// phi_nodes.V[points_map[node_id]]   += (V + dot_product(Vg,   direction)) / node_neighbours;
+		// phi_nodes.W[points_map[node_id]]   += (W + dot_product(Wg,   direction)) / node_neighbours;
+		// phi_nodes.P[points_map[node_id]]   += (P + dot_product(Pg,   direction)) / node_neighbours;
+		// phi_nodes.TEM[points_map[node_id]] += (T + dot_product(Tg,   direction)) / node_neighbours;
+
+		phi_nodes.U[points_map[node_id]]   = U;
+		phi_nodes.V[points_map[node_id]]   = V;
+		phi_nodes.W[points_map[node_id]]   = W;
+		phi_nodes.P[points_map[node_id]]   = P;
+		phi_nodes.TEM[points_map[node_id]] = T;
 	}
+
+		
 }
 
 __global__ void kernel_interpolate_init_boundaries(phi_vector<double> phi_nodes, uint8_t *cells_per_point, uint64_t local_points_size)
@@ -2100,9 +2154,14 @@ void C_kernel_interpolate_init_boundaries(int block_count, int thread_count, phi
 	kernel_interpolate_init_boundaries<<<block_count, thread_count>>> (phi_nodes, cells_per_point, local_points_size);
 }
 
-void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size)
+void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
 {
-	kernel_interpolate_phi_to_nodes<<<block_count, thread_count>>> (phi, phi_grad, phi_nodes, points, points_map, cells_per_point, cells, cell_centers, local_mesh_size, cell_disp, local_points_size);
+	kernel_interpolate_phi_to_nodes<<<block_count, thread_count>>> (phi, phi_grad, phi_nodes, points, points_map, cells_per_point, cells, cell_centers, local_mesh_size, cell_disp, local_points_size, nhalos);
+}
+
+void C_kernel_pack_flow_field_buffer(int block_count, int thread_count, uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size)
+{
+	kernel_pack_flow_field_buffer<<<block_count, thread_count>>> (index_buffer, phi_nodes, flow_buffer, node_map, buf_size, node_map_size);
 }
 
 void C_kernel_vec_print(vec<double> *to_print, uint64_t num_print)

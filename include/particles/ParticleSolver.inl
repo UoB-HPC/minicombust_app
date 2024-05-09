@@ -244,12 +244,14 @@ namespace minicombust::particles
                 for (int i = 0; i < neighbours_size[bi]; i++)
                 {
                     node_to_field_address_map[all_interp_node_indexes[bi][i]] = &all_interp_node_flow_fields[bi][i];
-                    if (PARTICLE_SOLVER_DEBUG && all_interp_node_indexes[bi][i] > mesh->points_size )
-					{	
-						printf("ERROR RECV VALS : Rank %d Flow block %lu Value %lu out of range at %d\n", 
-								mpi_config->rank, bi, all_interp_node_indexes[bi][i], i); 
-						exit(1);
-					}
+                    
+                    
+                    // if (all_interp_node_indexes[bi][i] > mesh->points_size )
+					// {	
+					// 	printf("ERROR RECV VALS : Rank %d Flow block %lu Value %lu out of range at %d\n", 
+					// 			mpi_config->rank, bi, all_interp_node_indexes[bi][i], i); 
+					// 	exit(1);
+					// }
                 }
 
 				/*if (PARTICLE_SOLVER_DEBUG && size_before != node_to_field_address_map.size())
@@ -328,10 +330,16 @@ namespace minicombust::particles
             {
                 if (PARTICLE_SOLVER_DEBUG && (particles[p].cell >= mesh->mesh_size))
                     {printf("ERROR::: RANK %d Cell %lu out of range\n", mpi_config->rank, particles[p].cell); exit(1);}
+
+                
                 
                 uint64_t node = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n];
                 const uint64_t block_id = mesh->get_block_id(particles[p].cell);
 
+                if (!node_to_field_address_map.contains(node))
+                {
+                    printf("ERROR: PARTICLE RANK DOESN'T HAVE NODE %lu for cell %lu\n", node, particles[p].cell);
+                }
 
                 if (PARTICLE_SOLVER_DEBUG && (node >= mesh->points_size))
                     {printf("ERROR::: RANK %d Node %lu out of range\n", mpi_config->rank, node); exit(1);}

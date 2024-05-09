@@ -301,7 +301,6 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
         //     printf("%lu %lu %lu cpp %lu\n", x, y, z, shmem_cells_per_point[index - shmem_point_disps[mpi_config->node_rank]]);
     }
 
-
     // Create array of cubes, BLOCK ORDER.
     vec<uint64_t> outer_pos = vec<uint64_t> { 0, 0, 0 }; 
     vec<uint64_t> inner_pos = vec<uint64_t> { 0, 0, 0 }; 

@@ -78,6 +78,10 @@ namespace minicombust::flow
             flow_aos<T> *interp_node_flow_fields;
             uint64_t    *send_buffers_interp_node_indexes;
             flow_aos<T> *send_buffers_interp_node_flow_fields;
+            flow_aos<T> *check_send_buffers_interp_node_flow_fields;
+
+            uint64_t    *gpu_send_buffers_interp_node_indexes;
+            flow_aos<T> *gpu_send_buffers_interp_node_flow_fields;
 
 			bool first_press = true;
 			bool first_mat = true;
@@ -242,8 +246,11 @@ namespace minicombust::flow
             size_t node_index_array_size;
             size_t node_flow_array_size;
 
+            size_t send_buffer_disp;
             size_t send_buffers_node_index_array_size;
             size_t send_buffers_node_flow_array_size;
+            size_t gpu_send_buffers_node_index_array_size;
+            size_t gpu_send_buffers_node_flow_array_size;
 
             size_t face_field_array_size;
             size_t face_mass_fluxes_array_size;
@@ -321,7 +328,7 @@ namespace minicombust::flow
 				partition_vector_size = mesh->mesh_size;
             	partition_vector = (int *)malloc(partition_vector_size * sizeof(int));
 
-                const float fraction  = 0.000125;
+                const float fraction  = 0.0005;
                 max_storage           = max((uint64_t)(fraction * mesh->local_mesh_size), 1UL);
 
                 int particle_ranks = mpi_config->world_size - mpi_config->particle_flow_world_size;
@@ -333,8 +340,11 @@ namespace minicombust::flow
                 node_index_array_size   = max_storage * sizeof(uint64_t);
                 node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
 
-                send_buffers_node_index_array_size   = max_storage * sizeof(uint64_t);
-                send_buffers_node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
+                send_buffers_node_index_array_size      = max_storage * sizeof(uint64_t);
+                send_buffers_node_flow_array_size       = max_storage * sizeof(flow_aos<T>);
+
+                gpu_send_buffers_node_index_array_size  = 1000'000'000 * sizeof(uint64_t);
+                gpu_send_buffers_node_flow_array_size   = 1000'000'000 * sizeof(flow_aos<T>);
 
                 async_locks = (bool*)malloc((4 * particle_ranks + 1) * sizeof(bool));
                 
@@ -360,8 +370,15 @@ namespace minicombust::flow
                 interp_node_indexes      = (uint64_t * )    malloc(node_index_array_size);
                 interp_node_flow_fields  = (flow_aos<T> * ) malloc(node_flow_array_size);
 
-                send_buffers_interp_node_indexes      = (uint64_t * )    malloc(send_buffers_node_index_array_size);
-                send_buffers_interp_node_flow_fields  = (flow_aos<T> * ) malloc(send_buffers_node_flow_array_size);
+                // send_buffers_interp_node_indexes      = (uint64_t * )    malloc(send_buffers_node_index_array_size);
+                // send_buffers_interp_node_flow_fields  = (flow_aos<T> * ) malloc(send_buffers_node_flow_array_size);
+
+                send_buffers_interp_node_indexes      = (uint64_t * )    malloc(gpu_send_buffers_node_index_array_size);
+                send_buffers_interp_node_flow_fields        = (flow_aos<T> * ) malloc(gpu_send_buffers_node_flow_array_size);
+                check_send_buffers_interp_node_flow_fields  = (flow_aos<T> * ) malloc(gpu_send_buffers_node_flow_array_size);
+
+                cudaMalloc(&gpu_send_buffers_interp_node_indexes,     gpu_send_buffers_node_index_array_size);
+                cudaMalloc(&gpu_send_buffers_interp_node_flow_fields, gpu_send_buffers_node_flow_array_size);
 
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
@@ -914,6 +931,7 @@ namespace minicombust::flow
 					full_node_map_values[map_index] = n.second;
 					map_index++;
 				}
+				gpuErrchk( cudaMemset(gpu_node_map, MESH_BOUNDARY, global_node_to_local_node_map.size()  * sizeof(uint64_t)));
 				gpuErrchk( cudaMemcpy(gpu_node_map_keys,   full_node_map_keys,  global_node_to_local_node_map.size()  * sizeof(uint64_t),  cudaMemcpyHostToDevice));
 				gpuErrchk( cudaMemcpy(gpu_node_map_values, full_node_map_values, global_node_to_local_node_map.size() * sizeof(uint64_t), cudaMemcpyHostToDevice));
 
@@ -1435,6 +1453,7 @@ namespace minicombust::flow
             {
                 while ( send_buffers_node_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
                 {
+                    printf("Flow rank resizing send bufffers for %lu elements\n", elements);
                     send_buffers_node_index_array_size *= 2;
                     send_buffers_node_flow_array_size  *= 2;
 
