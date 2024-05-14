@@ -2069,10 +2069,10 @@ __global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vect
     if (phi_cell >= local_mesh_size) return;
 
 	const uint64_t cell_size = 8;
-	const uint64_t node_neighbours = 8;
+	// const uint64_t node_neighbours = 8;
 
 	double U, V, W, T, P;
-	vec<double> Ug, Vg, Wg, Tg, Pg;
+	// vec<double> Ug, Vg, Wg, Tg, Pg;
 
 	bool halo = (phi_cell >= local_mesh_size);
 
@@ -2083,11 +2083,11 @@ __global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vect
 		W=0.0;
 		T=273.0;
 		P=100.0;
-		Ug = {0.0, 0.0, 0.0};
-		Vg = {0.0, 0.0, 0.0};
-		Wg = {0.0, 0.0, 0.0};
-		Tg = {0.0, 0.0, 0.0};
-		Pg = {0.0, 0.0, 0.0};
+		// Ug = {0.0, 0.0, 0.0};
+		// Vg = {0.0, 0.0, 0.0};
+		// Wg = {0.0, 0.0, 0.0};
+		// Tg = {0.0, 0.0, 0.0};
+		// Pg = {0.0, 0.0, 0.0};
 
 	}
 	else
@@ -2098,11 +2098,11 @@ __global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vect
 		P = phi.P[phi_cell];
 		T = phi.TEM[phi_cell];
 
-		Ug = phi_grad.U[phi_cell];
-		Vg = phi_grad.V[phi_cell];
-		Wg = phi_grad.W[phi_cell];
-		Pg = phi_grad.P[phi_cell];
-		Tg = phi_grad.TEM[phi_cell];
+		// Ug = phi_grad.U[phi_cell];
+		// Vg = phi_grad.V[phi_cell];
+		// Wg = phi_grad.W[phi_cell];
+		// Pg = phi_grad.P[phi_cell];
+		// Tg = phi_grad.TEM[phi_cell];
 
 	}
 

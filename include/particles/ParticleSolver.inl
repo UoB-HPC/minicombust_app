@@ -213,7 +213,7 @@ namespace minicombust::particles
                 logger.nodes_recieved += neighbours_size[block_id];
                 int active_block_index = find(active_blocks.begin(), active_blocks.end(), block_id) - active_blocks.begin(); 
 
-                if (mpi_config->rank == 0) printf( "Recving %d node values from %lu. Particles size %lu\n", neighbours_size[block_id], send_rank, particles.size() );
+                // if (mpi_config->rank == 0) printf( "Recving %d node values from %lu. Particles size %lu\n", neighbours_size[block_id], send_rank, particles.size() );
                 if ( PARTICLE_SOLVER_DEBUG )  printf("\tRank %d: Posted %d recieves (ptr %p) for flow block %lu (slots %d %ld max %ld) .\n", mpi_config->rank, neighbours_size[block_id], all_interp_node_indexes[block_id], block_id, active_block_index, active_block_index + active_blocks.size(), recv_requests.size() );
                 MPI_Irecv ( all_interp_node_indexes[block_id],     neighbours_size[block_id], MPI_UINT64_T,                   send_rank, 0, mpi_config->world, &recv_requests[active_block_index] );
                 MPI_Irecv ( all_interp_node_flow_fields[block_id], neighbours_size[block_id], mpi_config->MPI_FLOW_STRUCTURE, send_rank, 1, mpi_config->world, &recv_requests[active_block_index + active_blocks.size()] );
