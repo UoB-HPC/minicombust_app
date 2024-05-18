@@ -93,6 +93,8 @@ namespace minicombust::flow
 
             void *allocate_device(const std::string& name, void **ptr, size_t size)
             {
+                // printf("Allocating %s with size %f\n", name.c_str(), ((float)size)/1.e9);
+
 				gpuErrchk(cudaMalloc(ptr, size));
 
                 device_pointers[*ptr] = std::make_pair(name, size);
@@ -103,6 +105,7 @@ namespace minicombust::flow
 
             void *allocate_device(const std::string& name, void **ptr, size_t size, void *ptr_id)
             {
+                // printf("Allocating %s with size %f\n", name.c_str(), ((float)size)/1.e9);
                 if (device_pointers.contains(ptr_id))
                 {
                     gpuErrchk(cudaMalloc(ptr, size));
@@ -164,7 +167,7 @@ namespace minicombust::flow
                     global_size += world_size;
                 }
                 if (mpi_config->particle_flow_rank == 0)
-                    printf("\t%40s (TOTAL %8.2f GB) (AVG %8.2f GB) \n\n", "FLOW TOTAL HOST USAGE",  (float) global_size / 1.e9, (float) global_size / (1.e9 * (float)mpi_config->particle_flow_world_size)  );
+                    printf("\t%40s (TOTAL %8.2f GB) (AVG %8.2f GB) \n\n", "FLOW TOTAL DEVICE USAGE",  (float) global_size / 1.e9, (float) global_size / (1.e9 * (float)mpi_config->particle_flow_world_size)  );
             
             
             }

@@ -268,32 +268,34 @@ __global__ void kernel_get_phi_gradient(double *phi_component, bool pressure_sol
         const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;
         double dphi;
         vec<double> dX;
+
+		uint64_t phi_index0;
+		if(block_cell0 >= local_mesh_size)
+		{
+			phi_index0 = boundary_map[faces[face].cell0];
+		}
+		else
+		{
+			phi_index0 = block_cell0;
+		}
+		uint64_t phi_index1;
+		if (block_cell1 >= local_mesh_size)
+		{
+			phi_index1 = boundary_map[faces[face].cell1];
+		}
+		else
+		{
+			phi_index1 = block_cell1;
+		}
+
         if(faces[face].cell1 < mesh_size) //inner cell
         {
-            uint64_t phi_index0;
-            if(block_cell0 >= local_mesh_size)
-            {
-				phi_index0 = boundary_map[faces[face].cell0];
-            }
-            else
-            {
-                phi_index0 = block_cell0;
-            }
-            uint64_t phi_index1;
-            if (block_cell1 >= local_mesh_size)
-            {
-				phi_index1 = boundary_map[faces[face].cell1];
-            }
-            else
-            {
-                phi_index1 = block_cell1;
-            }
             const double mask = (faces[face].cell0 == cell) ? 1. : -1.;
 			dphi =   mask * ( phi_component[phi_index1]   - phi_component[phi_index0] );
 
-            dX.x = mask*(cell_centers[faces[face].cell1].x - cell_centers[faces[face].cell0].x);
-            dX.y = mask*(cell_centers[faces[face].cell1].y - cell_centers[faces[face].cell0].y);
-            dX.z = mask*(cell_centers[faces[face].cell1].z - cell_centers[faces[face].cell0].z);
+            dX.x = mask*(cell_centers[phi_index1].x - cell_centers[phi_index0].x);
+            dX.y = mask*(cell_centers[phi_index1].y - cell_centers[phi_index0].y);
+            dX.z = mask*(cell_centers[phi_index1].z - cell_centers[phi_index0].z);
         }
         else  //boundary face
         {
@@ -310,9 +312,9 @@ __global__ void kernel_get_phi_gradient(double *phi_component, bool pressure_sol
 
 			//We only ever single compute a pressure grad.
 
-            dX.x = face_centers[face].x - cell_centers[faces[face].cell0].x;
-            dX.y = face_centers[face].y - cell_centers[faces[face].cell0].y;
-            dX.z = face_centers[face].z - cell_centers[faces[face].cell0].z;
+            dX.x = face_centers[face].x - cell_centers[phi_index0].x;
+            dX.y = face_centers[face].y - cell_centers[phi_index0].y;
+            dX.z = face_centers[face].z - cell_centers[phi_index0].z;
         }
         data_A[0] += (dX.x * dX.x);
         data_A[1] += (dX.x * dX.y);
@@ -374,26 +376,26 @@ __global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<
 		const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;
 		double dU, dV, dW, dP, dTE, dED, dT, dFU, dPR, dVFU, dVPR;
 		vec<double> dX;
+		uint64_t phi_index0;
+		if(block_cell0 >= local_mesh_size)
+		{
+			phi_index0 = boundary_map[faces[face].cell0];
+		}
+		else
+		{
+			phi_index0 = block_cell0;
+		}
+		uint64_t phi_index1;
+		if(block_cell1 >= local_mesh_size)
+		{
+			phi_index1 = boundary_map[faces[face].cell1];
+		}
+		else
+		{
+			phi_index1 = block_cell1;
+		}
 		if(faces[face].cell1 < mesh_size) //inner cell
 		{
-			uint64_t phi_index0;
-			if(block_cell0 >= local_mesh_size)
-			{
-				phi_index0 = boundary_map[faces[face].cell0];
-			}
-			else
-			{
-				phi_index0 = block_cell0;
-			}
-			uint64_t phi_index1;
-            if(block_cell1 >= local_mesh_size)
-            {
-				phi_index1 = boundary_map[faces[face].cell1];
-            }
-            else
-            {
-                phi_index1 = block_cell1;
-            }
 			const double mask = (faces[face].cell0 == cell) ? 1. : -1.;
 			dU =   mask * ( phi.U[phi_index1]   - phi.U[phi_index0] );
 			dV =   mask * ( phi.V[phi_index1]   - phi.V[phi_index0] );
@@ -407,9 +409,9 @@ __global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<
             dVFU = mask * ( phi.VARF[phi_index1] - phi.VARF[phi_index0] );
             dVPR = mask * ( phi.VARP[phi_index1] - phi.VARP[phi_index0] );
 
-			dX.x = mask*(cell_centers[faces[face].cell1].x - cell_centers[faces[face].cell0].x);
-			dX.y = mask*(cell_centers[faces[face].cell1].y - cell_centers[faces[face].cell0].y);
-			dX.z = mask*(cell_centers[faces[face].cell1].z - cell_centers[faces[face].cell0].z);
+			dX.x = mask*(cell_centers[phi_index1].x - cell_centers[phi_index0].x);
+			dX.y = mask*(cell_centers[phi_index1].y - cell_centers[phi_index0].y);
+			dX.z = mask*(cell_centers[phi_index1].z - cell_centers[phi_index0].z);
 		}
 		else  //boundary face
 		{
@@ -427,9 +429,9 @@ __global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<
             dVFU = phi.VARF[local_mesh_size + nhalos + boundary_cell] - phi.VARF[block_cell0];
             dVPR = phi.VARP[local_mesh_size + nhalos + boundary_cell] - phi.VARP[block_cell0];
 
-			dX.x = face_centers[face].x - cell_centers[faces[face].cell0].x;
-			dX.y = face_centers[face].y - cell_centers[faces[face].cell0].y;
-			dX.z = face_centers[face].z - cell_centers[faces[face].cell0].z;
+			dX.x = face_centers[face].x - cell_centers[phi_index0].x;
+			dX.y = face_centers[face].y - cell_centers[phi_index0].y;
+			dX.z = face_centers[face].z - cell_centers[phi_index0].z;
 		}
 		data_A[0] += (dX.x * dX.x);
         data_A[1] += (dX.x * dX.y);
@@ -569,8 +571,8 @@ __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_
 		const vec<double> dWdXac = vec_add(vec_mult(phi_grad.W[phi_index0], lambda0), 
 											vec_mult(phi_grad.W[phi_index1], lambda1));
 		
-		vec<double> Xac = vec_add(vec_mult(cell_centers[faces[face].cell1], lambda1),
-								   vec_mult(cell_centers[faces[face].cell0], lambda0));
+		vec<double> Xac = vec_add(vec_mult(cell_centers[phi_index1], lambda1),
+								   vec_mult(cell_centers[phi_index0], lambda0));
 		
 		const vec<double> delta  = vec_minus(face_centers[face], Xac);
 
@@ -591,16 +593,16 @@ __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_
 		const vec<double> Xpac = vec_minus(face_centers[face], 
 								 vec_mult(normalise(face_normals[face]),
 										  dot_product(vec_minus(face_centers[face], 
-										  cell_centers[faces[face].cell0]), 
+										  cell_centers[phi_index0]), 
 										  normalise(face_normals[face]))));
 		const vec<double> Xnac = vec_minus(face_centers[face], 
 								 vec_mult(normalise(face_normals[face]),
 										  dot_product(vec_minus(face_centers[face],
-										  cell_centers[faces[face].cell1]), 
+										  cell_centers[phi_index1]), 
 										  normalise(face_normals[face]))));
 
-		const vec<double> delp = vec_minus(Xpac, cell_centers[faces[face].cell0]);
-		const vec<double> deln = vec_minus(Xnac, cell_centers[faces[face].cell1]);
+		const vec<double> delp = vec_minus(Xpac, cell_centers[phi_index0]);
+		const vec<double> deln = vec_minus(Xnac, cell_centers[phi_index1]);
 
 		const double cell0_P = phi.P[phi_index0] + 
 								dot_product( phi_grad.P[phi_index0] , delp );
@@ -608,8 +610,8 @@ __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_
 								dot_product( phi_grad.P[phi_index1] , deln );
 		
 		const vec<double> Xpn  = vec_minus(Xnac, Xpac);
-		const vec<double> Xpn2 = vec_minus(cell_centers[faces[face].cell1], 
-										   cell_centers[faces[face].cell0]);
+		const vec<double> Xpn2 = vec_minus(cell_centers[phi_index1], 
+										   cell_centers[phi_index0]);
 
 		const double ApV0 = (A_phi.U[phi_index0] != 0.0) ? 1.0 / A_phi.U[phi_index0] : 0.0;
 		const double ApV1 = (A_phi.U[phi_index1] != 0.0) ? 1.0 / A_phi.U[phi_index1] : 0.0;
@@ -766,26 +768,26 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
     const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
     const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;	
 
+	uint64_t phi_index0;
+	if(block_cell0 >= local_mesh_size)
+	{
+		phi_index0 = boundary_map[faces[face].cell0];
+	}
+	else
+	{
+		phi_index0 = block_cell0;
+	}
+	uint64_t phi_index1;
+	if(block_cell1 >= local_mesh_size)
+	{
+		phi_index1 = boundary_map[faces[face].cell1];
+	}
+	else
+	{
+		phi_index1 = block_cell1;
+	}
 	if(faces[face].cell1 < mesh_size) //internal
 	{
-		uint64_t phi_index0;
-        if(block_cell0 >= local_mesh_size)
-        {
-			phi_index0 = boundary_map[faces[face].cell0];
-        }
-        else
-        {
-            phi_index0 = block_cell0;
-        }
-        uint64_t phi_index1;
-        if(block_cell1 >= local_mesh_size)
-        {
-			phi_index1 = boundary_map[faces[face].cell1];
-		}
-        else
-        {
-            phi_index1 = block_cell1;
-        }
         const double lambda0 = face_lambdas[face];
         const double lambda1 = 1.0 - lambda0;
 
@@ -802,7 +804,7 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 		double Visac = effective_viscosity * lambda0 + effective_viscosity * lambda1;
 		double VisFace = Visac * face_rlencos[face];
 		
-		vec<double> Xpn = vec_minus(cell_centers[faces[face].cell1], cell_centers[faces[face].cell0]);
+		vec<double> Xpn = vec_minus(cell_centers[phi_index1], cell_centers[phi_index0]);
 
 		double UFace, VFace, WFace;
 		if(face_mass_fluxes[face] >= 0.0)
@@ -891,7 +893,7 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 
 			const double Visac = inlet_effective_viscosity;
 			
-			const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[faces[face].cell0]);
+			const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[phi_index0]);
 			const double VisFace  = Visac * face_rlencos[face];
 
 			const double sx = face_normals[face].x;
@@ -930,7 +932,7 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 
 			const double Visac = effective_viscosity;
 
-			const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[faces[face].cell0]);
+			const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[phi_index0]);
 			
 			const double UFace = phi.U[block_cell0];
             const double VFace = phi.V[block_cell0];
@@ -983,7 +985,7 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 
 			const double Visac = effective_viscosity;
 
-			const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[faces[face].cell0]);
+			const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[phi_index0]);
 
 			const double coef = Visac * face_rlencos[face];
 
@@ -1368,11 +1370,14 @@ __global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows
             values[tmp_nnz] = face_fields[true_face].cell0;
 		}
 		tmp_nnz += 1;
+
 	}
 	if(cell == local_mesh_size-1)
     {
         rows_ptr[local_mesh_size] = tmp_nnz;
     }
+	
+
 }
 __global__ void apply_diag(uint64_t local_mesh_size, int *rows_ptr, double *values, phi_vector<double> A_phi)
 {
@@ -1531,7 +1536,7 @@ __global__ void kernel_Update_P(uint64_t faces_size, uint64_t local_mesh_size, u
 		}
 		else
 		{
-			vec<double> ds = vec_minus(face_centers[face], cell_centers[faces[face].cell0]);
+			vec<double> ds = vec_minus(face_centers[face], cell_centers[block_cell0]);
 			phi_component[local_mesh_size + nhalos + boundary_cell] = phi_component[block_cell0] + dot_product(phi_grad_component[block_cell0], ds);
 		}
 	}
@@ -1597,26 +1602,28 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
 	const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
 	const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;
 
+	uint64_t phi_index0;
+	if(block_cell0 >= local_mesh_size)
+	{
+		phi_index0 = boundary_map[faces[face].cell0];
+	}
+	else
+	{
+		phi_index0 = block_cell0;
+	}
+
+	uint64_t phi_index1;
+	if(block_cell1 >= local_mesh_size)
+	{
+		phi_index1 = boundary_map[faces[face].cell1];
+	}
+	else
+	{
+		phi_index1 = block_cell1;
+	}
+
 	if(faces[face].cell1 < mesh_size) //INTERNAL
 	{
-		uint64_t phi_index0;
-        if(block_cell0 >= local_mesh_size)
-        {
-			phi_index0 = boundary_map[faces[face].cell0];
-        }
-        else
-        {
-            phi_index0 = block_cell0;
-        }
-        uint64_t phi_index1;
-        if(block_cell1 >= local_mesh_size)
-        {
-			phi_index1 = boundary_map[faces[face].cell1];
-        }
-        else
-        {
-            phi_index1 = block_cell1;
-        }
 		const double lambda0 = face_lambdas[face];
 		const double lambda1 = 1.0 - lambda0;
 
@@ -1643,7 +1650,7 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
 
 		vec<double> dPhiXac = vec_add(vec_mult(phi_grad_component[phi_index0], lambda0), vec_mult(phi_grad_component[phi_index1], lambda1));
 	
-		vec<double> Xpn = vec_minus(cell_centers[faces[face].cell1], cell_centers[faces[face].cell0]);
+		vec<double> Xpn = vec_minus(cell_centers[phi_index1], cell_centers[phi_index0]);
 
 		const double VisFace = Visac * face_rlencos[face];
 	
@@ -1750,7 +1757,7 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
                 Visac = (effective_viscosity + Visac / 0.9) / 0.9;
             }
 
-			vec<double> Xpn = vec_minus(face_centers[face], cell_centers[faces[face].cell0]);
+			vec<double> Xpn = vec_minus(face_centers[face], cell_centers[phi_index0]);
 			const double VisFace  = Visac * face_rlencos[face];
 			
 			const double fde = Visac * dot_product( dPhidXac , face_normals[face]);
@@ -1790,7 +1797,7 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
                 Visac = (effective_viscosity + Visac / 0.9) / 0.9;
             }
 
-			const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[faces[face].cell0]);
+			const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[phi_index0]);
 
 			const double PhiFace = phi_component[block_cell0] + dot_product( dPhidXac , Xpn );
 			const double VisFace  = Visac * face_rlencos[face];
@@ -1892,7 +1899,7 @@ __global__ void kernel_solve_turb_models_face(int type, uint64_t faces_size, uin
 
 				const double Visc = effective_viscosity;
 
-				const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[faces[face].cell0]);
+				const vec<double> Xpn = vec_minus(face_centers[face], cell_centers[block_cell0]);
 				
 				vec<double> Up;
 				Up.x = phi.U[block_cell0] - UFace;
@@ -1939,7 +1946,7 @@ __global__ void kernel_solve_turb_models_face(int type, uint64_t faces_size, uin
 			if(boundary_type == WALL)
 			{
 				const double turb = phi.TE[block_cell0];
-				const double distance = magnitude(vec_minus(face_centers[face], cell_centers[faces[face].cell0]));
+				const double distance = magnitude(vec_minus(face_centers[face], cell_centers[block_cell0]));
 				
 				const double Dis = Cmu75 * pow(turb,1.5) / ( distance * 0.419 );
 					
@@ -2062,72 +2069,63 @@ __global__ void kernel_vec_print(vec<double> *to_print, uint64_t num_print)
 	printf("\n");
 }
 
-__global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
+__global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint64_t *boundary_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
 {
-  	auto phi_cell = threadIdx.x + blockIdx.x * blockDim.x;
-    // if (phi_cell >= local_mesh_size + nhalos) return;
-    if (phi_cell >= local_mesh_size) return;
+  	auto block_cell = threadIdx.x + blockIdx.x * blockDim.x;
+    if (block_cell >= local_mesh_size + nhalos) return;
 
 	const uint64_t cell_size = 8;
-	// const uint64_t node_neighbours = 8;
+	const uint64_t node_neighbours = 8;
 
 	double U, V, W, T, P;
-	// vec<double> Ug, Vg, Wg, Tg, Pg;
+	vec<double> Ug, Vg, Wg, Tg, Pg;
 
-	bool halo = (phi_cell >= local_mesh_size);
+	bool halo = (block_cell >= local_mesh_size);
 
-	if (halo) // Need a mapping from halos to global_nodes
+	uint64_t phi_index;
+	if(block_cell >= local_mesh_size)
 	{
-		U=50.0;
-		V=0.0;
-		W=0.0;
-		T=273.0;
-		P=100.0;
-		// Ug = {0.0, 0.0, 0.0};
-		// Vg = {0.0, 0.0, 0.0};
-		// Wg = {0.0, 0.0, 0.0};
-		// Tg = {0.0, 0.0, 0.0};
-		// Pg = {0.0, 0.0, 0.0};
-
+		phi_index = boundary_map[block_cell];
 	}
 	else
 	{
-		U = phi.U[phi_cell];
-		V = phi.V[phi_cell];
-		W = phi.W[phi_cell];
-		P = phi.P[phi_cell];
-		T = phi.TEM[phi_cell];
-
-		// Ug = phi_grad.U[phi_cell];
-		// Vg = phi_grad.V[phi_cell];
-		// Wg = phi_grad.W[phi_cell];
-		// Pg = phi_grad.P[phi_cell];
-		// Tg = phi_grad.TEM[phi_cell];
-
+		phi_index = block_cell;
 	}
+
+	U = phi.U[phi_index];
+	V = phi.V[phi_index];
+	W = phi.W[phi_index];
+	P = phi.P[phi_index];
+	T = phi.TEM[phi_index];
+	
+	Ug = phi_grad.U[phi_index];
+	Vg = phi_grad.V[phi_index];
+	Wg = phi_grad.W[phi_index];
+	Pg = phi_grad.P[phi_index];
+	Tg = phi_grad.TEM[phi_index];
 
 	// Every local cell and every halo contributes to the interpolation accumulation.
 
-	const vec<double> cell_center = cell_centers[phi_cell + cell_disp];
+	const vec<double> cell_center = cell_centers[phi_index];
 
 	for (uint64_t n = 0; n < cell_size; n++)
 	{
-		const uint64_t node_id = cells[phi_cell*cell_size + n];
+		const uint64_t node_id = cells[phi_index*cell_size + n];
 		const vec<double> direction      = vec_minus(points[node_id], cell_center);
 
 		if (halo && points_map[node_id] == UINT64_MAX) continue; 
 	
-		// phi_nodes.U[points_map[node_id]]   += (U + dot_product(Ug,   direction)) / node_neighbours;
-		// phi_nodes.V[points_map[node_id]]   += (V + dot_product(Vg,   direction)) / node_neighbours;
-		// phi_nodes.W[points_map[node_id]]   += (W + dot_product(Wg,   direction)) / node_neighbours;
-		// phi_nodes.P[points_map[node_id]]   += (P + dot_product(Pg,   direction)) / node_neighbours;
-		// phi_nodes.TEM[points_map[node_id]] += (T + dot_product(Tg,   direction)) / node_neighbours;
+		phi_nodes.U[points_map[node_id]]   += (U + dot_product(Ug,   direction)) / node_neighbours;
+		phi_nodes.V[points_map[node_id]]   += (V + dot_product(Vg,   direction)) / node_neighbours;
+		phi_nodes.W[points_map[node_id]]   += (W + dot_product(Wg,   direction)) / node_neighbours;
+		phi_nodes.P[points_map[node_id]]   += (P + dot_product(Pg,   direction)) / node_neighbours;
+		phi_nodes.TEM[points_map[node_id]] += (T + dot_product(Tg,   direction)) / node_neighbours;
 
-		phi_nodes.U[points_map[node_id]]   = U;
-		phi_nodes.V[points_map[node_id]]   = V;
-		phi_nodes.W[points_map[node_id]]   = W;
-		phi_nodes.P[points_map[node_id]]   = P;
-		phi_nodes.TEM[points_map[node_id]] = T;
+		// phi_nodes.U[points_map[node_id]]   = U;
+		// phi_nodes.V[points_map[node_id]]   = V;
+		// phi_nodes.W[points_map[node_id]]   = W;
+		// phi_nodes.P[points_map[node_id]]   = P;
+		// phi_nodes.TEM[points_map[node_id]] = T;
 	}
 
 		
@@ -2154,9 +2152,9 @@ void C_kernel_interpolate_init_boundaries(int block_count, int thread_count, phi
 	kernel_interpolate_init_boundaries<<<block_count, thread_count>>> (phi_nodes, cells_per_point, local_points_size);
 }
 
-void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
+void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint64_t *boundary_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
 {
-	kernel_interpolate_phi_to_nodes<<<block_count, thread_count>>> (phi, phi_grad, phi_nodes, points, points_map, cells_per_point, cells, cell_centers, local_mesh_size, cell_disp, local_points_size, nhalos);
+	kernel_interpolate_phi_to_nodes<<<block_count, thread_count>>> (phi, phi_grad, phi_nodes, points, points_map, boundary_map, cells_per_point, cells, cell_centers, local_mesh_size, cell_disp, local_points_size, nhalos);
 }
 
 void C_kernel_pack_flow_field_buffer(int block_count, int thread_count, uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size, uint64_t rank_slot)
@@ -2222,16 +2220,16 @@ __global__ void kernel_update_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> 
 		const vec<double> Xpac = vec_minus(face_centers[face],
                                  vec_mult(normalise(face_normals[face]),
                                           dot_product(vec_minus(face_centers[face],
-                                          cell_centers[faces[face].cell0]),
+                                          cell_centers[phi_index0]),
                                           normalise(face_normals[face]))));
 		const vec<double> Xnac = vec_minus(face_centers[face],
                                  vec_mult(normalise(face_normals[face]),
                                           dot_product(vec_minus(face_centers[face],
-                                          cell_centers[faces[face].cell1]),
+                                          cell_centers[phi_index1]),
                                           normalise(face_normals[face]))));
 
-		vec<double> Xn = vec_minus(Xnac, cell_centers[faces[face].cell1]);
-		vec<double> Xp = vec_minus(Xpac, cell_centers[faces[face].cell0]);
+		vec<double> Xn = vec_minus(Xnac, cell_centers[phi_index1]);
+		vec<double> Xp = vec_minus(Xpac, cell_centers[phi_index0]);
 
 		double fact = face_fields[face].cell0;		
 

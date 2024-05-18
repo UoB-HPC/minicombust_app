@@ -4,7 +4,10 @@
 #include "cuda_runtime.h"
 #include "MemoryTracker.hpp"
 
+
+
 // #include <cuco/detail/static_map/static_map_ref.inl>
+#include "flow/gpu/gpu_hash_map.inl"
 #include "flow/gpu/gpu_kernels.cuh"
 
 #define AMGX_SAFE_CALL(rc) \
@@ -340,8 +343,9 @@ namespace minicombust::flow
                 send_buffers_node_index_array_size      = max_storage * sizeof(uint64_t);
                 send_buffers_node_flow_array_size       = max_storage * sizeof(flow_aos<T>);
 
-                gpu_send_buffers_node_index_array_size  = 1'000'000'000 * sizeof(uint64_t);
-                gpu_send_buffers_node_flow_array_size   = 1'000'000'000 * sizeof(flow_aos<T>);
+                int gpu_send_buffer_elements = (100 * 80000 / 10) * 8; // (niters * particles_per_iter / particles_per_cell) * 8 nodes_per_cell. 
+                gpu_send_buffers_node_index_array_size  = gpu_send_buffer_elements * sizeof(uint64_t);
+                gpu_send_buffers_node_flow_array_size   = gpu_send_buffer_elements * sizeof(flow_aos<T>);
 
                 async_locks = (bool*)mtracker->allocate_host("async_locks", (4 * particle_ranks + 1) * sizeof(bool));
                 
@@ -355,12 +359,12 @@ namespace minicombust::flow
                 // Allocate arrays
                 neighbour_indexes.push_back((uint64_t*)          mtracker->allocate_host("neighbour_indexes", cell_index_array_size[0]));
                 cell_particle_aos.push_back((particle_aos<T> * ) mtracker->allocate_host("cell_particle_aos", cell_particle_array_size[0]));
-                uint64_t *cuda_pointer_tmp;
-                particle_aos<T> *cuda_pointer_tmp2;
-                mtracker->allocate_device("cuda_pointer_tmp", (void**)&cuda_pointer_tmp,  cell_index_array_size[0]);
-                mtracker->allocate_device("cuda_pointer_tmp2", (void**)&cuda_pointer_tmp2, cell_particle_array_size[0]);
-                gpu_neighbour_indexes.push_back(cuda_pointer_tmp);
-                gpu_cell_particle_aos.push_back(cuda_pointer_tmp2);
+                uint64_t *gpu_neighbour_indexes_tmp;
+                particle_aos<T> *gpu_cell_particle_aos_tmp;
+                mtracker->allocate_device("gpu_neighbour_indexes_tmp", (void**)&gpu_neighbour_indexes_tmp,  cell_index_array_size[0]);
+                mtracker->allocate_device("gpu_cell_particle_aos_tmp", (void**)&gpu_cell_particle_aos_tmp, cell_particle_array_size[0]);
+                gpu_neighbour_indexes.push_back(gpu_neighbour_indexes_tmp);
+                gpu_cell_particle_aos.push_back(gpu_cell_particle_aos_tmp);
 
                 local_particle_node_sets.push_back(unordered_set<uint64_t>());
 
@@ -413,8 +417,23 @@ namespace minicombust::flow
                         }
                     }
                 }
+                // Iterate over halos
+                for ( auto cell_halo_pair : boundary_map )
+                {
+                    uint64_t cell = cell_halo_pair.first;
+                    uint64_t halo = cell_halo_pair.second;
 
-
+                    #pragma ivdep
+                    for (uint64_t n = 0; n < mesh->cell_size; n++)
+                    {
+                        uint64_t node = mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + n];
+                        
+                        if (!global_node_to_local_node_map.contains(node))
+                        {
+                            global_node_to_local_node_map[node] = global_node_to_local_node_map.size();
+                        }
+                    }
+                }
 
                 phi_array_size        = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
                 phi_nodes_array_size  = (global_node_to_local_node_map.size()) * sizeof(T);
@@ -427,10 +446,10 @@ namespace minicombust::flow
                 mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.P,   phi_nodes_array_size, (void*)0x0);
                 mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.TEM, phi_nodes_array_size, (void*)0x0);
 
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.U, phi_nodes_array_size, (void**)0x0);
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.V, phi_nodes_array_size, (void**)0x0);
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.W, phi_nodes_array_size, (void**)0x0);
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.P, phi_nodes_array_size, (void**)0x0);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.U,   phi_nodes_array_size, (void**)0x0);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.V,   phi_nodes_array_size, (void**)0x0);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.W,   phi_nodes_array_size, (void**)0x0);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.P,   phi_nodes_array_size, (void**)0x0);
                 mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.TEM, phi_nodes_array_size, (void**)0x0);
 
                 mtracker->allocate_cuda_host("phi", (void**)&phi.U          , phi_array_size, (void*)0x1);
@@ -840,11 +859,11 @@ namespace minicombust::flow
                 cudaMemcpy(gpu_phi_grad.VARF, phi_grad.VARF, phi_grad_array_size, cudaMemcpyHostToDevice);
                 cudaMemcpy(gpu_phi_grad.VARP, phi_grad.VARP, phi_grad_array_size, cudaMemcpyHostToDevice);
 
-				mtracker->allocate_device("gpu_face_centers",    (void**)&gpu_face_centers,    mesh->faces_size      * sizeof(vec<T>));
-                mtracker->allocate_device("gpu_cell_centers",    (void**)&gpu_cell_centers,    mesh->mesh_size       * sizeof(vec<T>));
-                mtracker->allocate_device("gpu_local_nodes",     (void**)&gpu_local_nodes,     mesh->points_size     * sizeof(vec<T>));
-                mtracker->allocate_device("gpu_cells_per_point", (void**)&gpu_cells_per_point, mesh->points_size     * sizeof(uint8_t));
-                mtracker->allocate_device("gpu_local_cells",     (void**)&gpu_local_cells,     mesh->local_mesh_size * mesh->cell_size * sizeof(uint64_t));
+				mtracker->allocate_device("gpu_face_centers",    (void**)&gpu_face_centers,    mesh->faces_size         * sizeof(vec<T>));
+                mtracker->allocate_device("gpu_cell_centers",    (void**)&gpu_cell_centers,    (mesh->local_mesh_size + nhalos) * sizeof(vec<T>));
+                mtracker->allocate_device("gpu_local_nodes",     (void**)&gpu_local_nodes,     mesh->points_size        * sizeof(vec<T>));
+                mtracker->allocate_device("gpu_cells_per_point", (void**)&gpu_cells_per_point, mesh->points_size        * sizeof(uint8_t));
+                mtracker->allocate_device("gpu_local_cells",     (void**)&gpu_local_cells,    (mesh->local_mesh_size + nhalos) * mesh->cell_size * sizeof(uint64_t));
 
 				//boundary map to gpu
 				uint64_t * full_boundary_map_keys = (uint64_t *) malloc(boundary_map.size() * sizeof(uint64_t));
@@ -921,23 +940,58 @@ namespace minicombust::flow
 				// 	//printf("the center of cell %lu is (%3.8f,%3.8f,%3.8f)\n",i,full_cell_centers[i].x,full_cell_centers[i].y,full_cell_centers[i].z);
 				// } 
 
+
+                uint64_t *local_halo_cells        = (uint64_t *) malloc(nhalos * mesh->cell_size * sizeof(uint64_t)); 
+                vec<T>   *local_halo_cell_centers = (vec<T>   *) malloc(nhalos * sizeof(vec<T>)); 
+
+                // Iterate over halos
+                for ( auto cell_halo_pair : boundary_map )
+                {
+                    uint64_t cell = cell_halo_pair.first;
+                    uint64_t halo = cell_halo_pair.second - mesh->local_mesh_size;
+
+                    local_halo_cell_centers[halo] = mesh->cell_centers[cell-mesh->shmem_cell_disp];
+
+                    #pragma ivdep
+                    for (uint64_t n = 0; n < mesh->cell_size; n++)
+                    {
+                        local_halo_cells[halo*mesh->cell_size + n] = mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + n]; 
+                    }
+                }
+
+
 				gpuErrchk( cudaMemcpy(gpu_face_centers, face_centers, mesh->faces_size * sizeof(vec<T>),
 						   cudaMemcpyHostToDevice));
-				gpuErrchk( cudaMemcpy(gpu_cell_centers, &mesh->cell_centers[-mesh->shmem_cell_disp], 
-						   mesh->mesh_size * sizeof(vec<T>),
-						   cudaMemcpyHostToDevice));
+				
 
                 gpuErrchk( cudaMemcpy(gpu_local_nodes, &mesh->points[-mesh->shmem_point_disp],
 							mesh->points_size * sizeof(vec<T>),
 							cudaMemcpyHostToDevice));
+
                 gpuErrchk( cudaMemcpy(gpu_cells_per_point, &mesh->cells_per_point[-mesh->shmem_point_disp],
 							mesh->points_size * sizeof(uint8_t),
 							cudaMemcpyHostToDevice));
 
+                // Copy local cells across
                 gpuErrchk( cudaMemcpy(gpu_local_cells, &mesh->cells[(mesh->local_cells_disp - mesh->shmem_cell_disp) * mesh->cell_size],
 							mesh->local_mesh_size * mesh->cell_size * sizeof(uint64_t),
 							cudaMemcpyHostToDevice));
+
+                gpuErrchk( cudaMemcpy(gpu_cell_centers, &mesh->cell_centers[mesh->local_cells_disp - mesh->shmem_cell_disp], 
+						   mesh->local_mesh_size * sizeof(vec<T>),
+						   cudaMemcpyHostToDevice));
+
+                // Copy halo cells across
+                gpuErrchk( cudaMemcpy(gpu_local_cells + mesh->local_mesh_size * mesh->cell_size, local_halo_cells,
+							nhalos * mesh->cell_size * sizeof(uint64_t),
+							cudaMemcpyHostToDevice));
+
+                gpuErrchk( cudaMemcpy(gpu_cell_centers + mesh->local_mesh_size, local_halo_cell_centers, 
+						   nhalos * sizeof(vec<T>),
+						   cudaMemcpyHostToDevice));
                 
+                free(local_halo_cell_centers);
+                free(local_halo_cells);
 
 				// free(full_cell_centers);
 

@@ -1,5 +1,8 @@
 #include "flow/gpu/gpu_type_def.h"
 
+#include "flow/gpu/gpu_hash_map.inl"
+
+
 using namespace minicombust::utils;
 
 void C_kernel_print(double *to_print, uint64_t num_print);
@@ -10,7 +13,7 @@ void C_test_solve();
 
 void C_kernel_interpolate_init_boundaries(int block_count, int thread_count, phi_vector<double> phi_nodes, uint8_t *cells_per_point, uint64_t local_points_size);
 
-void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos);
+void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint64_t *boundary_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos);
 
 void C_kernel_process_particle_fields(uint64_t block_count, int thread_count, uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp);
 
