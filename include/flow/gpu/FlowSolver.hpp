@@ -7,7 +7,7 @@
 
 
 // #include <cuco/detail/static_map/static_map_ref.inl>
-#include "flow/gpu/gpu_hash_map.inl"
+// #include "flow/gpu/gpu_hash_map.inl"
 #include "flow/gpu/gpu_kernels.cuh"
 
 #define AMGX_SAFE_CALL(rc) \
@@ -103,6 +103,9 @@ namespace minicombust::flow
             
             T effective_viscosity;
 			T inlet_effective_viscosity;
+
+            Hash_map *node_hash_map, *boundary_hash_map;
+            Hash_map *gpu_node_hash_map, *gpu_boundary_hash_map;
 
 			//GPU stuff
 			phi_vector<T>	     gpu_A_phi;
@@ -860,7 +863,7 @@ namespace minicombust::flow
                 cudaMemcpy(gpu_phi_grad.VARP, phi_grad.VARP, phi_grad_array_size, cudaMemcpyHostToDevice);
 
 				mtracker->allocate_device("gpu_face_centers",    (void**)&gpu_face_centers,    mesh->faces_size         * sizeof(vec<T>));
-                mtracker->allocate_device("gpu_cell_centers",    (void**)&gpu_cell_centers,    (mesh->local_mesh_size + nhalos) * sizeof(vec<T>));
+                mtracker->allocate_device("gpu_cell_centers",    (void**)&gpu_cell_centers,   (mesh->local_mesh_size + nhalos) * sizeof(vec<T>));
                 mtracker->allocate_device("gpu_local_nodes",     (void**)&gpu_local_nodes,     mesh->points_size        * sizeof(vec<T>));
                 mtracker->allocate_device("gpu_cells_per_point", (void**)&gpu_cells_per_point, mesh->points_size        * sizeof(uint8_t));
                 mtracker->allocate_device("gpu_local_cells",     (void**)&gpu_local_cells,    (mesh->local_mesh_size + nhalos) * mesh->cell_size * sizeof(uint64_t));
@@ -877,24 +880,34 @@ namespace minicombust::flow
 					map_index++;
 				}
 
-				gpuErrchk( cudaMemcpy(gpu_boundary_map_keys, full_boundary_map_keys,
-							boundary_map.size() * sizeof(uint64_t), 
-							cudaMemcpyHostToDevice));
-				gpuErrchk( cudaMemcpy(gpu_boundary_map_values, full_boundary_map_values,
-							boundary_map.size() * sizeof(uint64_t),
-							cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_boundary_map_keys,   full_boundary_map_keys,   boundary_map.size() * sizeof(uint64_t),  cudaMemcpyHostToDevice));
+				gpuErrchk( cudaMemcpy(gpu_boundary_map_values, full_boundary_map_values, boundary_map.size() * sizeof(uint64_t), cudaMemcpyHostToDevice));
+
+                uint64_t *gpu_boundary_hash_map_keys, *gpu_boundary_hash_map_values;
+                uint64_t next_pow2 = pow(2, ceil(log(boundary_map.size())/log(2)))*4;
+                if (mpi_config->particle_flow_rank == 0) printf("Boundary map size: %lu real pow2 %lu\n", boundary_map.size(), next_pow2);
+                mtracker->allocate_device("gpu_node_hash_map_keys",   (void**)&gpu_boundary_hash_map_keys,   next_pow2 * sizeof(uint64_t));
+				mtracker->allocate_device("gpu_node_hash_map_values", (void**)&gpu_boundary_hash_map_values, next_pow2 * sizeof(uint64_t));
+				mtracker->allocate_device("gpu_boundary_hash_map", (void**)&gpu_boundary_hash_map, sizeof(Hash_map));
+                boundary_hash_map = new Hash_map(mpi_config->particle_flow_rank, next_pow2, gpu_boundary_hash_map_keys, gpu_boundary_hash_map_values);
+                gpuErrchk( cudaMemcpy(gpu_boundary_hash_map, boundary_hash_map, sizeof(Hash_map), cudaMemcpyHostToDevice));
+                
+
+
 
                 if (boundary_map.size() != 0)
                 {
                     int thread_count = min( (int) 32, (int)boundary_map.size());
                     int block_count  = max(1, (int) ceil((double) (boundary_map.size()) / (double) thread_count));
-                    C_create_map(block_count, thread_count, gpu_boundary_map, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size());
+                    cudaDeviceSynchronize();
+		            gpuErrchk( cudaPeekAtLastError() );
+                    C_create_map(block_count, thread_count, gpu_boundary_hash_map, gpu_boundary_map_keys, gpu_boundary_map_values, boundary_map.size());
+                    cudaDeviceSynchronize();
 		            gpuErrchk( cudaPeekAtLastError() );
                 }
 
                 free(full_boundary_map_keys);
 				free(full_boundary_map_values);
-
 
                 //node map to gpu
 				uint64_t * full_node_map_keys = (uint64_t *) malloc(global_node_to_local_node_map.size() * sizeof(uint64_t));
@@ -910,16 +923,27 @@ namespace minicombust::flow
 				gpuErrchk( cudaMemset(gpu_node_map, (int)MESH_BOUNDARY, global_node_to_local_node_map.size()  * sizeof(uint64_t)));
 				gpuErrchk( cudaMemcpy(gpu_node_map_keys,   full_node_map_keys,  global_node_to_local_node_map.size()  * sizeof(uint64_t),  cudaMemcpyHostToDevice));
 				gpuErrchk( cudaMemcpy(gpu_node_map_values, full_node_map_values, global_node_to_local_node_map.size() * sizeof(uint64_t), cudaMemcpyHostToDevice));
+                
+                uint64_t *gpu_node_hash_map_keys, *gpu_node_hash_map_values;
+                next_pow2 = pow(2, ceil(log(global_node_to_local_node_map.size())/log(2)))*4;
+                if (mpi_config->particle_flow_rank == 0) printf("Node map size: %lu  real pow2 %lu\n", global_node_to_local_node_map.size(), next_pow2);
+                mtracker->allocate_device("gpu_node_hash_map_keys",   (void**)&gpu_node_hash_map_keys,   next_pow2 * sizeof(uint64_t));
+				mtracker->allocate_device("gpu_node_hash_map_values", (void**)&gpu_node_hash_map_values, next_pow2 * sizeof(uint64_t));
+                node_hash_map = new Hash_map(mpi_config->particle_flow_rank, next_pow2, gpu_node_hash_map_keys, gpu_node_hash_map_values);
+				mtracker->allocate_device("gpu_node_hash_map", (void**)&gpu_node_hash_map, sizeof(Hash_map));
+                gpuErrchk( cudaMemcpy(gpu_node_hash_map, node_hash_map, sizeof(Hash_map), cudaMemcpyHostToDevice));
 
+                
                 if (global_node_to_local_node_map.size() != 0)
                 {
                     int thread_count = min( (int) 32, (int)global_node_to_local_node_map.size());
                     int block_count  = max(1, (int) ceil((double) (global_node_to_local_node_map.size()) / (double) thread_count));
 
-                    C_create_map(block_count, thread_count, gpu_node_map, gpu_node_map_keys, gpu_node_map_values, global_node_to_local_node_map.size());
+                    C_create_map(block_count, thread_count, gpu_node_hash_map, gpu_node_map_keys, gpu_node_map_values, global_node_to_local_node_map.size());
                     gpuErrchk( cudaPeekAtLastError() );
                 }
                 cudaStreamSynchronize(0);
+                // exit(1);
                 gpuErrchk( cudaPeekAtLastError() );
 
                 free(full_node_map_keys);

@@ -15,6 +15,8 @@
 #include <thrust/sequence.h>
 #include <thrust/tuple.h>
 
+#include <cuda_runtime.h>
+
 #include <cmath>
 #include <cstddef>
 #include <iostream>
@@ -136,18 +138,14 @@ __global__ void insert(Map map_ref,
   }
 }
 
-__global__ void kernel_create_map(uint64_t *map, uint64_t *keys, uint64_t *values, uint64_t size)
+__global__ void kernel_create_map(Hash_map *node_map, uint64_t *keys, uint64_t *values, uint64_t size)
 {
 	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= size) return;
 
-	// if (keys[tid] >= 56652225)
-	// {
-	// 	printf("%lu key out of range\n", keys[tid]);
-	// }
-	map[keys[tid]] = values[tid];
+	node_map->insert(keys[tid], values[tid]);
 
-
+	// map[keys[tid]] = values[tid];
 }
 
 __global__ void kernel_process_particle_fields(uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp)
@@ -163,23 +161,25 @@ __global__ void kernel_process_particle_fields(uint64_t *sent_cell_indexes, part
 
 }
 
-__global__ void kernel_pack_flow_field_buffer(uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size, uint64_t rank_slot)
+__global__ void kernel_pack_flow_field_buffer(uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, Hash_map *node_map, uint64_t buf_size, uint64_t node_map_size, uint64_t rank_slot)
 {
 	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= buf_size) return;
 
 	const uint64_t node_id = index_buffer[tid];
 
-	if (node_map[node_id] > node_map_size)
-	{
-		printf("ERROR: Rank slot %lu Index %d global_node %lu local_node %lu node_map_size %lu\n", rank_slot, tid, node_id, node_map[node_id], node_map_size);
-	}
+	uint64_t local_node_id = node_map->find(node_id);
 
-	flow_buffer[tid].vel.x    = phi_nodes.U[node_map[node_id]];
-	flow_buffer[tid].vel.y    = phi_nodes.V[node_map[node_id]];
-	flow_buffer[tid].vel.z    = phi_nodes.W[node_map[node_id]];
-	flow_buffer[tid].pressure = phi_nodes.P[node_map[node_id]];
-	flow_buffer[tid].temp     = phi_nodes.TEM[node_map[node_id]];
+	// if (local_node_id > node_map_size)
+	// {
+	// 	printf("ERROR: Rank slot %lu Index %d global_node %lu local_node %lu node_map_size %lu\n", rank_slot, tid, node_id, local_node_id, node_map_size);
+	// }
+
+	flow_buffer[tid].vel.x    = phi_nodes.U[local_node_id];
+	flow_buffer[tid].vel.y    = phi_nodes.V[local_node_id];
+	flow_buffer[tid].vel.z    = phi_nodes.W[local_node_id];
+	flow_buffer[tid].pressure = phi_nodes.P[local_node_id];
+	flow_buffer[tid].temp     = phi_nodes.TEM[local_node_id];
 }
 
 __global__ void kernel_pack_phi_halo_buffer(phi_vector<double> send_buffer, phi_vector<double> phi, uint64_t *indexes, uint64_t buf_size)
@@ -246,7 +246,7 @@ __global__ void kernel_pack_PP_grad_halo_buffer(phi_vector<vec<double>> send_buf
 
 // __global__ __launch_bounds__(256, MIN_BLOCKS_PER_MP)
 
-__global__ void kernel_get_phi_gradient(double *phi_component, bool pressure_solve, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, vec<double> *grad_component)
+__global__ void kernel_get_phi_gradient(double *phi_component, bool pressure_solve, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, Hash_map *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, vec<double> *grad_component)
 {
     const uint64_t block_cell = (blockIdx.x * blockDim.x) + threadIdx.x;
     if(block_cell >= local_mesh_size) return;
@@ -272,24 +272,24 @@ __global__ void kernel_get_phi_gradient(double *phi_component, bool pressure_sol
 		uint64_t phi_index0;
 		if(block_cell0 >= local_mesh_size)
 		{
-			phi_index0 = boundary_map[faces[face].cell0];
+			phi_index0 = boundary_map->find(faces[face].cell0);
 		}
 		else
 		{
 			phi_index0 = block_cell0;
 		}
-		uint64_t phi_index1;
-		if (block_cell1 >= local_mesh_size)
-		{
-			phi_index1 = boundary_map[faces[face].cell1];
-		}
-		else
-		{
-			phi_index1 = block_cell1;
-		}
 
         if(faces[face].cell1 < mesh_size) //inner cell
         {
+			uint64_t phi_index1;
+			if (block_cell1 >= local_mesh_size)
+			{
+				phi_index1 = boundary_map->find(faces[face].cell1);
+			}
+			else
+			{
+				phi_index1 = block_cell1;
+			}
             const double mask = (faces[face].cell0 == cell) ? 1. : -1.;
 			dphi =   mask * ( phi_component[phi_index1]   - phi_component[phi_index0] );
 
@@ -349,7 +349,7 @@ void C_test_solve()
 	test_solve<<<1,1>>>();
 }
 
-__global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos)
+__global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, Hash_map *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos)
 {
 	const uint64_t block_cell = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if(block_cell >= local_mesh_size) return;
@@ -376,26 +376,35 @@ __global__ void kernel_get_phi_gradients(phi_vector<double> phi, phi_vector<vec<
 		const uint64_t block_cell1 = faces[face].cell1 - local_cells_disp;
 		double dU, dV, dW, dP, dTE, dED, dT, dFU, dPR, dVFU, dVPR;
 		vec<double> dX;
+		
 		uint64_t phi_index0;
 		if(block_cell0 >= local_mesh_size)
 		{
-			phi_index0 = boundary_map[faces[face].cell0];
+			phi_index0 = boundary_map->find(faces[face].cell0);
+			// printf("Error trying to find cell %lu >= %lu.\n", faces[face].cell0, local_mesh_size);
+
+			// if (phi_index0 > local_mesh_size + nhalos)
+			// 	printf("Error phi index %lu > %lu. %lu\n", phi_index0, local_mesh_size + nhalos, faces[face].cell0);
 		}
 		else
 		{
 			phi_index0 = block_cell0;
 		}
-		uint64_t phi_index1;
-		if(block_cell1 >= local_mesh_size)
-		{
-			phi_index1 = boundary_map[faces[face].cell1];
-		}
-		else
-		{
-			phi_index1 = block_cell1;
-		}
 		if(faces[face].cell1 < mesh_size) //inner cell
 		{
+			uint64_t phi_index1;
+			if(block_cell1 >= local_mesh_size)
+			{
+				// printf("Error trying to find cell %lu >= %lu.\n", faces[face].cell1, local_mesh_size);
+				phi_index1 = boundary_map->find(faces[face].cell1);
+
+				// if (phi_index1 > local_mesh_size + nhalos)
+				// 	printf("Error phi index %lu > %lu. %lu\n", phi_index1, local_mesh_size + nhalos, faces[face].cell1);
+			}
+			else
+			{
+				phi_index1 = block_cell1;
+			}
 			const double mask = (faces[face].cell0 == cell) ? 1. : -1.;
 			dU =   mask * ( phi.U[phi_index1]   - phi.U[phi_index0] );
 			dV =   mask * ( phi.V[phi_index1]   - phi.V[phi_index0] );
@@ -533,7 +542,7 @@ __global__ void kernel_precomp_AU(uint64_t faces_size, gpu_Face<uint64_t> *faces
 	atomicAdd(&A_phi.U[face], f);
 }
 
-__global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, double *cell_densities, phi_vector<double> A_phi, double *cell_volumes, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, double *face_areas, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel)
+__global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, double *cell_densities, phi_vector<double> A_phi, double *cell_volumes, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, double *face_areas, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel)
 {
 	//Big gpu loop
     const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -546,7 +555,7 @@ __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_
 		uint64_t phi_index0;
         if(block_cell0 >= local_mesh_size)
         {
-			phi_index0 = boundary_map[faces[face].cell0];
+			phi_index0 = boundary_map->find(faces[face].cell0);
         }
         else
         {
@@ -555,7 +564,7 @@ __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_
 		uint64_t phi_index1;
         if(block_cell1 >= local_mesh_size)
         {
-			phi_index1 = boundary_map[faces[face].cell1];
+			phi_index1 = boundary_map->find(faces[face].cell1);
         }
         else
         {
@@ -758,7 +767,7 @@ __global__ void kernel_correct_flow2(int *count_out, double *FlowOut, double *Fl
 	}
 }
 
-__global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, phi_vector<double> A_phi, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel, double effective_viscosity, double *face_rlencos, double inlet_effective_viscosity, double *face_areas)
+__global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, phi_vector<double> A_phi, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel, double effective_viscosity, double *face_rlencos, double inlet_effective_viscosity, double *face_areas)
 {
 	double GammaBlend = 0.0;
 
@@ -771,23 +780,23 @@ __global__ void kernel_calculate_flux_UVW(uint64_t faces_size, gpu_Face<uint64_t
 	uint64_t phi_index0;
 	if(block_cell0 >= local_mesh_size)
 	{
-		phi_index0 = boundary_map[faces[face].cell0];
+		phi_index0 = boundary_map->find(faces[face].cell0);
 	}
 	else
 	{
 		phi_index0 = block_cell0;
 	}
-	uint64_t phi_index1;
-	if(block_cell1 >= local_mesh_size)
-	{
-		phi_index1 = boundary_map[faces[face].cell1];
-	}
-	else
-	{
-		phi_index1 = block_cell1;
-	}
 	if(faces[face].cell1 < mesh_size) //internal
 	{
+		uint64_t phi_index1;
+		if(block_cell1 >= local_mesh_size)
+		{
+			phi_index1 = boundary_map->find(faces[face].cell1);
+		}
+		else
+		{
+			phi_index1 = block_cell1;
+		}
         const double lambda0 = face_lambdas[face];
         const double lambda1 = 1.0 - lambda0;
 
@@ -1072,7 +1081,7 @@ __global__ void kernel_apply_forces(uint64_t local_mesh_size, double *cell_densi
 	S_phi.W[cell] += particle_terms[cell].momentum.z;
 }
 
-__global__ void kernel_setup_sparse_matrix(double URFactor, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, double *A_phi_component, gpu_Face<double> *face_fields, double *values, double *S_phi_component, double *phi_component, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz)
+__global__ void kernel_setup_sparse_matrix(double URFactor, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, double *A_phi_component, gpu_Face<double> *face_fields, double *values, double *S_phi_component, double *phi_component, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz)
 {
 	const uint64_t cell = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if(cell >= local_mesh_size) return;
@@ -1090,7 +1099,7 @@ __global__ void kernel_setup_sparse_matrix(double URFactor, uint64_t local_mesh_
 			uint64_t phi_index0;
 			if(block_cell0 >= local_mesh_size)
 			{
-				phi_index0 = boundary_map[faces[face].cell0];
+				phi_index0 = boundary_map->find(faces[face].cell0);
 			}
 			else
 			{
@@ -1114,7 +1123,7 @@ __global__ void kernel_setup_sparse_matrix(double URFactor, uint64_t local_mesh_
 	        uint64_t phi_index1;
     	    if(block_cell1 >= local_mesh_size)
         	{
-				phi_index1 = boundary_map[faces[face].cell1];
+				phi_index1 = boundary_map->find(faces[face].cell1);
         	}
         	else
        		{
@@ -1147,7 +1156,7 @@ __global__ void kernel_under_relax(double *A_phi_component, uint64_t local_mesh_
 						  A_phi_component[cell] * phi_component[cell];
 } 
 
-/*__global__ void kernel_setup_sparse_matrix(double URFactor, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, double *A_phi_component, gpu_Face<double> *face_fields, double *values, double *S_phi_component, double *phi_component, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz)
+/*__global__ void kernel_setup_sparse_matrix(double URFactor, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, double *A_phi_component, gpu_Face<double> *face_fields, double *values, double *S_phi_component, double *phi_component, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz)
 {
 	double RURF = 1. / URFactor;
 	for(uint64_t cell = 0; cell < local_mesh_size; cell++)
@@ -1216,7 +1225,7 @@ __global__ void kernel_under_relax(double *A_phi_component, uint64_t local_mesh_
 	}
 }*/
 
-__global__ void kernel_update_sparse_matrix(double URFactor, uint64_t local_mesh_size, double *A_phi_component, double *values, int *rows_ptr, double *S_phi_component, double *phi_component, uint64_t faces_size, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, uint64_t local_cells_disp, gpu_Face<double> *face_fields, uint64_t mesh_size)
+__global__ void kernel_update_sparse_matrix(double URFactor, uint64_t local_mesh_size, double *A_phi_component, double *values, int *rows_ptr, double *S_phi_component, double *phi_component, uint64_t faces_size, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, uint64_t local_cells_disp, gpu_Face<double> *face_fields, uint64_t mesh_size)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if(face >= faces_size) return;
@@ -1227,7 +1236,7 @@ __global__ void kernel_update_sparse_matrix(double URFactor, uint64_t local_mesh
     	uint64_t phi_index0;
     	if(block_cell0 >= local_mesh_size)
 	    {
-			phi_index0 = boundary_map[faces[face].cell0];
+			phi_index0 = boundary_map->find(faces[face].cell0);
    		}
     	else
     	{
@@ -1236,7 +1245,7 @@ __global__ void kernel_update_sparse_matrix(double URFactor, uint64_t local_mesh
     	uint64_t phi_index1;
     	if(block_cell1 >= local_mesh_size)
     	{
-			phi_index1 = boundary_map[faces[face].cell1];
+			phi_index1 = boundary_map->find(faces[face].cell1);
     	}
     	else
     	{
@@ -1258,7 +1267,7 @@ __global__ void kernel_cell_update(double URFactor, uint64_t local_mesh_size, do
 							A_phi_component[cell] * phi_component[cell];
 }
 
-/*__global__ void kernel_update_sparse_matrix(double URFactor, uint64_t local_mesh_size, double *A_phi_component, double *values, int *rows_ptr, double *S_phi_component, double *phi_component, uint64_t faces_size, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, uint64_t local_cells_disp, gpu_Face<double> *face_fields, uint64_t mesh_size)
+/*__global__ void kernel_update_sparse_matrix(double URFactor, uint64_t local_mesh_size, double *A_phi_component, double *values, int *rows_ptr, double *S_phi_component, double *phi_component, uint64_t faces_size, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, uint64_t local_cells_disp, gpu_Face<double> *face_fields, uint64_t mesh_size)
 {
 	for(uint64_t face = 0; face < faces_size; face++)
 	{
@@ -1315,7 +1324,7 @@ __global__ void kernel_print_grads(phi_vector<vec<double>> phi_grad, uint64_t lo
 	}
 }
 
-__global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, gpu_Face<double> *face_fields, double *values, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> S_phi)
+__global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, gpu_Face<double> *face_fields, double *values, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> S_phi)
 {
 	const uint64_t cell = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if(cell >= local_mesh_size) return;
@@ -1333,7 +1342,7 @@ __global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows
             uint64_t phi_index0;
             if(block_cell0 >= local_mesh_size)
             {
-				phi_index0 = boundary_map[faces[face].cell0];
+				phi_index0 = boundary_map->find(faces[face].cell0);
             }
             else
             {
@@ -1358,7 +1367,7 @@ __global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows
             uint64_t phi_index1;
             if(block_cell1 >= local_mesh_size)
             {
-				phi_index1 = boundary_map[faces[face].cell1];
+				phi_index1 = boundary_map->find(faces[face].cell1);
             }
             else
             {
@@ -1385,7 +1394,7 @@ __global__ void apply_diag(uint64_t local_mesh_size, int *rows_ptr, double *valu
     if(cell >= local_mesh_size) return; 
 	values[rows_ptr[cell]] = A_phi.V[cell];
 }
-/*__global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, gpu_Face<double> *face_fields, double *values, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> S_phi)
+/*__global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, gpu_Face<double> *face_fields, double *values, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> S_phi)
 {
     for(uint64_t cell = 0; cell < local_mesh_size; cell++)
     {
@@ -1478,7 +1487,7 @@ __global__ void kernel_Update_P_at_boundaries(uint64_t faces_size, gpu_Face<uint
 	}
 }
 
-__global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<double> *face_fields, uint64_t mesh_size, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> phi, double *cell_volumes, phi_vector<vec<double>> phi_grad, int timestep_count)
+__global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<double> *face_fields, uint64_t mesh_size, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> phi, double *cell_volumes, phi_vector<vec<double>> phi_grad, int timestep_count)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
     if(face >= faces_size) return;
@@ -1490,7 +1499,7 @@ __global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_
 		uint64_t phi_index0;
         if(block_cell0 >= local_mesh_size)
         {
-			phi_index0 = boundary_map[faces[face].cell0];
+			phi_index0 = boundary_map->find(faces[face].cell0);
         }
         else
         {
@@ -1499,7 +1508,7 @@ __global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_
 		uint64_t phi_index1;
         if(block_cell1 >= local_mesh_size)
         {
-			phi_index1 = boundary_map[faces[face].cell1];
+			phi_index1 = boundary_map->find(faces[face].cell1);
         }
         else
         {
@@ -1592,7 +1601,7 @@ __global__ void kernel_fgm_look_up(double *fgm_table, phi_vector<double> S_phi, 
     S_phi.U[cell] = sum;
 }
 
-__global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, double *phi_component, phi_vector<double> A_phi, phi_vector<double> S_phi, vec<double> *phi_grad_component, double *face_lambdas, double effective_viscosity, double *face_rlencos, double *face_mass_fluxes, vec<double> *face_normals, double inlet_effective_viscosity, gpu_Face<double> *face_fields, vec<double> dummy_gas_vel, double dummy_gas_tem, double dummy_gas_fuel)
+__global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, Hash_map *boundary_map, uint64_t *boundary_map_values, int64_t map_size, double *phi_component, phi_vector<double> A_phi, phi_vector<double> S_phi, vec<double> *phi_grad_component, double *face_lambdas, double effective_viscosity, double *face_rlencos, double *face_mass_fluxes, vec<double> *face_normals, double inlet_effective_viscosity, gpu_Face<double> *face_fields, vec<double> dummy_gas_vel, double dummy_gas_tem, double dummy_gas_fuel)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
     if(face >= faces_size) return;
@@ -1605,25 +1614,25 @@ __global__ void kernel_flux_scalar(int type, uint64_t faces_size, uint64_t local
 	uint64_t phi_index0;
 	if(block_cell0 >= local_mesh_size)
 	{
-		phi_index0 = boundary_map[faces[face].cell0];
+		phi_index0 = boundary_map->find(faces[face].cell0);
 	}
 	else
 	{
 		phi_index0 = block_cell0;
 	}
 
-	uint64_t phi_index1;
-	if(block_cell1 >= local_mesh_size)
-	{
-		phi_index1 = boundary_map[faces[face].cell1];
-	}
-	else
-	{
-		phi_index1 = block_cell1;
-	}
 
 	if(faces[face].cell1 < mesh_size) //INTERNAL
 	{
+		uint64_t phi_index1;
+		if(block_cell1 >= local_mesh_size)
+		{
+			phi_index1 = boundary_map->find(faces[face].cell1);
+		}
+		else
+		{
+			phi_index1 = block_cell1;
+		}
 		const double lambda0 = face_lambdas[face];
 		const double lambda1 = 1.0 - lambda0;
 
@@ -2069,28 +2078,16 @@ __global__ void kernel_vec_print(vec<double> *to_print, uint64_t num_print)
 	printf("\n");
 }
 
-__global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint64_t *boundary_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
+__global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, Hash_map *node_map, Hash_map *boundary_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
 {
-  	auto block_cell = threadIdx.x + blockIdx.x * blockDim.x;
-    if (block_cell >= local_mesh_size + nhalos) return;
+  	auto phi_index = threadIdx.x + blockIdx.x * blockDim.x;
+    if (phi_index >= local_mesh_size + nhalos) return;
 
 	const uint64_t cell_size = 8;
 	const uint64_t node_neighbours = 8;
 
 	double U, V, W, T, P;
 	vec<double> Ug, Vg, Wg, Tg, Pg;
-
-	bool halo = (block_cell >= local_mesh_size);
-
-	uint64_t phi_index;
-	if(block_cell >= local_mesh_size)
-	{
-		phi_index = boundary_map[block_cell];
-	}
-	else
-	{
-		phi_index = block_cell;
-	}
 
 	U = phi.U[phi_index];
 	V = phi.V[phi_index];
@@ -2113,19 +2110,21 @@ __global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vect
 		const uint64_t node_id = cells[phi_index*cell_size + n];
 		const vec<double> direction      = vec_minus(points[node_id], cell_center);
 
-		if (halo && points_map[node_id] == UINT64_MAX) continue; 
-	
-		phi_nodes.U[points_map[node_id]]   += (U + dot_product(Ug,   direction)) / node_neighbours;
-		phi_nodes.V[points_map[node_id]]   += (V + dot_product(Vg,   direction)) / node_neighbours;
-		phi_nodes.W[points_map[node_id]]   += (W + dot_product(Wg,   direction)) / node_neighbours;
-		phi_nodes.P[points_map[node_id]]   += (P + dot_product(Pg,   direction)) / node_neighbours;
-		phi_nodes.TEM[points_map[node_id]] += (T + dot_product(Tg,   direction)) / node_neighbours;
+		// if (halo && node_map[node_id] == UINT64_MAX) continue; 
 
-		// phi_nodes.U[points_map[node_id]]   = U;
-		// phi_nodes.V[points_map[node_id]]   = V;
-		// phi_nodes.W[points_map[node_id]]   = W;
-		// phi_nodes.P[points_map[node_id]]   = P;
-		// phi_nodes.TEM[points_map[node_id]] = T;
+		uint64_t local_node_id = node_map->find(node_id);
+	
+		phi_nodes.U[local_node_id]   += (U + dot_product(Ug,   direction)) / node_neighbours;
+		phi_nodes.V[local_node_id]   += (V + dot_product(Vg,   direction)) / node_neighbours;
+		phi_nodes.W[local_node_id]   += (W + dot_product(Wg,   direction)) / node_neighbours;
+		phi_nodes.P[local_node_id]   += (P + dot_product(Pg,   direction)) / node_neighbours;
+		phi_nodes.TEM[local_node_id] += (T + dot_product(Tg,   direction)) / node_neighbours;
+
+		// phi_nodes.U[local_node_id]   = U;
+		// phi_nodes.V[local_node_id]   = V;
+		// phi_nodes.W[local_node_id]   = W;
+		// phi_nodes.P[local_node_id]   = P;
+		// phi_nodes.TEM[local_node_id] = T;
 	}
 
 		
@@ -2152,12 +2151,12 @@ void C_kernel_interpolate_init_boundaries(int block_count, int thread_count, phi
 	kernel_interpolate_init_boundaries<<<block_count, thread_count>>> (phi_nodes, cells_per_point, local_points_size);
 }
 
-void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, uint64_t *points_map, uint64_t *boundary_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
+void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, phi_vector<double> phi_nodes, vec<double> *points, Hash_map *node_map, Hash_map *boundary_map, uint8_t *cells_per_point, uint64_t *cells, vec<double> *cell_centers, uint64_t local_mesh_size, uint64_t cell_disp, uint64_t local_points_size, uint64_t nhalos)
 {
-	kernel_interpolate_phi_to_nodes<<<block_count, thread_count>>> (phi, phi_grad, phi_nodes, points, points_map, boundary_map, cells_per_point, cells, cell_centers, local_mesh_size, cell_disp, local_points_size, nhalos);
+	kernel_interpolate_phi_to_nodes<<<block_count, thread_count>>> (phi, phi_grad, phi_nodes, points, node_map, boundary_map, cells_per_point, cells, cell_centers, local_mesh_size, cell_disp, local_points_size, nhalos);
 }
 
-void C_kernel_pack_flow_field_buffer(int block_count, int thread_count, uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, uint64_t *node_map, uint64_t buf_size, uint64_t node_map_size, uint64_t rank_slot)
+void C_kernel_pack_flow_field_buffer(int block_count, int thread_count, uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, Hash_map *node_map, uint64_t buf_size, uint64_t node_map_size, uint64_t rank_slot)
 {
 	kernel_pack_flow_field_buffer<<<block_count, thread_count>>> (index_buffer, phi_nodes, flow_buffer, node_map, buf_size, node_map_size, rank_slot);
 }
@@ -2187,7 +2186,7 @@ void C_kernel_test_values(int *nnz, double *values, int *rows_ptr, int64_t *col_
     kernel_test_values_less<<<1,1>>>(nnz, values, rows_ptr, col_indices, local_mesh_size);
 }
 
-__global__ void kernel_update_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, vec<double> *cell_centers, gpu_Face<double> *face_fields, phi_vector<vec<double>> phi_grad, double *face_mass_fluxes, phi_vector<double> S_phi, vec<double> *face_normals)
+__global__ void kernel_update_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t mesh_size, Hash_map *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, vec<double> *cell_centers, gpu_Face<double> *face_fields, phi_vector<vec<double>> phi_grad, double *face_mass_fluxes, phi_vector<double> S_phi, vec<double> *face_normals)
 {
 	const uint64_t face = (blockIdx.x * blockDim.x) + threadIdx.x;
     if(face >= faces_size) return;
@@ -2201,7 +2200,7 @@ __global__ void kernel_update_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> 
 		uint64_t phi_index0;
 		if(block_cell0 >= local_mesh_size)
 		{
-			phi_index0 = boundary_map[faces[face].cell0];
+			phi_index0 = boundary_map->find(faces[face].cell0);
 		}
 		else
 		{
@@ -2210,7 +2209,7 @@ __global__ void kernel_update_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> 
 		uint64_t phi_index1;
 		if(block_cell1 >= local_mesh_size)
 		{
-			phi_index1 = boundary_map[faces[face].cell1];
+			phi_index1 = boundary_map->find(faces[face].cell1);
 
 		}
 		else
@@ -2246,7 +2245,7 @@ __global__ void kernel_update_mass_flux(uint64_t faces_size, gpu_Face<uint64_t> 
 	}
 }
 
-void C_kernel_update_mass_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, vec<double> *cell_centers, gpu_Face<double> *face_fields, phi_vector<vec<double>> phi_grad, double *face_mass_fluxes, phi_vector<double> S_phi, vec<double> *face_normals)
+void C_kernel_update_mass_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t mesh_size, Hash_map *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, vec<double> *cell_centers, gpu_Face<double> *face_fields, phi_vector<vec<double>> phi_grad, double *face_mass_fluxes, phi_vector<double> S_phi, vec<double> *face_normals)
 {
 	kernel_update_mass_flux<<<block_count,thread_count>>>(faces_size, faces, local_cells_disp, local_mesh_size, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, cell_centers, face_fields, phi_grad, face_mass_fluxes, S_phi, face_normals);
 }
@@ -2256,7 +2255,7 @@ void C_kernel_precomp_AU(int block_count, int thread_count, uint64_t faces_size,
 	kernel_precomp_AU<<<block_count,thread_count>>>(faces_size, faces, local_cells_disp, mesh_size, boundary_types, effective_viscosity, face_rlencos, face_mass_fluxes, A_phi, local_mesh_size, delta, cell_densities, cell_volumes);
 }
 
-void C_kernel_get_phi_gradients(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos)
+void C_kernel_get_phi_gradients(int block_count, int thread_count, phi_vector<double> phi, phi_vector<vec<double>> phi_grad, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, Hash_map *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos)
 { 
 
 	kernel_get_phi_gradients<<<block_count,thread_count>>>(phi, phi_grad, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos);
@@ -2289,7 +2288,7 @@ void C_kernel_get_phi_gradients(int block_count, int thread_count, phi_vector<do
 
 }
 
-void C_kernel_calculate_flux_UVW(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, phi_vector<double> A_phi, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel, double effective_viscosity, double *face_rlencos, double inlet_effective_viscosity, double *face_areas)
+void C_kernel_calculate_flux_UVW(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, phi_vector<double> A_phi, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel, double effective_viscosity, double *face_rlencos, double inlet_effective_viscosity, double *face_areas)
 {
 	kernel_calculate_flux_UVW<<<block_count,thread_count>>>(faces_size, faces, local_cells_disp, mesh_size, local_mesh_size, map_size, boundary_map, boundary_map_values, phi_grad, cell_centers, face_centers, phi, A_phi, face_mass_fluxes, face_lambdas, face_normals, face_fields, S_phi, nhalos, boundary_types, dummy_gas_vel, effective_viscosity, face_rlencos, inlet_effective_viscosity, face_areas);
 }
@@ -2299,7 +2298,7 @@ void C_kernel_apply_forces(int block_count, int thread_count, uint64_t local_mes
 	kernel_apply_forces<<<block_count,thread_count>>>(local_mesh_size, cell_densities, cell_volumes, phi, S_phi, phi_grad, delta, A_phi, particle_terms); 
 }
 
-void C_kernel_setup_sparse_matrix(int block_count, int thread_count, double URFactor, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, double *A_phi_component, gpu_Face<double> *face_fields, double *values, double *S_phi_component, double *phi_component, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz)
+void C_kernel_setup_sparse_matrix(int block_count, int thread_count, double URFactor, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, double *A_phi_component, gpu_Face<double> *face_fields, double *values, double *S_phi_component, double *phi_component, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz)
 {
 	kernel_setup_sparse_matrix<<<block_count,thread_count>>>(URFactor, local_mesh_size, rows_ptr, col_indices, local_cells_disp, faces, map_size, boundary_map, boundary_map_values, A_phi_component, face_fields, values, S_phi_component, phi_component, mesh_size, faces_per_cell, cell_faces, nnz);
 
@@ -2307,7 +2306,7 @@ void C_kernel_setup_sparse_matrix(int block_count, int thread_count, double URFa
 	kernel_under_relax<<<block_count,thread_count>>>(A_phi_component, local_mesh_size, URFactor, rows_ptr, values, S_phi_component, phi_component);
 }
 
-void C_kernel_update_sparse_matrix(int block_count, int thread_count, double URFactor, uint64_t local_mesh_size, double *A_phi_component, double *values, int *rows_ptr, double *S_phi_component, double *phi_component, uint64_t faces_size, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, uint64_t local_cells_disp, gpu_Face<double> *face_fields, uint64_t mesh_size)
+void C_kernel_update_sparse_matrix(int block_count, int thread_count, double URFactor, uint64_t local_mesh_size, double *A_phi_component, double *values, int *rows_ptr, double *S_phi_component, double *phi_component, uint64_t faces_size, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, uint64_t local_cells_disp, gpu_Face<double> *face_fields, uint64_t mesh_size)
 {
 	kernel_update_sparse_matrix<<<block_count,thread_count>>>(URFactor, local_mesh_size, A_phi_component, values, rows_ptr, S_phi_component, phi_component, faces_size, faces, map_size, boundary_map, boundary_map_values, local_cells_disp, face_fields, mesh_size);
 
@@ -2315,7 +2314,7 @@ void C_kernel_update_sparse_matrix(int block_count, int thread_count, double URF
 	kernel_cell_update<<<block_count,thread_count>>>(URFactor, local_mesh_size, A_phi_component, values, rows_ptr, S_phi_component, phi_component);
 }
 
-void C_kernel_setup_pressure_matrix(int block_count, int thread_count, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, gpu_Face<double> *face_fields, double *values, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> S_phi)
+void C_kernel_setup_pressure_matrix(int block_count, int thread_count, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, gpu_Face<double> *face_fields, double *values, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> S_phi)
 {
 	kernel_setup_pressure_matrix<<<block_count,thread_count>>>(local_mesh_size, rows_ptr, col_indices, local_cells_disp, faces, map_size, boundary_map, boundary_map_values, face_fields, values, mesh_size, faces_per_cell, cell_faces, nnz, face_mass_fluxes, A_phi, S_phi);
 
@@ -2382,8 +2381,7 @@ void C_kernel_pack_PP_grad_halo_buffer(int block_count, int thread_count, phi_ve
 {
 	// printf("Kernel grad launch <<%d, %d>>\n", block_count, thread_count);
 	kernel_pack_PP_grad_halo_buffer<<<block_count, thread_count>>>(send_buffer, phi_grad, indexes, buf_size);
-	gpuErrchk( cudaPeekAtLastError() );
-	gpuErrchk(cudaDeviceSynchronize());
+
 }
 
 void C_kernel_Update_P_at_boundaries(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, uint64_t nhalos, double *phi_component)
@@ -2391,12 +2389,12 @@ void C_kernel_Update_P_at_boundaries(int block_count, int thread_count, uint64_t
 	kernel_Update_P_at_boundaries<<<block_count,thread_count>>>(faces_size, faces, local_cells_disp, mesh_size, local_mesh_size, nhalos, phi_component);
 }
 
-void C_kernel_get_phi_gradient(int block_count, int thread_count, double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, vec<double> *grad_component)
+void C_kernel_get_phi_gradient(int block_count, int thread_count, double *phi_component, uint64_t local_mesh_size, uint64_t local_cells_disp, uint64_t faces_per_cell, gpu_Face<uint64_t> *faces, uint64_t *cell_faces, vec<double> *cell_centers, uint64_t mesh_size, Hash_map *boundary_map, uint64_t *boundary_map_values, int64_t map_size, vec<double> *face_centers, uint64_t nhalos, vec<double> *grad_component)
 {
 	kernel_get_phi_gradient<<<block_count,thread_count>>>(phi_component, true, local_mesh_size, local_cells_disp, faces_per_cell, faces, cell_faces, cell_centers, mesh_size, boundary_map, boundary_map_values, map_size, face_centers, nhalos, grad_component);
 }
 
-void C_kernel_update_vel_and_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<double> *face_fields, uint64_t mesh_size, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> phi, double *cell_volumes, phi_vector<vec<double>> phi_grad, int timestep_count) 
+void C_kernel_update_vel_and_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<double> *face_fields, uint64_t mesh_size, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, double *face_mass_fluxes, phi_vector<double> A_phi, phi_vector<double> phi, double *cell_volumes, phi_vector<vec<double>> phi_grad, int timestep_count) 
 {
 	kernel_update_vel_and_flux<<<block_count,thread_count>>>(faces_size, faces, local_cells_disp, local_mesh_size, nhalos, face_fields, mesh_size, map_size, boundary_map, boundary_map_values, face_mass_fluxes, A_phi, phi, cell_volumes, phi_grad, timestep_count);
 }
@@ -2406,7 +2404,7 @@ void C_kernel_Update_P(int block_count, int thread_count, uint64_t faces_size, u
 	kernel_Update_P<<<block_count,thread_count>>>(faces_size, local_mesh_size, nhalos, faces, local_cells_disp, mesh_size, cell_centers, face_centers, boundary_types, phi_component, phi_grad_component);
 }
 
-void C_kernel_calculate_mass_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, uint64_t *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, double *cell_densities, phi_vector<double> A_phi, double *cell_volumes, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, double *face_areas, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel)
+void C_kernel_calculate_mass_flux(int block_count, int thread_count, uint64_t faces_size, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, uint64_t local_mesh_size, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, phi_vector<vec<double>> phi_grad, vec<double> *cell_centers, vec<double> *face_centers, phi_vector<double> phi, double *cell_densities, phi_vector<double> A_phi, double *cell_volumes, double *face_mass_fluxes, double *face_lambdas, vec<double> *face_normals, double *face_areas, gpu_Face<double> *face_fields, phi_vector<double> S_phi, uint64_t nhalos, uint64_t *boundary_types, vec<double> dummy_gas_vel)
 {
 	kernel_calculate_mass_flux<<<block_count,thread_count>>>(faces_size, faces, local_cells_disp, mesh_size, local_mesh_size, map_size, boundary_map, boundary_map_values, phi_grad, cell_centers, face_centers, phi, cell_densities, A_phi, cell_volumes, face_mass_fluxes, face_lambdas, face_normals, face_areas, face_fields, S_phi, nhalos, boundary_types, dummy_gas_vel);
 }
@@ -2426,7 +2424,7 @@ void C_kernel_correct_flow2(int block_count, int thread_count, int *count_out, d
 	kernel_correct_flow2<<<block_count,thread_count>>>(count_out, FlowOut, FlowIn, areaout, faces_size, faces, mesh_size, boundary_types, face_mass_fluxes, face_areas, cell_densities, phi, local_mesh_size, nhalos, face_normals, local_cells_disp, S_phi, FlowFact);
 }
 
-void C_kernel_flux_scalar(int block_count, int thread_count, int type, uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, uint64_t *boundary_map, uint64_t *boundary_map_values, int64_t map_size, double *phi_component, phi_vector<double> A_phi, phi_vector<double> S_phi, vec<double> *phi_grad_component, double *face_lambdas, double effective_viscosity, double *face_rlencos, double *face_mass_fluxes, vec<double> *face_normals, double inlet_effective_viscosity, gpu_Face<double> *face_fields, vec<double> dummy_gas_vel, double dummy_gas_tem, double dummy_gas_fuel)
+void C_kernel_flux_scalar(int block_count, int thread_count, int type, uint64_t faces_size, uint64_t local_mesh_size, uint64_t nhalos, gpu_Face<uint64_t> *faces, uint64_t local_cells_disp, uint64_t mesh_size, vec<double> *cell_centers, vec<double> *face_centers, uint64_t *boundary_types, Hash_map *boundary_map, uint64_t *boundary_map_values, int64_t map_size, double *phi_component, phi_vector<double> A_phi, phi_vector<double> S_phi, vec<double> *phi_grad_component, double *face_lambdas, double effective_viscosity, double *face_rlencos, double *face_mass_fluxes, vec<double> *face_normals, double inlet_effective_viscosity, gpu_Face<double> *face_fields, vec<double> dummy_gas_vel, double dummy_gas_tem, double dummy_gas_fuel)
 {
 	kernel_flux_scalar<<<block_count,thread_count>>>(type, faces_size, local_mesh_size, nhalos, faces, local_cells_disp, mesh_size, cell_centers, face_centers, boundary_types, boundary_map, boundary_map_values, map_size, phi_component, A_phi, S_phi, phi_grad_component, face_lambdas, effective_viscosity, face_rlencos, face_mass_fluxes, face_normals, inlet_effective_viscosity, face_fields, dummy_gas_vel, dummy_gas_tem, dummy_gas_fuel);
 }
@@ -2457,9 +2455,9 @@ void C_kernel_fgm_look_up(int block_count, int thread_count, double *fgm_table, 
 }
 
 
-void C_create_map(int block_count, int thread_count, uint64_t *map,  uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size)
+void C_create_map(int block_count, int thread_count, Hash_map *node_map,  uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size)
 {
-	kernel_create_map<<<block_count, thread_count>>>(map, gpu_keys, gpu_values, size);
+	kernel_create_map<<<block_count, thread_count>>>(node_map, gpu_keys, gpu_values, size);
 }
 
 void C_kernel_process_particle_fields(uint64_t block_count, int thread_count, uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp)
