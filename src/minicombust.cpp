@@ -51,14 +51,14 @@ int main (int argc, char ** argv)
 
     // Run Configuration
     const uint64_t ntimesteps                   = (argc > 5) ? atoi(argv[5]) : 1500;
-    const double   delta                        = 1.0e-8;
+    const double   delta                        = 1.0e-5;
     const int64_t output_iteration              = (argc > 4) ? atoi(argv[4]) : 10;
     const uint64_t particles_per_timestep       = (argc > 2) ? atoi(argv[2]) : 10;
    
 
     // Mesh Configuration
     const uint64_t modifier                = (argc > 3) ? atoi(argv[3]) : 10;
-    vec<double>    box_dim                 = {0.1, 0.5, 0.5};
+    vec<double>    box_dim                 = {0.05*modifier*2, 0.05*modifier, 0.05*modifier};
     vec<uint64_t>  elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
 
     if (mpi_config.rank == 0)  
@@ -97,7 +97,7 @@ int main (int argc, char ** argv)
 
         const uint64_t reserve_particles_size         = 2 * (local_particles_per_timestep + 1) * ntimesteps;
 
-        ParticleDistribution<double> *particle_dist = load_injector_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
+        ParticleDistribution<double> *particle_dist = load_injector_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, box_dim, mesh);
         // ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
         particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
     }
@@ -119,7 +119,7 @@ int main (int argc, char ** argv)
     if ( output_iteration != -1 )
     {
         VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, &mpi_config);
-        vtk_writer->write_mesh("out/minicombust");
+        vtk_writer->write_mesh("out/mesh/minicombust");
     }
     output_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
 
@@ -134,7 +134,7 @@ int main (int argc, char ** argv)
         {
             particle_solver->timestep();
             
-            if (((int64_t)(t % output_iteration) == output_iteration - 1) or t == 0)  
+            if ((int64_t)(t % output_iteration) == output_iteration - 1)  
             {
                 output_time -= MPI_Wtime();
                 particle_solver->output_data(t+1);
@@ -145,7 +145,7 @@ int main (int argc, char ** argv)
 		{
             flow_solver->timestep();
 			
-			if (((int64_t)(t % output_iteration) == output_iteration - 1) or t == 0)
+			if ((int64_t)(t % output_iteration) == output_iteration - 1)
             {
                 output_time -= MPI_Wtime();
 				flow_solver->output_data(t+1);
@@ -238,10 +238,12 @@ int main (int argc, char ** argv)
 		PetscFinalize();
 	}
     
-	//TODO: calling MPI_Finalize on "big" runs throws a 
-	//PMPI_Finalize error for Device or resource busy 
-	//need to look into this and work out what is going on.
-	//can test with 0 7 241 -1 1 with 482 threads
-	//MPI_Finalize();
+    MPI_Win_free(&mpi_config.win_cell_centers);
+    MPI_Win_free(&mpi_config.win_cells);
+    MPI_Win_free(&mpi_config.win_cell_neighbours);
+    MPI_Win_free(&mpi_config.win_points);
+    MPI_Win_free(&mpi_config.win_cells_per_point);
+
+	MPI_Finalize();
     return 0;
 }

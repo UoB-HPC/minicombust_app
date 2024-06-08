@@ -286,7 +286,7 @@ namespace minicombust::particles
 		{
 			printf("\tRank %d: Running fn: particle_release.\n", mpi_config->rank);
         }
-		function<void(uint64_t *, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, indexes, cell_particle_fields); };
+		function<void(uint64_t *, uint64_t, uint64_t ***, particle_aos<T> ***)> resize_cell_particles_fn = [this] (uint64_t *elements, uint64_t block, uint64_t ***indexes, particle_aos<T> ***cell_particle_fields) { return resize_cell_particle(elements, block, indexes, cell_particle_fields); };
 
         particle_dist->emit_particles_evenly(particles, cell_particle_field_map, node_to_field_address_map, cell_particle_indexes, cell_particle_aos, resize_cell_particles_fn, &logger);
         // particle_dist->emit_particles_waves(particles, cell_particle_field_map, cell_particle_indexes, cell_particle_aos,  &logger);
@@ -322,13 +322,13 @@ namespace minicombust::particles
                     {printf("ERROR::: RANK %d Cell %lu out of range\n", mpi_config->rank, particles[p].cell); exit(1);}
                 
                 uint64_t node = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n];
-                const uint64_t block_id = mesh->get_block_id(particles[p].cell);
+                
 
 
                 if (PARTICLE_SOLVER_DEBUG && (node >= mesh->points_size))
                     {printf("ERROR::: RANK %d Node %lu out of range\n", mpi_config->rank, node); exit(1);}
                 if (PARTICLE_SOLVER_DEBUG && (node_to_field_address_map[node] < (flow_aos<T> *)5))
-                    {printf("Rank %d Block %lu cell %lu node %lu flow_pointer %p block_flow_pointer %p size %lu\n", mpi_config->rank, block_id, particles[p].cell, node, node_to_field_address_map[node], all_interp_node_flow_fields[block_id], node_flow_array_sizes[block_id] ); exit(1);};
+                    {const uint64_t block_id = mesh->get_block_id(particles[p].cell); printf("Rank %d Block %lu cell %lu node %lu flow_pointer %p block_flow_pointer %p size %lu\n", mpi_config->rank, block_id, particles[p].cell, node, node_to_field_address_map[node], all_interp_node_flow_fields[block_id], node_flow_array_sizes[block_id] ); exit(1);};
 
 
                 const vec<T> node_to_particle = particles[p].x1 - mesh->points[node - mesh->shmem_point_disp];
@@ -428,7 +428,7 @@ namespace minicombust::particles
                     const uint64_t index = cell_particle_field_map[block_id].size();
                     elements[block_id]   = cell_particle_field_map[block_id].size() + 1;
 
-                    resize_cell_particle(elements, NULL, NULL);
+                    resize_cell_particle(elements, block_id, NULL, NULL);
 
                     cell_particle_indexes[block_id][index]   = cell;
                     cell_particle_aos[block_id][index]       = particles[p].particle_cell_fields;

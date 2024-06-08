@@ -111,8 +111,8 @@ namespace minicombust::geometry
 
             // Flow source terms
             const vec<T> dummy_gas_vel    = {50., 0.00, 0.00};
-            const T      dummy_gas_pre    = 100.0;
-            const T      dummy_gas_tem    = 273.0;
+            const T      dummy_gas_pre    = 4000.0;
+            const T      dummy_gas_tem    = 2000.0;
 			const T      dummy_gas_turbTE = 0.0001;
 			const T      dummy_gas_turbED = 0.0;
 			const T	 	 dummy_gas_fuel   = 0.1;

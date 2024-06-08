@@ -244,40 +244,40 @@ namespace minicombust::particles
             // }
 
 
-            void resize_cell_particle_indexes (uint64_t *elements, uint64_t ***new_cell_indexes)
+            void resize_cell_particle_indexes (uint64_t *elements, uint64_t block, uint64_t ***new_cell_indexes)
             {
-                for ( uint64_t b = 0; b < mesh->num_blocks; b++)
+                //for ( uint64_t b = 0; b < mesh->num_blocks; b++)
+                //{
+                while ( cell_particle_index_array_sizes[block] < ((size_t) elements[block] * sizeof(uint64_t)) )
                 {
-                    while ( cell_particle_index_array_sizes[b] < ((size_t) elements[b] * sizeof(uint64_t)) )
-                    {
-                        // printf("Rank %d Resizing index block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_index_array_sizes[b] / sizeof(uint64_t), 2* cell_particle_index_array_sizes[b] / sizeof(uint64_t) );
-                        cell_particle_index_array_sizes[b] *= 2;
+                    // printf("Rank %d Resizing index block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_index_array_sizes[b] / sizeof(uint64_t), 2* cell_particle_index_array_sizes[b] / sizeof(uint64_t) );
+                    cell_particle_index_array_sizes[block] *= 2;
 
-                        cell_particle_indexes[b] = (uint64_t*)realloc(cell_particle_indexes[b], cell_particle_index_array_sizes[b]);
-                    }
-                    
-                    if (new_cell_indexes != NULL)  (*new_cell_indexes)[b] = cell_particle_indexes[b];
+                    cell_particle_indexes[block] = (uint64_t*)realloc(cell_particle_indexes[block], cell_particle_index_array_sizes[block]);
                 }
+                
+                if (new_cell_indexes != NULL)  (*new_cell_indexes)[block] = cell_particle_indexes[block];
+                //}
             }
 
-            void resize_cell_particle (uint64_t *elements, uint64_t ***new_cell_indexes, particle_aos<T> ***new_cell_particle)
+            void resize_cell_particle (uint64_t *elements, uint64_t block, uint64_t ***new_cell_indexes, particle_aos<T> ***new_cell_particle)
             {
-                resize_cell_particle_indexes(elements, new_cell_indexes);
+                resize_cell_particle_indexes(elements, block, new_cell_indexes);
 
-                for ( uint64_t b = 0; b < mesh->num_blocks; b++)
+                //for ( uint64_t b = 0; b < mesh->num_blocks; b++)
+                //{
+
+                while ( cell_particle_array_sizes[block] < ((size_t) elements[block] * sizeof(particle_aos<T>)) )
                 {
+                    // printf("Rank %d Resizing field block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_array_sizes[b] / sizeof(particle_aos<T>), 2 * cell_particle_array_sizes[b] / sizeof(particle_aos<T>) );
 
-                    while ( cell_particle_array_sizes[b] < ((size_t) elements[b] * sizeof(particle_aos<T>)) )
-                    {
-                        // printf("Rank %d Resizing field block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_array_sizes[b] / sizeof(particle_aos<T>), 2 * cell_particle_array_sizes[b] / sizeof(particle_aos<T>) );
+                    cell_particle_array_sizes[block] *= 2;
 
-                        cell_particle_array_sizes[b] *= 2;
-
-                        cell_particle_aos[b] = (particle_aos<T> *)realloc(cell_particle_aos[b], cell_particle_array_sizes[b]);
-                    }
-
-                    if (new_cell_particle != NULL)  (*new_cell_particle)[b] = cell_particle_aos[b];
+                    cell_particle_aos[block] = (particle_aos<T> *)realloc(cell_particle_aos[block], cell_particle_array_sizes[block]);
                 }
+
+                if (new_cell_particle != NULL)  (*new_cell_particle)[block] = cell_particle_aos[block];
+                //}
             }
 
             void resize_nodes_arrays (int elements, uint64_t block_id)

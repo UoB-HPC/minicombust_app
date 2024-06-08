@@ -247,7 +247,8 @@ namespace minicombust::particles
                         // Test neighbour cell
                         cell = mesh->cell_neighbours[(cell - mesh->shmem_cell_disp)*
 							   mesh->faces_per_cell + intercepted_face_id];
-                        artificial_A = mesh->cell_centers[cell - mesh->shmem_cell_disp];
+//                        artificial_A = mesh->cell_centers[cell - mesh->shmem_cell_disp];
+
 
                         if (PARTICLE_DEBUG)  cout << "\t\tMoving to cell " << cell << " " << 
 								mesh->get_face_string(intercepted_face_id) << " direction" << endl;  
@@ -265,7 +266,7 @@ namespace minicombust::particles
                             }
                             return cell;
                         }
-
+						artificial_A = mesh->cell_centers[cell - mesh->shmem_cell_disp];
                         // Is particle in this new cell?
                         if (check_cell(cell, mesh)) 
                         {
@@ -302,14 +303,17 @@ namespace minicombust::particles
                 // DUMMY_VAL Relative acceleration between droplet and the fluid CURRENTLY assumes no change for gas temp
 				const vec<T> relative_drop_acc           = a1 * delta ;
 
-                const T gas_density  = 6.9;                                               // DUMMY VAL
+                //const T gas_density  = 6.9; // DUMMY VAL
+				const T gas_density  = local_flow_value.pressure / ( local_flow_value.temp * 287.050);                                               // DUMMY VAL
                 const T fuel_density = 724. * (1. - 1.8 * 0.000645 * (temp - 288.6) - 0.090 * ((temp - 288.6) * (temp - 288.6)) / 67288.36);
 
-
+				// http://www-mdp.eng.cam.ac.uk/web/library/enginfo/aerothermal_dvd_only/aero/fprops/propsoffluids/node5.html
                 const T omega               = 1.;                                                                  // DUMMY_VAL What is this?
-                const T kinematic_viscosity = 1.48e-5 * pow(local_flow_value.temp, 1.5) / (local_flow_value.temp + 110.4);    // DUMMY_VAL 
+                const T viscosity = 1.48e-6 * pow(local_flow_value.temp, 1.5) / (local_flow_value.temp + 110.4);    // DUMMY_VAL 
 				
-				const T reynolds            = gas_density * relative_drop_vel_mag * diameter / kinematic_viscosity;
+				//const T kinematic_viscosity = viscosity / gas_density;   // DUMMY_VAL
+
+				const T reynolds            = gas_density * relative_drop_vel_mag * diameter / viscosity; //kinematic_viscosity;
 
                 const T droplet_frontal_area  = M_PI * (diameter / 2.) * (diameter / 2.);
 

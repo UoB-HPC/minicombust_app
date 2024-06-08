@@ -351,23 +351,23 @@ namespace minicombust::flow
             const uint64_t shmem_cell      = cell - mesh->shmem_cell_disp;
 
             flow_aos<T> flow_term;      
-            flow_aos<T> flow_grad_term; 
+            flow_aos<vec<T>> flow_grad_term; 
 
             if (is_halo(cell)) 
             {
-                flow_term.temp          = mesh->dummy_gas_tem;      
-                flow_grad_term.temp     = 0.0;  
+                flow_term.temp          = phi.TEM[boundary_map[cell]];      
+                flow_grad_term.temp     = {0.0, 0.0, 0.0};  
 
                 flow_term.pressure      = phi.P[boundary_map[cell]];      
-                flow_grad_term.pressure = 0.0; 
-
-                // if (!boundary_map.contains(cell)) exit(1);
+                flow_grad_term.pressure = {0.0, 0.0, 0.0}; 
                 
                 flow_term.vel.x         = phi.U[boundary_map[cell]]; 
                 flow_term.vel.y         = phi.V[boundary_map[cell]]; 
                 flow_term.vel.z         = phi.W[boundary_map[cell]]; 
-                // flow_term.vel      = mesh->dummy_gas_vel; 
-                flow_grad_term.vel = { 0.0, 0.0, 0.0 }; 
+             
+                flow_grad_term.vel.x = { 0.0, 0.0, 0.0 }; 
+                flow_grad_term.vel.y = { 0.0, 0.0, 0.0 };
+                flow_grad_term.vel.z = { 0.0, 0.0, 0.0 };
             }
             else
             {
@@ -376,9 +376,13 @@ namespace minicombust::flow
                 flow_term.vel.y    = phi.V[block_cell];
                 flow_term.vel.z    = phi.W[block_cell];
                 flow_term.pressure = phi.P[block_cell];
-                flow_term.temp     = mesh->flow_terms[block_cell].temp;
+                flow_term.temp     = phi.TEM[block_cell];
 
-                flow_grad_term = mesh->flow_grad_terms[block_cell]; 
+                flow_grad_term.vel.x = phi_grad.U[block_cell];
+ 				flow_grad_term.vel.y = phi_grad.V[block_cell];
+ 				flow_grad_term.vel.z = phi_grad.W[block_cell];
+				flow_grad_term.pressure = phi_grad.P[block_cell];
+ 				flow_grad_term.temp     = phi_grad.TEM[block_cell]; 
             }
 
             // cout << "vel " << print_vec(flow_term.vel) << " pressure " << flow_term.pressure << " temperature " << flow_term.temp << endl;
@@ -403,7 +407,9 @@ namespace minicombust::flow
 
                     interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
                     interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-                    interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[node_id]].vel.x      += (flow_term.vel.x      + dot_product(flow_grad_term.vel.x,      direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[node_id]].vel.y      += (flow_term.vel.y      + dot_product(flow_grad_term.vel.y,      direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[node_id]].vel.z      += (flow_term.vel.z      + dot_product(flow_grad_term.vel.z,      direction)) / node_neighbours;
                 }
             }
         }
@@ -1251,14 +1257,14 @@ namespace minicombust::flow
 		{
 			//find location in table based on variables
 			//simulate finding the closest two points in the database
-			int progress_1 = min(100, (int) floor(phi.PRO[i]*100));
-			int progress_2 = min(100, (int) ceil(phi.PRO[i]*100));
-			int var_progress_1 = min(100, (int) floor(phi.VARP[i]*100));
-			int var_progress_2 = min(100, (int) ceil(phi.VARP[i]*100));
-			int fuel_1 = min(100, (int) floor(phi.FUL[i]*100));
-			int fuel_2 = min(100, (int) ceil(phi.FUL[i]*100));
-			int var_fuel_1 = min(100, (int) floor(phi.VARF[i]*100));
-			int var_fuel_2 = min(100, (int) ceil(phi.VARF[i]*100));	
+			int progress_1 = max(0, min(99, (int) floor(phi.PRO[i]*100)));
+			int progress_2 = max(0, min(99, (int) ceil(phi.PRO[i]*100)));
+			int var_progress_1 = max(0, min(99, (int) floor(phi.VARP[i]*100)));
+			int var_progress_2 = max(0, min(99, (int) ceil(phi.VARP[i]*100)));
+			int fuel_1 = max(0, min(99, (int) floor(phi.FUL[i]*100)));
+			int fuel_2 = max(0, min(99, (int) ceil(phi.FUL[i]*100)));
+			int var_fuel_1 = max(0, min(99, (int) floor(phi.VARF[i]*100)));
+			int var_fuel_2 = max(0, min(99, (int) ceil(phi.VARF[i]*100)));	
 			
 			//interpolate table values to find given value
 			//simulate using the average of the 16
@@ -1627,7 +1633,7 @@ namespace minicombust::flow
                     Up.z = phi.W[block_cell0] - WFace;
 
                     const T dp = dot_product( Up , normalise(face_normals[face]));
-                    vec<T> Ut  = Up - dp * normalise(face_normals[face]);
+                    vec<T> Ut  = Up - (dp * normalise(face_normals[face]));
 
                     const T Uvel = abs(Ut.x) + abs(Ut.y) + abs(Ut.z);
                     
@@ -1700,7 +1706,7 @@ namespace minicombust::flow
         // Gravity force (enthalpy)
 		for ( uint64_t i = 0 ; i < mesh->local_mesh_size; i++)
 		{
-			T BodyForce = -0.001*cell_densities[i]*cell_volumes[i]*(phi.TEM[i] - 273);
+			T BodyForce = -0.001*cell_densities[i]*cell_volumes[i]*(phi.TEM[i] - mesh->dummy_gas_tem);
 			T gravity[3] = {0.0, -9.81, 0.0};
 			
 			S_phi.U[i] += gravity[0]*BodyForce;
@@ -1735,9 +1741,9 @@ namespace minicombust::flow
 		//RHS from particle code
 		for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 		{
-			S_phi.U[i] += mesh->particle_terms[i].momentum.x;
-			S_phi.V[i] += mesh->particle_terms[i].momentum.y;
-			S_phi.W[i] += mesh->particle_terms[i].momentum.z;
+			//S_phi.U[i] += mesh->particle_terms[i].momentum.x;
+			//S_phi.V[i] += mesh->particle_terms[i].momentum.y;
+			//S_phi.W[i] += mesh->particle_terms[i].momentum.z;
 		}
 
 		const double UVW_URFactor = 0.5;
@@ -2802,7 +2808,7 @@ namespace minicombust::flow
 		{
 			for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 			{
-				S_phi.U[i] += mesh->particle_terms[i].energy;
+				//S_phi.U[i] += mesh->particle_terms[i].energy;
 			}
 		}
 
@@ -2846,7 +2852,8 @@ namespace minicombust::flow
 				{
 					for( uint64_t j = 0; j < 6; j++)
 					{
-						uint64_t neighbour = mesh->cell_neighbours[(i - mesh->shmem_cell_disp) * mesh->faces_per_cell + j];
+                        uint64_t cell = i + mesh->local_cells_disp;
+						uint64_t neighbour = mesh->cell_neighbours[(cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + j];
 						if(neighbour < mesh->mesh_size) 
 						{
 							//if internal
@@ -3128,7 +3135,7 @@ namespace minicombust::flow
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-		if(((timestep_count + 1) % 5) == 0)
+		/*if(((timestep_count + 1) % 5) == 0)
 		{
 			if(mpi_config->particle_flow_rank == 0)
 			{
@@ -3147,7 +3154,7 @@ namespace minicombust::flow
 				}
 				MPI_Barrier(mpi_config->particle_flow_world);
 			}
-		}
+		}*/
 
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
         {

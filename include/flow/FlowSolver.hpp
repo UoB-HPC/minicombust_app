@@ -416,7 +416,7 @@ namespace minicombust::flow
 					phi.TE[block_cell]    = mesh->dummy_gas_turbTE;
 					phi.ED[block_cell]    = mesh->dummy_gas_turbED;
 					phi.TP[block_cell]    = 0.0;
-					phi.TEM[block_cell]     = mesh->dummy_gas_tem;
+					phi.TEM[block_cell]   = mesh->dummy_gas_tem;
 					phi.FUL[block_cell]   = mesh->dummy_gas_fuel;
                     phi.PRO[block_cell]   = mesh->dummy_gas_pro;
 					phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
@@ -427,7 +427,7 @@ namespace minicombust::flow
                     
 					if ( mesh->boundary_types[boundary_cell] == INLET )
                     {
-                        phi.U[block_cell]     = 50.0;
+                        phi.U[block_cell]     = mesh->dummy_gas_vel.x;
                         phi.V[block_cell]     = 0.0;
                         phi.W[block_cell]     = 0.0;
                         phi.P[block_cell]     = mesh->dummy_gas_pre;
@@ -443,7 +443,7 @@ namespace minicombust::flow
 					}
                     else if ( mesh->boundary_types[boundary_cell] == OUTLET )
                     {
-                        phi.U[block_cell]     = 50.0;
+                        phi.U[block_cell]     = mesh->dummy_gas_vel.x;
                         phi.V[block_cell]     = 0.0;
                         phi.W[block_cell]     = 0.0;
                         phi.P[block_cell]     = mesh->dummy_gas_pre;
