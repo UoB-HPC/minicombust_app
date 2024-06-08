@@ -118,6 +118,9 @@ namespace minicombust::flow
 			uint64_t		     *gpu_boundary_map;
 			uint64_t		     *gpu_boundary_map_keys;
 			uint64_t		     *gpu_boundary_map_values;
+            int        		     *gpu_seen_node;
+            uint32_t             *gpu_atomic_buffer_index;
+            uint64_t             *gpu_node_buffer_disp;
             uint64_t		     *gpu_node_map;
 			uint64_t		     *gpu_node_map_keys;
 			uint64_t		     *gpu_node_map_values;
@@ -141,6 +144,9 @@ namespace minicombust::flow
 			int					 *gpu_halo_sizes;
 			int					 *gpu_halo_disps;
 			double				 *gpu_fgm_table;
+
+            cudaStream_t process_gpu_fields_stream;
+            cudaStream_t stream2;
 
 			int partition_vector_size;
             int *partition_vector;
@@ -213,6 +219,7 @@ namespace minicombust::flow
             vector<int> ranks;
             vector<int> processed_ranks;
             int      *elements;
+            int      *node_elements;
             uint64_t *element_disps;
 
             uint64_t nhalos = 0;
@@ -268,6 +275,8 @@ namespace minicombust::flow
             size_t density_array_size;
             size_t volume_array_size;
 
+            int gpu_send_buffer_elements;
+
 			double compute_time;
 
             uint64_t max_storage;
@@ -296,6 +305,9 @@ namespace minicombust::flow
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Entered FlowSolver constructor.\n", mpi_config->particle_flow_rank);
                
                 mtracker = new MemoryTracker(mpi_config);
+
+                cudaStreamCreate(&process_gpu_fields_stream);
+                cudaStreamCreate(&stream2);
 
 				//Set up which GPUs to use
                 int gpu_count = 0;
@@ -346,7 +358,7 @@ namespace minicombust::flow
                 send_buffers_node_index_array_size      = max_storage * sizeof(uint64_t);
                 send_buffers_node_flow_array_size       = max_storage * sizeof(flow_aos<T>);
 
-                int gpu_send_buffer_elements = (100 * 80000 / 10) * 8; // (niters * particles_per_iter / particles_per_cell) * 8 nodes_per_cell. 
+                gpu_send_buffer_elements = (100 * 80000 / 10) * 8; // (niters * particles_per_iter / particles_per_cell) * 8 nodes_per_cell. 
                 gpu_send_buffers_node_index_array_size  = gpu_send_buffer_elements * sizeof(uint64_t);
                 gpu_send_buffers_node_flow_array_size   = gpu_send_buffer_elements * sizeof(flow_aos<T>);
 
@@ -357,6 +369,7 @@ namespace minicombust::flow
                 recv_indexed_fields = (particle_aos<T>**) mtracker->allocate_host("recv_indexed_fields", mesh->num_blocks * sizeof(particle_aos<T>*));
 
                 elements        = (int*)mtracker->allocate_host("elements", particle_ranks          * sizeof(int));
+                node_elements   = (int*)mtracker->allocate_host("elements", particle_ranks          * sizeof(int));
                 element_disps   = (uint64_t*)mtracker->allocate_host("element_disps", (particle_ranks+1) * sizeof(uint64_t));
 
                 // Allocate arrays
@@ -437,6 +450,10 @@ namespace minicombust::flow
                         }
                     }
                 }
+
+                mtracker->allocate_device("gpu_seen_node",           (void**)&gpu_seen_node,           global_node_to_local_node_map.size() * sizeof(int) );
+                mtracker->allocate_device("gpu_atomic_buffer_index", (void**)&gpu_atomic_buffer_index, sizeof(uint32_t) );
+                mtracker->allocate_device("gpu_node_buffer_disp",    (void**)&gpu_node_buffer_disp, sizeof(uint64_t) );
 
                 phi_array_size        = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
                 phi_nodes_array_size  = (global_node_to_local_node_map.size()) * sizeof(T);
@@ -884,7 +901,7 @@ namespace minicombust::flow
 				gpuErrchk( cudaMemcpy(gpu_boundary_map_values, full_boundary_map_values, boundary_map.size() * sizeof(uint64_t), cudaMemcpyHostToDevice));
 
                 uint64_t *gpu_boundary_hash_map_keys, *gpu_boundary_hash_map_values;
-                uint64_t next_pow2 = pow(2, ceil(log(boundary_map.size())/log(2)))*4;
+                uint64_t next_pow2 = pow(2, ceil(log(boundary_map.size())/log(2)))*16;
                 if (mpi_config->particle_flow_rank == 0) printf("Boundary map size: %lu real pow2 %lu\n", boundary_map.size(), next_pow2);
                 mtracker->allocate_device("gpu_node_hash_map_keys",   (void**)&gpu_boundary_hash_map_keys,   next_pow2 * sizeof(uint64_t));
 				mtracker->allocate_device("gpu_node_hash_map_values", (void**)&gpu_boundary_hash_map_values, next_pow2 * sizeof(uint64_t));
@@ -925,7 +942,7 @@ namespace minicombust::flow
 				gpuErrchk( cudaMemcpy(gpu_node_map_values, full_node_map_values, global_node_to_local_node_map.size() * sizeof(uint64_t), cudaMemcpyHostToDevice));
                 
                 uint64_t *gpu_node_hash_map_keys, *gpu_node_hash_map_values;
-                next_pow2 = pow(2, ceil(log(global_node_to_local_node_map.size())/log(2)))*4;
+                next_pow2 = pow(2, ceil(log(global_node_to_local_node_map.size())/log(2)))*16;
                 if (mpi_config->particle_flow_rank == 0) printf("Node map size: %lu  real pow2 %lu\n", global_node_to_local_node_map.size(), next_pow2);
                 mtracker->allocate_device("gpu_node_hash_map_keys",   (void**)&gpu_node_hash_map_keys,   next_pow2 * sizeof(uint64_t));
 				mtracker->allocate_device("gpu_node_hash_map_values", (void**)&gpu_node_hash_map_values, next_pow2 * sizeof(uint64_t));

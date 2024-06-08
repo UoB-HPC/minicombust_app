@@ -168,7 +168,6 @@ namespace minicombust::particles
         }
 
 
-        MPI_Waitall(active_blocks.size(), send_requests.data(), MPI_STATUSES_IGNORE);
 
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Wait has returned successfully\n", mpi_config->rank);
         MPI_Barrier(mpi_config->particle_flow_world);
@@ -178,6 +177,7 @@ namespace minicombust::particles
         
         MPI_Ibcast(&sends_done, 1, MPI_INT, 0, mpi_config->world, &bcast_request);
 
+        MPI_Waitall(active_blocks.size(), send_requests.data(), MPI_STATUSES_IGNORE);
         for (uint64_t b : active_blocks)
             cell_particle_field_map[b].clear();
 

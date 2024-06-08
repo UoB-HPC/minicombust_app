@@ -182,6 +182,58 @@ __global__ void kernel_pack_flow_field_buffer(uint64_t *index_buffer, phi_vector
 	flow_buffer[tid].temp     = phi_nodes.TEM[local_node_id];
 }
 
+__global__ void kernel_get_node_buffers(uint64_t *global_cell_indexes, uint64_t *cells, int *seen_node, phi_vector<double> phi_nodes, uint64_t *global_node_indexes, flow_aos<double> *global_node_fields, Hash_map *node_map, uint64_t global_cell_buf_size, uint64_t node_map_size, uint64_t local_mesh_size, uint64_t local_mesh_disp, uint32_t *atomic_buffer_index, uint64_t *gpu_node_buffer_disp)
+{
+	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
+	if (tid >= global_cell_buf_size) return;
+
+	if (tid == 0) atomicExch(atomic_buffer_index, 0);
+
+	global_node_indexes = global_node_indexes + gpu_node_buffer_disp[0];
+	global_node_fields  = global_node_fields + gpu_node_buffer_disp[0];
+
+
+
+	// Datastructures to create:
+	// seen_node, size = local_block_nodes
+	// local_cells for finding nodes of local cells
+	// atomic_buffer_index. This is an atomic counter and should start at 0 before kernel. We read this back after the kernel to find out the number of nodes we are sending.
+
+	const uint64_t cell_size = 8;
+
+	const uint64_t global_cell = global_cell_indexes[tid];
+	const uint64_t block_cell  = global_cell - local_mesh_disp; // All received cells are inside block. There should be no halo cells.
+
+	uint64_t local_nodes_added = 0; 
+
+	for (uint64_t n = 0; n < cell_size; n++)
+	{
+		const uint64_t global_node_id = cells[block_cell*cell_size + n];
+		const uint64_t local_node_id  = node_map->find(global_node_id);
+
+		#if __CUDA_ARCH__ >= 200 
+			// If the old value was 0, we need to add this node to the buffer.
+			if (atomicCAS(&seen_node[local_node_id], 0, 1) == 0) 
+			{
+				local_nodes_added++;
+
+				uint32_t node_buffer_index = atomicInc(atomic_buffer_index, (uint32_t) node_map_size);
+				global_node_indexes[node_buffer_index]         = global_node_id;
+				global_node_fields[node_buffer_index].vel.x    = phi_nodes.U[local_node_id];
+				global_node_fields[node_buffer_index].vel.y    = phi_nodes.V[local_node_id];
+				global_node_fields[node_buffer_index].vel.z    = phi_nodes.W[local_node_id];
+				global_node_fields[node_buffer_index].pressure = phi_nodes.P[local_node_id];
+				global_node_fields[node_buffer_index].temp     = phi_nodes.TEM[local_node_id];
+			}
+		#else
+			printf("ERROR: AtomicCAS required\n");
+		#endif
+	}
+	atomicAdd((unsigned long long int *) gpu_node_buffer_disp, (unsigned long long int)local_nodes_added);
+
+}
+
+
 __global__ void kernel_pack_phi_halo_buffer(phi_vector<double> send_buffer, phi_vector<double> phi, uint64_t *indexes, uint64_t buf_size)
 {
 	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -2107,8 +2159,8 @@ __global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vect
 
 	for (uint64_t n = 0; n < cell_size; n++)
 	{
-		const uint64_t node_id = cells[phi_index*cell_size + n];
-		const vec<double> direction      = vec_minus(points[node_id], cell_center);
+		const uint64_t node_id      = cells[phi_index*cell_size + n];
+		const vec<double> direction = vec_minus(points[node_id], cell_center);
 
 		// if (halo && node_map[node_id] == UINT64_MAX) continue; 
 
@@ -2159,6 +2211,10 @@ void C_kernel_interpolate_phi_to_nodes(int block_count, int thread_count, phi_ve
 void C_kernel_pack_flow_field_buffer(int block_count, int thread_count, uint64_t *index_buffer, phi_vector<double> phi_nodes, flow_aos<double> *flow_buffer, Hash_map *node_map, uint64_t buf_size, uint64_t node_map_size, uint64_t rank_slot)
 {
 	kernel_pack_flow_field_buffer<<<block_count, thread_count>>> (index_buffer, phi_nodes, flow_buffer, node_map, buf_size, node_map_size, rank_slot);
+}
+void C_kernel_get_node_buffers(int block_count, int thread_count, uint64_t *global_cell_indexes, uint64_t *cells, int *seen_node, phi_vector<double> phi_nodes, uint64_t *global_node_indexes, flow_aos<double> *global_node_fields, Hash_map *node_map, uint64_t global_cell_buf_size, uint64_t node_map_size, uint64_t local_mesh_size, uint64_t local_mesh_disp, uint32_t *atomic_buffer_index, uint64_t *gpu_node_buffer_disp)
+{
+	kernel_get_node_buffers<<<block_count, thread_count>>>(global_cell_indexes, cells, seen_node, phi_nodes, global_node_indexes, global_node_fields, node_map, global_cell_buf_size, node_map_size, local_mesh_size, local_mesh_disp, atomic_buffer_index, gpu_node_buffer_disp);
 }
 
 void C_kernel_vec_print(vec<double> *to_print, uint64_t num_print)
@@ -2460,10 +2516,10 @@ void C_create_map(int block_count, int thread_count, Hash_map *node_map,  uint64
 	kernel_create_map<<<block_count, thread_count>>>(node_map, gpu_keys, gpu_values, size);
 }
 
-void C_kernel_process_particle_fields(uint64_t block_count, int thread_count, uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp)
+void C_kernel_process_particle_fields(uint64_t block_count, int thread_count, uint64_t *sent_cell_indexes, particle_aos<double> *sent_particle_fields, particle_aos<double> *particle_fields, uint64_t num_fields, uint64_t local_mesh_disp, cudaStream_t stream)
 {
 
-	kernel_process_particle_fields<<<block_count, thread_count>>>(sent_cell_indexes, sent_particle_fields, particle_fields, num_fields, local_mesh_disp);
+	kernel_process_particle_fields<<<block_count, thread_count, 0, stream>>>(sent_cell_indexes, sent_particle_fields, particle_fields, num_fields, local_mesh_disp);
 }
 
 // void C_create_cuco_map(int block_count, int thread_count, uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size)

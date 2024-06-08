@@ -111,17 +111,11 @@ __device__ __forceinline__ uint64_t Hash_map::find(uint64_t key)
 
 	while(keys[location] != key)
 	{
-		if(slots_checked == map_size + NUM_HASH_TRIES)
-		{
-			printf("Rank %d Error: Failed hash table find %lu. map_size %lu\n", rank, key, map_size);
-			break;
-		}
-		// if(keys[location] == UINT64_MAX)
+		// if(slots_checked == map_size + NUM_HASH_TRIES)
 		// {
+		// 	printf("Rank %d Error: Failed hash table find %lu. map_size %lu\n", rank, key, map_size);
 		// 	break;
-		// 	printf("Error: Failed hash table find\n");
 		// }
-		// location = (location + 1) & (map_size-1);
 		location = gen_hash(key, tries++, location, map_size );
 		slots_checked++;
 	}
