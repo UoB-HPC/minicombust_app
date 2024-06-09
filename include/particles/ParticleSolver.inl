@@ -148,8 +148,6 @@ namespace minicombust::particles
         avg_sent_cells              /= non_zero_blocks;
         logger.sent_cells_per_block += avg_sent_cells;
 
-        // MPI_Barrier(mpi_config->world);
-
 
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_flow_field.\n", mpi_config->rank);
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Sending index sizes.\n", mpi_config->rank);

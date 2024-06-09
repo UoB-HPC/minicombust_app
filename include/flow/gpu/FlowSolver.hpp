@@ -220,6 +220,7 @@ namespace minicombust::flow
             vector<int> processed_ranks;
             int      *elements;
             int      *node_elements;
+            uint64_t      *node_starts;
             uint64_t *element_disps;
 
             uint64_t nhalos = 0;
@@ -368,9 +369,11 @@ namespace minicombust::flow
                 recv_indexes   =             (uint64_t**) mtracker->allocate_host("recv_indexes", mesh->num_blocks * sizeof(uint64_t*));
                 recv_indexed_fields = (particle_aos<T>**) mtracker->allocate_host("recv_indexed_fields", mesh->num_blocks * sizeof(particle_aos<T>*));
 
-                elements        = (int*)mtracker->allocate_host("elements", particle_ranks          * sizeof(int));
-                node_elements   = (int*)mtracker->allocate_host("elements", particle_ranks          * sizeof(int));
+                elements        = (int*)mtracker->allocate_host("elements", particle_ranks               * sizeof(int));
                 element_disps   = (uint64_t*)mtracker->allocate_host("element_disps", (particle_ranks+1) * sizeof(uint64_t));
+
+                mtracker->allocate_cuda_host("node_starts",   (void**)&node_starts,    particle_ranks          * sizeof(uint64_t));
+                mtracker->allocate_cuda_host("node_elements",  (void**)&node_elements, particle_ranks          * sizeof(int));
 
                 // Allocate arrays
                 neighbour_indexes.push_back((uint64_t*)          mtracker->allocate_host("neighbour_indexes", cell_index_array_size[0]));

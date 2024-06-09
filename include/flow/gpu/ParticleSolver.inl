@@ -116,6 +116,7 @@ namespace minicombust::particles
 
         active_blocks.clear();
 
+
         double avg_sent_cells  = 0.;
         double non_zero_blocks = 0.;
 
@@ -148,8 +149,7 @@ namespace minicombust::particles
         avg_sent_cells              /= non_zero_blocks;
         logger.sent_cells_per_block += avg_sent_cells;
 
-        // MPI_Barrier(mpi_config->world);
-
+        printf("Particle Rank %d starting comms\n", mpi_config->particle_flow_rank );
 
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_flow_field.\n", mpi_config->rank);
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Sending index sizes.\n", mpi_config->rank);
@@ -328,7 +328,7 @@ namespace minicombust::particles
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
             {
-                if (PARTICLE_SOLVER_DEBUG && (particles[p].cell >= mesh->mesh_size))
+                if ((particles[p].cell >= mesh->mesh_size))
                     {printf("ERROR::: RANK %d Cell %lu out of range\n", mpi_config->rank, particles[p].cell); exit(1);}
 
                 
@@ -342,17 +342,17 @@ namespace minicombust::particles
                     exit(1);
                 }
 
-                // if (node_to_field_address_map[node] == (void*)0x2)
-                // {
-                //     printf("ERROR: PARTICLE RANK HAS WEIRD ADDRESS %lu for cell %lu\n", node, particles[p].cell);
-                //     exit(1);
-                // }
+                if (node_to_field_address_map[node] == (void*)0x2)
+                {
+                    printf("ERROR: PARTICLE RANK HAS WEIRD ADDRESS %lu for cell %lu\n", node, particles[p].cell);
+                    exit(1);
+                }
 
 
 
-                if (PARTICLE_SOLVER_DEBUG && (node >= mesh->points_size))
+                if ((node >= mesh->points_size))
                     {printf("ERROR::: RANK %d Node %lu out of range\n", mpi_config->rank, node); exit(1);}
-                if (PARTICLE_SOLVER_DEBUG && (node_to_field_address_map[node] < (flow_aos<T> *)5))
+                if ((node_to_field_address_map[node] < (flow_aos<T> *)5))
                     {printf("Rank %d Block %lu cell %lu node %lu flow_pointer %p block_flow_pointer %p size %lu\n", mpi_config->rank, block_id, particles[p].cell, node, node_to_field_address_map[node], all_interp_node_flow_fields[block_id], node_flow_array_sizes[block_id] ); exit(1);};
 
 

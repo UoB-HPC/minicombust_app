@@ -152,7 +152,7 @@ __global__ void kernel_process_particle_fields(uint64_t *sent_cell_indexes, part
 {
 	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= num_fields) return;
-	
+	// Atomics needed if processing more than 1 ranks cells
 	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.x += sent_particle_fields[tid].momentum.x;
 	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.y += sent_particle_fields[tid].momentum.y;
 	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.z += sent_particle_fields[tid].momentum.z;
@@ -229,6 +229,7 @@ __global__ void kernel_get_node_buffers(uint64_t *global_cell_indexes, uint64_t 
 			printf("ERROR: AtomicCAS required\n");
 		#endif
 	}
+	
 	atomicAdd((unsigned long long int *) gpu_node_buffer_disp, (unsigned long long int)local_nodes_added);
 
 }
@@ -2406,7 +2407,6 @@ void C_kernel_pack_phi_halo_buffer(int block_count, int thread_count, phi_vector
 	// printf("Kernel launch <<%d, %d>>\n", block_count, thread_count);
 	kernel_pack_phi_halo_buffer<<<block_count,thread_count>>>(send_buffer, phi, indexes, buf_size);
 	gpuErrchk( cudaPeekAtLastError() );
-	gpuErrchk(cudaDeviceSynchronize());
 }
 
 void C_kernel_pack_phi_grad_halo_buffer(int block_count, int thread_count, phi_vector<vec<double>> send_buffer, phi_vector<vec<double>> phi_grad, uint64_t *indexes, uint64_t buf_size)
@@ -2414,7 +2414,6 @@ void C_kernel_pack_phi_grad_halo_buffer(int block_count, int thread_count, phi_v
 	// printf("Kernel grad launch <<%d, %d>>\n", block_count, thread_count);
 	kernel_pack_phi_grad_halo_buffer<<<block_count, thread_count>>>(send_buffer, phi_grad, indexes, buf_size);
 	gpuErrchk( cudaPeekAtLastError() );
-	gpuErrchk(cudaDeviceSynchronize());
 }
 
 void C_kernel_pack_PP_halo_buffer(int block_count, int thread_count, phi_vector<double> send_buffer, phi_vector<double> phi, uint64_t *indexes, uint64_t buf_size)
@@ -2422,7 +2421,7 @@ void C_kernel_pack_PP_halo_buffer(int block_count, int thread_count, phi_vector<
 	// printf("Kernel launch <<%d, %d>>\n", block_count, thread_count);
 	kernel_pack_PP_halo_buffer<<<block_count,thread_count>>>(send_buffer, phi, indexes, buf_size);
 	gpuErrchk( cudaPeekAtLastError() );
-	gpuErrchk(cudaDeviceSynchronize());
+	gpuErrchk(cudaStreamSynchronize(0));
 }
 
 void C_kernel_pack_Aphi_halo_buffer(int block_count, int thread_count, phi_vector<double> send_buffer, phi_vector<double> phi, uint64_t *indexes, uint64_t buf_size)
@@ -2430,7 +2429,7 @@ void C_kernel_pack_Aphi_halo_buffer(int block_count, int thread_count, phi_vecto
 	// printf("Kernel launch <<%d, %d>>\n", block_count, thread_count);
 	kernel_pack_Aphi_halo_buffer<<<block_count,thread_count>>>(send_buffer, phi, indexes, buf_size);
 	gpuErrchk( cudaPeekAtLastError() );
-	gpuErrchk(cudaDeviceSynchronize());
+	gpuErrchk(cudaStreamSynchronize(0));
 }
 
 void C_kernel_pack_PP_grad_halo_buffer(int block_count, int thread_count, phi_vector<vec<double>> send_buffer, phi_vector<vec<double>> phi_grad, uint64_t *indexes, uint64_t buf_size)
