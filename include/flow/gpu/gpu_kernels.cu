@@ -152,12 +152,19 @@ __global__ void kernel_process_particle_fields(uint64_t *sent_cell_indexes, part
 {
 	const unsigned int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= num_fields) return;
+
 	// Atomics needed if processing more than 1 ranks cells
-	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.x += sent_particle_fields[tid].momentum.x;
-	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.y += sent_particle_fields[tid].momentum.y;
-	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.z += sent_particle_fields[tid].momentum.z;
-	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].energy     += sent_particle_fields[tid].energy;
-	particle_fields[sent_cell_indexes[tid] - local_mesh_disp].fuel       += sent_particle_fields[tid].fuel;
+	// particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.x += sent_particle_fields[tid].momentum.x;
+	// particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.y += sent_particle_fields[tid].momentum.y;
+	// particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.z += sent_particle_fields[tid].momentum.z;
+	// particle_fields[sent_cell_indexes[tid] - local_mesh_disp].energy     += sent_particle_fields[tid].energy;
+	// particle_fields[sent_cell_indexes[tid] - local_mesh_disp].fuel       += sent_particle_fields[tid].fuel;
+
+	atomicAdd(&particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.x, sent_particle_fields[tid].momentum.x);
+	atomicAdd(&particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.y, sent_particle_fields[tid].momentum.y);
+	atomicAdd(&particle_fields[sent_cell_indexes[tid] - local_mesh_disp].momentum.z, sent_particle_fields[tid].momentum.z);
+	atomicAdd(&particle_fields[sent_cell_indexes[tid] - local_mesh_disp].energy,     sent_particle_fields[tid].energy);
+	atomicAdd(&particle_fields[sent_cell_indexes[tid] - local_mesh_disp].fuel,       sent_particle_fields[tid].fuel);
 
 }
 

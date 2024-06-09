@@ -357,146 +357,146 @@ namespace minicombust::flow
 
     }
 
-    template<typename T> void FlowSolver<T>::get_neighbour_cells ( const uint64_t recv_id )
-    {
-		/*Find all the cells which are neighbours of the current cell.
-		  Used to find the halos*/
-        double node_neighbours   = 8;
-        const uint64_t cell_size = mesh->cell_size;
+    // template<typename T> void FlowSolver<T>::get_neighbour_cells ( const uint64_t recv_id )
+    // {
+	// 	/*Find all the cells which are neighbours of the current cell.
+	// 	  Used to find the halos*/
+    //     double node_neighbours   = 8;
+    //     const uint64_t cell_size = mesh->cell_size;
 
-        resize_nodes_arrays(node_to_position_map.size() + elements[recv_id] * cell_size + 1 );
+    //     resize_nodes_arrays(node_to_position_map.size() + elements[recv_id] * cell_size + 1 );
 
-		int local_disp = 0;
-		// resize_send_buffers_nodes_arrays (send_buffer_disp + elements[recv_id] * cell_size + 1);
+	// 	int local_disp = 0;
+	// 	// resize_send_buffers_nodes_arrays (send_buffer_disp + elements[recv_id] * cell_size + 1);
 
-        #pragma ivdep
-        for (int i = 0; i < elements[recv_id]; i++)
-        {
-            uint64_t cell = neighbour_indexes[recv_id][i];
+    //     #pragma ivdep
+    //     for (int i = 0; i < elements[recv_id]; i++)
+    //     {
+    //         uint64_t cell = neighbour_indexes[recv_id][i];
 
-            #pragma ivdep
-            for (uint64_t n = 0; n < cell_size; n++)
-            {
-                const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
-				if (!local_particle_node_sets[recv_id].contains(node_id))
-				{
-					// if (!global_node_to_local_node_map.contains(node_id))
-					// {
-					// 	printf("FRANK %lu has non local node %lu produced by cell %lu local_mesh_disp %lu lmesh_size %lu\n", mpi_config->particle_flow_rank, node_id, cell, mesh->local_cells_disp, mesh->local_mesh_size);
-					// 	continue;
-					// }
+    //         #pragma ivdep
+    //         for (uint64_t n = 0; n < cell_size; n++)
+    //         {
+    //             const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
+	// 			if (!local_particle_node_sets[recv_id].contains(node_id))
+	// 			{
+	// 				// if (!global_node_to_local_node_map.contains(node_id))
+	// 				// {
+	// 				// 	printf("FRANK %lu has non local node %lu produced by cell %lu local_mesh_disp %lu lmesh_size %lu\n", mpi_config->particle_flow_rank, node_id, cell, mesh->local_cells_disp, mesh->local_mesh_size);
+	// 				// 	continue;
+	// 				// }
 
-                	local_particle_node_sets[recv_id].insert(node_id);
-					send_buffers_interp_node_indexes[send_buffer_disp + local_disp] = node_id;
-					local_disp++;
-				}
-            }
+    //             	local_particle_node_sets[recv_id].insert(node_id);
+	// 				send_buffers_interp_node_indexes[send_buffer_disp + local_disp] = node_id;
+	// 				local_disp++;
+	// 			}
+    //         }
 
-        }
-
-
-		if (local_disp != 0){
-
-			int thread_count = min( (int) 32, (int)local_particle_node_sets[recv_id].size());
-			int block_count = max(1, (int) ceil((double) (local_particle_node_sets[recv_id].size()) / (double) thread_count));
+    //     }
 
 
-			if ((send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t) >= gpu_send_buffers_node_index_array_size )
-			{
-				printf("GPU BUFFER OVERFLOW : %lu > %lu\n", (send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t), gpu_send_buffers_node_index_array_size );
-			}
+	// 	if (local_disp != 0){
+
+	// 		int thread_count = min( (int) 32, (int)local_particle_node_sets[recv_id].size());
+	// 		int block_count = max(1, (int) ceil((double) (local_particle_node_sets[recv_id].size()) / (double) thread_count));
 
 
-			gpuErrchk(cudaMemcpyAsync(&gpu_send_buffers_interp_node_indexes[send_buffer_disp], &send_buffers_interp_node_indexes[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(uint64_t), cudaMemcpyHostToDevice, (cudaStream_t) 0));
-			C_kernel_pack_flow_field_buffer(block_count, thread_count, &gpu_send_buffers_interp_node_indexes[send_buffer_disp] , gpu_phi_nodes, &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], gpu_node_hash_map, local_particle_node_sets[recv_id].size(), global_node_to_local_node_map.size(), recv_id);
-			// gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-			gpuErrchk( cudaPeekAtLastError() );
+	// 		if ((send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t) >= gpu_send_buffers_node_index_array_size )
+	// 		{
+	// 			printf("GPU BUFFER OVERFLOW : %lu > %lu\n", (send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t), gpu_send_buffers_node_index_array_size );
+	// 		}
+
+
+	// 		gpuErrchk(cudaMemcpyAsync(&gpu_send_buffers_interp_node_indexes[send_buffer_disp], &send_buffers_interp_node_indexes[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(uint64_t), cudaMemcpyHostToDevice, (cudaStream_t) 0));
+	// 		C_kernel_pack_flow_field_buffer(block_count, thread_count, &gpu_send_buffers_interp_node_indexes[send_buffer_disp] , gpu_phi_nodes, &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], gpu_node_hash_map, local_particle_node_sets[recv_id].size(), global_node_to_local_node_map.size(), recv_id);
+	// 		// gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+	// 		gpuErrchk( cudaPeekAtLastError() );
 			
-			gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost));
+	// 		gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost));
 
-		}
+	// 	}
 
 		
 
-		send_buffer_disp += local_particle_node_sets[recv_id].size();
+	// 	send_buffer_disp += local_particle_node_sets[recv_id].size();
 		
-        unordered_neighbours_set[0].erase(MESH_BOUNDARY);
-    }
+    //     unordered_neighbours_set[0].erase(MESH_BOUNDARY);
+    // }
 
-    template<typename T> void FlowSolver<T>::interpolate_to_nodes ()
-    {
-		/*Interpolate values from particle side to flow grid*/
-        const uint64_t cell_size = mesh->cell_size;
-        double node_neighbours   = 8;
+    // template<typename T> void FlowSolver<T>::interpolate_to_nodes ()
+    // {
+	// 	/*Interpolate values from particle side to flow grid*/
+    //     const uint64_t cell_size = mesh->cell_size;
+    //     double node_neighbours   = 8;
 
-        // Process the allocation of cell fields (NOTE: Imperfect solution near edges. Fix by doing interpolation on flow side.)
-        // #pragma ivdep
-        for ( uint64_t cell : unordered_neighbours_set[0] )
-        {
-            const uint64_t block_cell      = cell - mesh->local_cells_disp;
-            const uint64_t shmem_cell      = cell - mesh->shmem_cell_disp;
+    //     // Process the allocation of cell fields (NOTE: Imperfect solution near edges. Fix by doing interpolation on flow side.)
+    //     // #pragma ivdep
+    //     for ( uint64_t cell : unordered_neighbours_set[0] )
+    //     {
+    //         const uint64_t block_cell      = cell - mesh->local_cells_disp;
+    //         const uint64_t shmem_cell      = cell - mesh->shmem_cell_disp;
 
-            flow_aos<T> flow_term;      
-            flow_aos<T> flow_grad_term; 
+    //         flow_aos<T> flow_term;      
+    //         flow_aos<T> flow_grad_term; 
 
-			//TODO: Now all our terms work we should probably sort this out for all the versions
+	// 		//TODO: Now all our terms work we should probably sort this out for all the versions
 
-            if (is_halo(cell)) 
-            {
-                // flow_term.temp          = mesh->dummy_gas_tem;      
-                // flow_grad_term.temp     = 0.0;  
+    //         if (is_halo(cell)) 
+    //         {
+    //             // flow_term.temp          = mesh->dummy_gas_tem;      
+    //             // flow_grad_term.temp     = 0.0;  
 
-                // flow_term.pressure      = phi.P[boundary_map[cell]];      
-                // flow_grad_term.pressure = 0.0; 
+    //             // flow_term.pressure      = phi.P[boundary_map[cell]];      
+    //             // flow_grad_term.pressure = 0.0; 
 
-                // flow_term.vel.x         = phi.U[boundary_map[cell]]; 
-                // flow_term.vel.y         = phi.V[boundary_map[cell]]; 
-                // flow_term.vel.z         = phi.W[boundary_map[cell]]; 
-                // flow_grad_term.vel = { 0.0, 0.0, 0.0 }; 
+    //             // flow_term.vel.x         = phi.U[boundary_map[cell]]; 
+    //             // flow_term.vel.y         = phi.V[boundary_map[cell]]; 
+    //             // flow_term.vel.z         = phi.W[boundary_map[cell]]; 
+    //             // flow_grad_term.vel = { 0.0, 0.0, 0.0 }; 
 
-				continue;
-            }
-            else
-            {
+	// 			continue;
+    //         }
+    //         else
+    //         {
 
-                flow_term.vel.x    = phi.U[block_cell];
-                flow_term.vel.y    = phi.V[block_cell];
-                flow_term.vel.z    = phi.W[block_cell];
-                flow_term.pressure = phi.P[block_cell];
-                flow_term.temp     = phi.TEM[block_cell];
+    //             flow_term.vel.x    = phi.U[block_cell];
+    //             flow_term.vel.y    = phi.V[block_cell];
+    //             flow_term.vel.z    = phi.W[block_cell];
+    //             flow_term.pressure = phi.P[block_cell];
+    //             flow_term.temp     = phi.TEM[block_cell];
 
-                flow_grad_term = mesh->flow_grad_terms[block_cell]; 
-            }
+    //             flow_grad_term = mesh->flow_grad_terms[block_cell]; 
+    //         }
 
-            // cout << "vel " << print_vec(flow_term.vel) << " pressure " << flow_term.pressure << " temperature " << flow_term.temp << endl;
+    //         // cout << "vel " << print_vec(flow_term.vel) << " pressure " << flow_term.pressure << " temperature " << flow_term.temp << endl;
 
 
-            const vec<T> cell_centre         = mesh->cell_centers[shmem_cell];
+    //         const vec<T> cell_centre         = mesh->cell_centers[shmem_cell];
 
-            // check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      cell );
-            // check_flow_field_exit ( "INTERP NODAL ERROR: Flow grad value", &flow_grad_term, &mesh->dummy_flow_field_grad, cell );
+    //         // check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      cell );
+    //         // check_flow_field_exit ( "INTERP NODAL ERROR: Flow grad value", &flow_grad_term, &mesh->dummy_flow_field_grad, cell );
 
-            // if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      cell );
-            // if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow grad value", &flow_grad_term, &mesh->dummy_flow_field_grad, cell );
+    //         // if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      cell );
+    //         // if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow grad value", &flow_grad_term, &mesh->dummy_flow_field_grad, cell );
 
-            #pragma ivdep
-            for (uint64_t n = 0; n < cell_size; n++)
-            {
-                const uint64_t node_id = mesh->cells[shmem_cell*mesh->cell_size + n];
+    //         #pragma ivdep
+    //         for (uint64_t n = 0; n < cell_size; n++)
+    //         {
+    //             const uint64_t node_id = mesh->cells[shmem_cell*mesh->cell_size + n];
 
-                if (node_to_position_map.count(node_id))
-                {
-                    const vec<T> direction      = mesh->points[node_id - mesh->shmem_point_disp] - cell_centre;
+    //             if (node_to_position_map.count(node_id))
+    //             {
+    //                 const vec<T> direction      = mesh->points[node_id - mesh->shmem_point_disp] - cell_centre;
 
-                    // interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
-                    // interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-                    // interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
+    //                 // interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
+    //                 // interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
+    //                 // interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
 
-					interp_node_flow_fields[node_to_position_map[node_id]]     = mesh->dummy_flow_field;
-                }
-            }
-        }
-    }
+	// 				interp_node_flow_fields[node_to_position_map[node_id]]     = mesh->dummy_flow_field;
+    //             }
+    //         }
+    //     }
+    // }
 
     template<typename T> void FlowSolver<T>::update_flow_field()
     {
@@ -538,6 +538,7 @@ namespace minicombust::flow
         bool  all_processed        = false;
         bool *processed_neighbours = async_locks;
 		uint64_t node_element_disp = 0;
+		uint64_t cell_element_disp = 0;
 		gpuErrchk(cudaMemsetAsync(gpu_node_buffer_disp,    0, sizeof(uint64_t), (cudaStream_t) 0 ));
 
 		// for (uint64_t rank_slot = 0; rank_slot < 13; rank_slot++)
@@ -561,16 +562,25 @@ namespace minicombust::flow
                 ranks.push_back(statuses[rank_slot].MPI_SOURCE);
                 MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
 
-                resize_cell_particle(elements[rank_slot], rank_slot);
-                if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
+                // resize_cell_particle(elements[rank_slot], rank_slot);
+                // if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
 
                 logger.recieved_cells += elements[rank_slot];
 
-                MPI_Irecv(neighbour_indexes[rank_slot], elements[rank_slot], MPI_UINT64_T,                       ranks[rank_slot], 0, mpi_config->world, &recv_requests[2*rank_slot]     );
-                MPI_Irecv(cell_particle_aos[rank_slot], elements[rank_slot], mpi_config->MPI_PARTICLE_STRUCTURE, ranks[rank_slot], 2, mpi_config->world, &recv_requests[2*rank_slot + 1] );
+				cell_starts[rank_slot] = cell_element_disp;
+				cell_element_disp += elements[rank_slot];
+
+
+				if (cell_element_disp > gpu_recv_buffer_elements)
+				{
+					printf("Cell array recv buffer overflow\n");
+					exit(1);
+				}
+
+                MPI_Irecv(recv_buffers_cell_indexes         + cell_starts[rank_slot], elements[rank_slot], MPI_UINT64_T,                       ranks[rank_slot], 0, mpi_config->world, &recv_requests[2*rank_slot]     );
+                MPI_Irecv(recv_buffers_cell_particle_fields + cell_starts[rank_slot], elements[rank_slot], mpi_config->MPI_PARTICLE_STRUCTURE, ranks[rank_slot], 2, mpi_config->world, &recv_requests[2*rank_slot + 1] );
 				
 				// printf("Rank %d recieving from rank %d (slot=%d) \n", mpi_config->particle_flow_rank, ranks[rank_slot], rank_slot);
-
 
                 processed_neighbours[rank_slot] = false;  // Invalid write
 
@@ -585,29 +595,26 @@ namespace minicombust::flow
                     cell_index_array_size.push_back(max_storage    * sizeof(uint64_t));
                     cell_particle_array_size.push_back(max_storage * sizeof(particle_aos<T>));
 
-					uint64_t *tmp_ptr;
-					particle_aos<T> *tmp_ptr0;
-                	mtracker->allocate_cuda_host("neighbour_indexes", (void**)&tmp_ptr,    cell_index_array_size.back());
-                	mtracker->allocate_cuda_host("cell_particle_aos", (void**)&tmp_ptr0,   cell_particle_array_size.back());
+					// uint64_t *tmp_ptr;
+					// particle_aos<T> *tmp_ptr0;
+                	// mtracker->allocate_cuda_host("neighbour_indexes", (void**)&tmp_ptr,    cell_index_array_size.back());
+                	// mtracker->allocate_cuda_host("cell_particle_aos", (void**)&tmp_ptr0,   cell_particle_array_size.back());
 
-                    neighbour_indexes.push_back(tmp_ptr);
-                    cell_particle_aos.push_back(tmp_ptr0);
+                    // neighbour_indexes.push_back(tmp_ptr);
+                    // cell_particle_aos.push_back(tmp_ptr0);
 
-					uint64_t *cuda_pointer_tmp;
-					particle_aos<T> *cuda_pointer_tmp2;
-					cudaMalloc(&cuda_pointer_tmp,  cell_index_array_size.back());
-					cudaMalloc(&cuda_pointer_tmp2, cell_particle_array_size.back());
-					gpu_neighbour_indexes.push_back(cuda_pointer_tmp);
-					gpu_cell_particle_aos.push_back(cuda_pointer_tmp2);
+					// uint64_t *cuda_pointer_tmp;
+					// particle_aos<T> *cuda_pointer_tmp2;
+					// cudaMalloc(&cuda_pointer_tmp,  cell_index_array_size.back());
+					// cudaMalloc(&cuda_pointer_tmp2, cell_particle_array_size.back());
+					// gpu_neighbour_indexes.push_back(cuda_pointer_tmp);
+					// gpu_cell_particle_aos.push_back(cuda_pointer_tmp2);
 
                     local_particle_node_sets.push_back(unordered_set<uint64_t>());
                 }
 
 
                 message_waiting = 0;
-
-
-				
 				
 				// get_neighbour_cells (rank_slot);
 				processed_neighbours[rank_slot] = false;
@@ -624,14 +631,14 @@ namespace minicombust::flow
 
 				if ( !processed_neighbours[rank_slot] && recieved_particle_indexes )
 				{
-					gpuErrchk(cudaMemcpyAsync(gpu_neighbour_indexes[rank_slot], neighbour_indexes[rank_slot], elements[rank_slot]*sizeof(uint64_t), cudaMemcpyHostToDevice, (cudaStream_t) 0 ));
+					gpuErrchk(cudaMemcpyAsync(gpu_recv_buffers_cell_indexes + cell_starts[rank_slot], recv_buffers_cell_indexes + cell_starts[rank_slot], elements[rank_slot]*sizeof(uint64_t), cudaMemcpyHostToDevice, (cudaStream_t) 0 ));
 
 					gpuErrchk(cudaMemcpyAsync(&node_starts[rank_slot], gpu_node_buffer_disp, sizeof(uint64_t), cudaMemcpyDeviceToHost, (cudaStream_t) 0 ));
 
 					int thread_count = min( (int) 32, (int) elements[rank_slot]);
 					int block_count = max(1, (int) ceil((double) (elements[rank_slot]) / (double) thread_count));
 					
-					C_kernel_get_node_buffers(block_count, thread_count, gpu_neighbour_indexes[rank_slot], gpu_local_cells, gpu_seen_node, gpu_phi_nodes, gpu_send_buffers_interp_node_indexes, gpu_send_buffers_interp_node_flow_fields, gpu_node_hash_map, elements[rank_slot], global_node_to_local_node_map.size(), mesh->local_mesh_size, mesh->local_cells_disp, gpu_atomic_buffer_index, gpu_node_buffer_disp);
+					C_kernel_get_node_buffers(block_count, thread_count, gpu_recv_buffers_cell_indexes + cell_starts[rank_slot], gpu_local_cells, gpu_seen_node, gpu_phi_nodes, gpu_send_buffers_interp_node_indexes, gpu_send_buffers_interp_node_flow_fields, gpu_node_hash_map, elements[rank_slot], global_node_to_local_node_map.size(), mesh->local_mesh_size, mesh->local_cells_disp, gpu_atomic_buffer_index, gpu_node_buffer_disp);
 					gpuErrchk( cudaPeekAtLastError() );
 
 					gpuErrchk(cudaMemcpyAsync(&node_elements[rank_slot], gpu_atomic_buffer_index, sizeof(uint32_t), cudaMemcpyDeviceToHost, (cudaStream_t) 0 ));
@@ -702,37 +709,49 @@ namespace minicombust::flow
         
         recv_time3  -= MPI_Wtime();
 
-        if ( FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0 )  printf("\tFlow Rank %d: Posted sends.\n", mpi_config->rank);
 
-        all_processed = false;
-        while ( !all_processed )
-        {
-            all_processed = true;
+		MPI_Waitall(2*ranks.size(), recv_requests.data(), MPI_STATUSES_IGNORE);
 
-            for ( uint64_t p = 0; p < ranks.size(); p++ )
-            {
-				//printf("p is %lu\n",p);
-                int recieved_particle_fields = 0;
-                MPI_Test(&recv_requests[2*p + 1], &recieved_particle_fields, MPI_STATUS_IGNORE);
+		gpuErrchk(cudaMemcpyAsync(gpu_recv_buffers_cell_particle_fields, recv_buffers_cell_particle_fields, cell_element_disp*sizeof(particle_aos<T>), cudaMemcpyHostToDevice, process_gpu_fields_stream));
 
-                if ( recieved_particle_fields && !processed_cell_fields[p] )
-                {
-            		gpuErrchk(cudaMemcpyAsync(gpu_cell_particle_aos[p], cell_particle_aos[p], elements[p]*sizeof(particle_aos<T>), cudaMemcpyHostToDevice, process_gpu_fields_stream));
+		int thread_count = min(32, max(1, (int)cell_element_disp));
+		int block_count = max(1,(int) ceil((double) cell_element_disp / (double) thread_count));
 
-					int thread_count = min(32, max(1, elements[p]));
-					int block_count = max(1,(int) ceil((double) elements[p] / (double) thread_count));
-
-					C_kernel_process_particle_fields(block_count, thread_count, gpu_neighbour_indexes[p], gpu_cell_particle_aos[p], gpu_particle_terms, elements[p], mesh->local_cells_disp, process_gpu_fields_stream);
-					gpuErrchk( cudaPeekAtLastError() );
+		C_kernel_process_particle_fields(block_count, thread_count, gpu_recv_buffers_cell_indexes, gpu_recv_buffers_cell_particle_fields, gpu_particle_terms, cell_element_disp, mesh->local_cells_disp, process_gpu_fields_stream);
+		gpuErrchk( cudaPeekAtLastError() );
 
 
-                    processed_cell_fields[p] = true;
-                }
-				//printf("p is %lu\n",p);
-                all_processed &= processed_cell_fields[p];
-            }
-            if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
-        }
+        // if ( FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0 )  printf("\tFlow Rank %d: Posted sends.\n", mpi_config->rank);
+
+        // all_processed = false;
+        // while ( !all_processed )
+        // {
+        //     all_processed = true;
+
+        //     for ( uint64_t rank_slot = 0; rank_slot < ranks.size(); rank_slot++ )
+        //     {
+		// 		//printf("p is %lu\n",p);
+        //         int recieved_particle_fields = 0;
+        //         MPI_Test(&recv_requests[2*rank_slot + 1], &recieved_particle_fields, MPI_STATUS_IGNORE);
+
+        //         if ( recieved_particle_fields && !processed_cell_fields[rank_slot] )
+        //         {
+        //     		gpuErrchk(cudaMemcpyAsync(gpu_recv_buffers_cell_particle_fields + cell_starts[rank_slot], recv_buffers_cell_particle_fields + cell_starts[rank_slot], elements[rank_slot]*sizeof(particle_aos<T>), cudaMemcpyHostToDevice, process_gpu_fields_stream));
+
+		// 			int thread_count = min(32, max(1, elements[rank_slot]));
+		// 			int block_count = max(1,(int) ceil((double) elements[rank_slot] / (double) thread_count));
+
+		// 			C_kernel_process_particle_fields(block_count, thread_count, gpu_recv_buffers_cell_indexes + cell_starts[rank_slot], gpu_recv_buffers_cell_particle_fields + cell_starts[rank_slot], gpu_particle_terms, elements[rank_slot], mesh->local_cells_disp, process_gpu_fields_stream);
+		// 			gpuErrchk( cudaPeekAtLastError() );
+
+
+        //             processed_cell_fields[rank_slot] = true;
+        //         }
+		// 		//printf("p is %lu\n",p);
+        //         all_processed &= processed_cell_fields[rank_slot];
+        //     }
+        //     if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
+        // }
 
 
         // MPI_Barrier(mpi_config->particle_flow_world);

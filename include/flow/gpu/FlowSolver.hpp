@@ -53,11 +53,11 @@ namespace minicombust::flow
 
             double delta;
 
-            vector<uint64_t *>        neighbour_indexes;
-            vector<particle_aos<T> *> cell_particle_aos;
+            // vector<uint64_t *>        neighbour_indexes;
+            // vector<particle_aos<T> *> cell_particle_aos;
 
-            vector<uint64_t *>        gpu_neighbour_indexes;
-            vector<particle_aos<T> *> gpu_cell_particle_aos;
+            // vector<uint64_t *>        gpu_neighbour_indexes;
+            // vector<particle_aos<T> *> gpu_cell_particle_aos;
 
             T turbulence_field;
             T combustion_field;
@@ -72,11 +72,18 @@ namespace minicombust::flow
 
             uint64_t    *interp_node_indexes;
             flow_aos<T> *interp_node_flow_fields;
+
             uint64_t    *send_buffers_interp_node_indexes;
             flow_aos<T> *send_buffers_interp_node_flow_fields;
 
+            uint64_t        *recv_buffers_cell_indexes;
+            particle_aos<T> *recv_buffers_cell_particle_fields;
+
             uint64_t    *gpu_send_buffers_interp_node_indexes;
             flow_aos<T> *gpu_send_buffers_interp_node_flow_fields;
+
+            uint64_t        *gpu_recv_buffers_cell_indexes;
+            particle_aos<T> *gpu_recv_buffers_cell_particle_fields;
 
 			bool first_press = true;
 			bool first_mat = true;
@@ -220,7 +227,8 @@ namespace minicombust::flow
             vector<int> processed_ranks;
             int      *elements;
             int      *node_elements;
-            uint64_t      *node_starts;
+            uint64_t *node_starts;
+            uint64_t *cell_starts;
             uint64_t *element_disps;
 
             uint64_t nhalos = 0;
@@ -261,6 +269,9 @@ namespace minicombust::flow
             size_t gpu_send_buffers_node_index_array_size;
             size_t gpu_send_buffers_node_flow_array_size;
 
+            size_t gpu_recv_buffers_cell_index_array_size;
+            size_t gpu_recv_buffers_cell_particle_array_size;
+
             size_t face_field_array_size;
             size_t face_mass_fluxes_array_size;
             size_t face_areas_array_size;
@@ -277,6 +288,7 @@ namespace minicombust::flow
             size_t volume_array_size;
 
             int gpu_send_buffer_elements;
+            int gpu_recv_buffer_elements;
 
 			double compute_time;
 
@@ -363,6 +375,10 @@ namespace minicombust::flow
                 gpu_send_buffers_node_index_array_size  = gpu_send_buffer_elements * sizeof(uint64_t);
                 gpu_send_buffers_node_flow_array_size   = gpu_send_buffer_elements * sizeof(flow_aos<T>);
 
+                gpu_recv_buffer_elements = (100 * 80000 / 10) ; // (niters * particles_per_iter / particles_per_cell)
+                gpu_recv_buffers_cell_index_array_size      = gpu_recv_buffer_elements * sizeof(uint64_t);
+                gpu_recv_buffers_cell_particle_array_size   = gpu_recv_buffer_elements * sizeof(particle_aos<T>);
+
                 async_locks = (bool*)mtracker->allocate_host("async_locks", (4 * particle_ranks + 1) * sizeof(bool));
                 
                 send_counts    =              (uint64_t*) mtracker->allocate_host("send_counts", mesh->num_blocks * sizeof(uint64_t));
@@ -373,28 +389,35 @@ namespace minicombust::flow
                 element_disps   = (uint64_t*)mtracker->allocate_host("element_disps", (particle_ranks+1) * sizeof(uint64_t));
 
                 mtracker->allocate_cuda_host("node_starts",   (void**)&node_starts,    particle_ranks          * sizeof(uint64_t));
+                mtracker->allocate_cuda_host("cell_starts",   (void**)&cell_starts,    particle_ranks          * sizeof(uint64_t));
                 mtracker->allocate_cuda_host("node_elements",  (void**)&node_elements, particle_ranks          * sizeof(int));
 
                 // Allocate arrays
-                neighbour_indexes.push_back((uint64_t*)          mtracker->allocate_host("neighbour_indexes", cell_index_array_size[0]));
-                cell_particle_aos.push_back((particle_aos<T> * ) mtracker->allocate_host("cell_particle_aos", cell_particle_array_size[0]));
-                uint64_t *gpu_neighbour_indexes_tmp;
-                particle_aos<T> *gpu_cell_particle_aos_tmp;
-                mtracker->allocate_device("gpu_neighbour_indexes_tmp", (void**)&gpu_neighbour_indexes_tmp,  cell_index_array_size[0]);
-                mtracker->allocate_device("gpu_cell_particle_aos_tmp", (void**)&gpu_cell_particle_aos_tmp, cell_particle_array_size[0]);
-                gpu_neighbour_indexes.push_back(gpu_neighbour_indexes_tmp);
-                gpu_cell_particle_aos.push_back(gpu_cell_particle_aos_tmp);
+                // neighbour_indexes.push_back((uint64_t*)          mtracker->allocate_host("neighbour_indexes", cell_index_array_size[0]));
+                // cell_particle_aos.push_back((particle_aos<T> * ) mtracker->allocate_host("cell_particle_aos", cell_particle_array_size[0]));
+                // uint64_t *gpu_neighbour_indexes_tmp;
+                // particle_aos<T> *gpu_cell_particle_aos_tmp;
+                // mtracker->allocate_device("gpu_neighbour_indexes_tmp", (void**)&gpu_neighbour_indexes_tmp,  cell_index_array_size[0]);
+                // mtracker->allocate_device("gpu_cell_particle_aos_tmp", (void**)&gpu_cell_particle_aos_tmp, cell_particle_array_size[0]);
+                // gpu_neighbour_indexes.push_back(gpu_neighbour_indexes_tmp);
+                // gpu_cell_particle_aos.push_back(gpu_cell_particle_aos_tmp);
 
                 local_particle_node_sets.push_back(unordered_set<uint64_t>());
 
                 interp_node_indexes      = (uint64_t * )    mtracker->allocate_host("interp_node_indexes", node_index_array_size);
                 interp_node_flow_fields  = (flow_aos<T> * ) mtracker->allocate_host("interp_node_flow_fields", node_flow_array_size);
 
-                send_buffers_interp_node_indexes            = (uint64_t * )    mtracker->allocate_host("send_buffers_interp_node_indexes", gpu_send_buffers_node_index_array_size);
+                send_buffers_interp_node_indexes            = (uint64_t * )    mtracker->allocate_host("send_buffers_interp_node_indexes",     gpu_send_buffers_node_index_array_size);
                 send_buffers_interp_node_flow_fields        = (flow_aos<T> * ) mtracker->allocate_host("send_buffers_interp_node_flow_fields", gpu_send_buffers_node_flow_array_size);
 
-                mtracker->allocate_device("gpu_send_buffers_interp_node_indexes", (void**)&gpu_send_buffers_interp_node_indexes,     gpu_send_buffers_node_index_array_size);
+                mtracker->allocate_device("gpu_send_buffers_interp_node_indexes", (void**)&gpu_send_buffers_interp_node_indexes,         gpu_send_buffers_node_index_array_size);
                 mtracker->allocate_device("gpu_send_buffers_interp_node_flow_fields", (void**)&gpu_send_buffers_interp_node_flow_fields, gpu_send_buffers_node_flow_array_size);
+
+                mtracker->allocate_cuda_host("recv_buffers_cell_indexes",         (void**)&recv_buffers_cell_indexes,              gpu_recv_buffers_cell_index_array_size);
+                mtracker->allocate_cuda_host("recv_buffers_cell_particle_fields", (void**)&recv_buffers_cell_particle_fields,      gpu_recv_buffers_cell_particle_array_size);
+
+                mtracker->allocate_device("gpu_recv_buffers_cell_indexes",         (void**)&gpu_recv_buffers_cell_indexes,         gpu_recv_buffers_cell_index_array_size);
+                mtracker->allocate_device("gpu_recv_buffers_cell_particle_fields", (void**)&gpu_recv_buffers_cell_particle_fields, gpu_recv_buffers_cell_particle_array_size);
 
                 unordered_neighbours_set.push_back(unordered_set<uint64_t>());
                 cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
@@ -1347,22 +1370,22 @@ namespace minicombust::flow
             }
 
 
-            void resize_cell_particle (uint64_t elements, uint64_t index)
-            {
-                while ( cell_index_array_size[index] < ((size_t) elements * sizeof(uint64_t)) )
-                {
-                    cell_index_array_size[index]    *= 2;
-                    cell_particle_array_size[index] *= 2;
+            // void resize_cell_particle (uint64_t elements, uint64_t index)
+            // {
+            //     while ( cell_index_array_size[index] < ((size_t) elements * sizeof(uint64_t)) )
+            //     {
+            //         cell_index_array_size[index]    *= 2;
+            //         cell_particle_array_size[index] *= 2;
 
-                    neighbour_indexes[index] = (uint64_t *)       realloc(neighbour_indexes[index],  cell_index_array_size[index]);
-                    cell_particle_aos[index] = (particle_aos<T> *)realloc(cell_particle_aos[index],  cell_particle_array_size[index]);
+            //         neighbour_indexes[index] = (uint64_t *)       realloc(neighbour_indexes[index],  cell_index_array_size[index]);
+            //         cell_particle_aos[index] = (particle_aos<T> *)realloc(cell_particle_aos[index],  cell_particle_array_size[index]);
 
-                    cudaFree(gpu_neighbour_indexes[index]);
-                    cudaFree(gpu_cell_particle_aos[index]);
-                    cudaMalloc(&gpu_neighbour_indexes[index], cell_index_array_size[index]);
-                    cudaMalloc(&gpu_cell_particle_aos[index], cell_particle_array_size[index]);
-                }
-            }
+            //         cudaFree(gpu_neighbour_indexes[index]);
+            //         cudaFree(gpu_cell_particle_aos[index]);
+            //         cudaMalloc(&gpu_neighbour_indexes[index], cell_index_array_size[index]);
+            //         cudaMalloc(&gpu_cell_particle_aos[index], cell_particle_array_size[index]);
+            //     }
+            // }
 
             void resize_nodes_arrays (uint64_t elements)
             {
