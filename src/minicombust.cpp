@@ -35,7 +35,7 @@ int main (int argc, char ** argv)
     int flow_ranks     = mpi_config.world_size - particle_ranks;
 
     // If rank < given number of particle ranks.
-    mpi_config.solver_type = (mpi_config.rank < particle_ranks); // 1 for particle, 0 for flow
+    mpi_config.solver_type = (mpi_config.rank >= flow_ranks); // 1 for particles, 0 for flow
     MPI_Comm_split(mpi_config.world, mpi_config.solver_type, mpi_config.rank, &mpi_config.particle_flow_world);
     MPI_Comm_rank(mpi_config.particle_flow_world,  &mpi_config.particle_flow_rank);
     MPI_Comm_size(mpi_config.particle_flow_world,  &mpi_config.particle_flow_world_size);
@@ -72,7 +72,7 @@ int main (int argc, char ** argv)
 
     // Perform setup and benchmark cases
     MPI_Barrier(mpi_config.world); setup_time  -= MPI_Wtime(); mesh_time  -= MPI_Wtime(); 
-    Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks);
+    Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks, stdout);
     MPI_Barrier(mpi_config.world); mesh_time   += MPI_Wtime();
 
 	if (mpi_config.rank == 0)  printf("Mesh built in %6.2fs!\n\n", mesh_time);
@@ -99,13 +99,13 @@ int main (int argc, char ** argv)
 
         ParticleDistribution<double> *particle_dist = load_injector_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, box_dim, mesh);
         // ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
-        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
+        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size, stdout); 
     }
     else
     {
 		PETSC_COMM_WORLD = mpi_config.particle_flow_world;
 		PetscInitialize(&argc, &argv, nullptr, nullptr);
-        flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta);
+        flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta, stdout);
     }
 
 	if (mpi_config.rank == 0)   cout << endl;

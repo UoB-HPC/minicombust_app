@@ -117,7 +117,7 @@ inline void fill_neighbours( uint64_t c, vec<uint64_t> local_position, vec<uint6
     (*cell_neighbours)[(c - shmem_disp) * faces_per_cell + UP_FACE]    = up_index    ;
 }
 
-Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64_t> elements_per_dim, int flow_ranks)
+Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64_t> elements_per_dim, int flow_ranks, FILE* output_file)
 {
     const uint64_t cell_size  = 8; // Cube
     const uint64_t faces_per_cell = 6; // Cube
@@ -213,33 +213,32 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
 
     if ( mpi_config->rank == 0 )
     {
-        printf("\nMesh dimensions\n");
-        cout << "\tReal dimensions (m)   : " << print_vec(mesh_dim)         << endl;
-        cout << "\tTotal cells           : " << num_cubes                   << endl;
-        cout << "\tTotal points          : " << num_points                  << endl;
-        cout << "\tElement dimensions    : " << print_vec(elements_per_dim) << endl;
-        cout << "\tFlow block dimensions : " << print_vec(block_dim)        << endl;
-        cout << "\tFlow blocks           : " << num_blocks                  << endl;
+        fprintf(output_file, "\nMesh dimensions\n");
+        fprintf(output_file, "\tReal dimensions (m)   : %f %f %f\n", mesh_dim.x, mesh_dim.y, mesh_dim.z);
+        fprintf(output_file, "\tTotal cells           : %lu\n", num_cubes);
+        fprintf(output_file, "\tTotal points          : %lu\n", num_points);
+        fprintf(output_file, "\tElement dimensions    : %lu %lu %lu\n", elements_per_dim.x, elements_per_dim.y, elements_per_dim.z);
+        fprintf(output_file, "\tFlow block dimensions : %lu %lu %lu\n", block_dim.x, block_dim.y, block_dim.z);
+        fprintf(output_file, "\tFlow blocks           : %lu\n", num_blocks);
 
         vec<uint64_t> average_block_size = { 0, 0, 0 };
         for (int i = 0; i < 3; i++) 
         {   
-            cout << "\tBlock displacement " << dim_chars[i] << "  : ";
+            fprintf(output_file, "\tBlock displacement %c : ", dim_chars[i]);
             for (uint64_t b = 0; b < block_dim[i] + 1; b++)
-                cout << flow_block_displacements[i][b] << " ";
+                fprintf(output_file, " %f ", flow_block_displacements[i][b]);
 
             for (uint64_t b = 0; b < block_dim[i]; b++)
                 average_block_size[i] = average_block_size[i] + flow_block_element_sizes[i][b];
 
             average_block_size[i] = average_block_size[i] / block_dim[i];
-            cout << endl;
+            fprintf(output_file, "\n");
         }
 
-        printf( "\tAvg Flow dimensons    : %lu %lu %lu (%lu cells)\n", average_block_size.x,  average_block_size.y,  average_block_size.z,
+        fprintf(output_file, "\tAvg Flow dimensons    : %lu %lu %lu (%lu cells)\n", average_block_size.x,  average_block_size.y,  average_block_size.z,
                                                                        average_block_size.x * average_block_size.y * average_block_size.z );
-        cout << "\tIdle flow ranks       : " << flow_ranks - num_blocks << endl;
+        fprintf(output_file, "\tIdle flow ranks       : %lu\n", flow_ranks - num_blocks);
     }
-
 
     MPI_Comm_split_type ( mpi_config->world, MPI_COMM_TYPE_SHARED, mpi_config->rank, MPI_INFO_NULL, &mpi_config->node_world );
     MPI_Comm_rank (mpi_config->node_world,  &mpi_config->node_rank);
@@ -565,11 +564,11 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
 
         free(face_indexes);
     }
-    // printf("Rank %d done\n", mpi_config->rank);
+    
 
     MPI_Barrier(mpi_config->world);
 
-    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, shmem_points, shmem_cells, faces, cell_faces, shmem_cell_neighbours, shmem_cells_per_point, num_blocks, shmem_cell_disps, shmem_point_disps, block_element_disp, block_dim, num_boundary_cells, boundary_cells, num_boundary_points, boundary_points, boundary_types, mesh_dim);
+    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, shmem_points, shmem_cells, faces, cell_faces, shmem_cell_neighbours, shmem_cells_per_point, num_blocks, shmem_cell_disps, shmem_point_disps, block_element_disp, block_dim, num_boundary_cells, boundary_cells, num_boundary_points, boundary_points, boundary_types, mesh_dim, output_file);
 
     return mesh;
 }
