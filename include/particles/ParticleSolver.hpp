@@ -63,6 +63,7 @@ namespace minicombust::particles
 
             int *block_ranks;
 
+            double particle_timing[10] = {0.0};
             double time_stats[6] = {0.0};
 
             bool *async_locks;
@@ -211,13 +212,6 @@ namespace minicombust::particles
                     MPI_Reduce(&total_node_to_field_address_map_size, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                 }
 
-                // for (uint64_t b = 0; b < mesh->num_blocks; b++)
-                // {
-                //     MPI_Comm_split(mpi_config->world, 1, mpi_config->rank, &mpi_config->every_one_flow_world[b]); 
-                //     MPI_Comm_rank(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_rank[b]);
-                //     MPI_Comm_size(mpi_config->every_one_flow_world[b], &mpi_config->every_one_flow_world_size[b]);
-                // }
-
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
 
@@ -246,38 +240,28 @@ namespace minicombust::particles
 
             void resize_cell_particle_indexes (uint64_t *elements, uint64_t block, uint64_t ***new_cell_indexes)
             {
-                //for ( uint64_t b = 0; b < mesh->num_blocks; b++)
-                //{
                 while ( cell_particle_index_array_sizes[block] < ((size_t) elements[block] * sizeof(uint64_t)) )
                 {
-                    // printf("Rank %d Resizing index block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_index_array_sizes[b] / sizeof(uint64_t), 2* cell_particle_index_array_sizes[b] / sizeof(uint64_t) );
                     cell_particle_index_array_sizes[block] *= 2;
 
                     cell_particle_indexes[block] = (uint64_t*)realloc(cell_particle_indexes[block], cell_particle_index_array_sizes[block]);
                 }
                 
                 if (new_cell_indexes != NULL)  (*new_cell_indexes)[block] = cell_particle_indexes[block];
-                //}
             }
 
             void resize_cell_particle (uint64_t *elements, uint64_t block, uint64_t ***new_cell_indexes, particle_aos<T> ***new_cell_particle)
             {
                 resize_cell_particle_indexes(elements, block, new_cell_indexes);
 
-                //for ( uint64_t b = 0; b < mesh->num_blocks; b++)
-                //{
-
                 while ( cell_particle_array_sizes[block] < ((size_t) elements[block] * sizeof(particle_aos<T>)) )
                 {
-                    // printf("Rank %d Resizing field block %lu: size %lu to %lu\n", mpi_config->rank, b, cell_particle_array_sizes[b] / sizeof(particle_aos<T>), 2 * cell_particle_array_sizes[b] / sizeof(particle_aos<T>) );
-
                     cell_particle_array_sizes[block] *= 2;
 
                     cell_particle_aos[block] = (particle_aos<T> *)realloc(cell_particle_aos[block], cell_particle_array_sizes[block]);
                 }
 
                 if (new_cell_particle != NULL)  (*new_cell_particle)[block] = cell_particle_aos[block];
-                //}
             }
 
             void resize_nodes_arrays (int elements, uint64_t block_id)
@@ -308,14 +292,6 @@ namespace minicombust::particles
                     total_cell_particle_array_size       += cell_particle_array_sizes[b];
                 }
 
-                // if (mpi_config->particle_flow_rank == 0)
-                // {
-                //     printf("total_node_index_array_size  %.2f\n",         total_node_index_array_size           / 1.e9);
-                //     printf("total_node_flow_array_size  %.2f\n",          total_node_flow_array_size            / 1.e9);
-                //     printf("total_cell_particle_index_array_size %.2f\n", total_cell_particle_index_array_size  / 1.e9);
-                //     printf("total_cell_particle_array_size %.2f\n",       total_cell_particle_array_size        / 1.e9);
-
-                // }
                 return  total_node_index_array_size  + total_node_flow_array_size  + total_cell_particle_index_array_size + total_cell_particle_array_size ;
 
             }
@@ -333,15 +309,6 @@ namespace minicombust::particles
                     total_neighbours_sets_size            += neighbours_sets[b].size() * sizeof(uint64_t);
                     total_cell_particle_field_map_size    += cell_particle_field_map[b].size() * sizeof(uint64_t);
                 }
-
-                // if (mpi_config->particle_flow_rank == 0)
-                // {
-                //     printf("total_particles_size %.2f\n",                 total_particles_size           / 1.e9);
-                //     printf("total_node_to_field_address_map_size %.2f\n", total_node_to_field_address_map_size          / 1.e9);
-                //     printf("total_neighbours_sets_size %.2f\n",           total_neighbours_sets_size           / 1.e9);
-                //     printf("total_cell_particle_field_map_size %.2f\n",   total_cell_particle_field_map_size  / 1.e9);
-
-                // }
 
                 return total_neighbours_sets_size + total_cell_particle_field_map_size + total_particles_size + total_node_to_field_address_map_size;
             }

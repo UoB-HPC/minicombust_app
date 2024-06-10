@@ -36,7 +36,7 @@ namespace minicombust::particles
         // }
 
         VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
-        vtk_writer->write_particles("out/minicombust", timestep, particles);
+        vtk_writer->write_particles("out/particles/minicombust", timestep, particles);
     }
 
     template<class T>
@@ -322,14 +322,11 @@ namespace minicombust::particles
                     {printf("ERROR::: RANK %d Cell %lu out of range\n", mpi_config->rank, particles[p].cell); exit(1);}
                 
                 uint64_t node = mesh->cells[(particles[p].cell - mesh->shmem_cell_disp) * cell_size + n];
-                
-
 
                 if (PARTICLE_SOLVER_DEBUG && (node >= mesh->points_size))
                     {printf("ERROR::: RANK %d Node %lu out of range\n", mpi_config->rank, node); exit(1);}
                 if (PARTICLE_SOLVER_DEBUG && (node_to_field_address_map[node] < (flow_aos<T> *)5))
                     {const uint64_t block_id = mesh->get_block_id(particles[p].cell); printf("Rank %d Block %lu cell %lu node %lu flow_pointer %p block_flow_pointer %p size %lu\n", mpi_config->rank, block_id, particles[p].cell, node, node_to_field_address_map[node], all_interp_node_flow_fields[block_id], node_flow_array_sizes[block_id] ); exit(1);};
-
 
                 const vec<T> node_to_particle = particles[p].x1 - mesh->points[node - mesh->shmem_point_disp];
 
@@ -400,6 +397,8 @@ namespace minicombust::particles
 
         // Update particle positions
         vector<uint64_t> decayed_particles;
+
+        particle_timing[4] -= MPI_Wtime();
         #pragma ivdep
         for (uint64_t p = 0; p < particles_size; p++)
         {   
@@ -428,7 +427,9 @@ namespace minicombust::particles
                     const uint64_t index = cell_particle_field_map[block_id].size();
                     elements[block_id]   = cell_particle_field_map[block_id].size() + 1;
 
+                    particle_timing[6] -= MPI_Wtime();
                     resize_cell_particle(elements, block_id, NULL, NULL);
+                    particle_timing[6] += MPI_Wtime();
 
                     cell_particle_indexes[block_id][index]   = cell;
                     cell_particle_aos[block_id][index]       = particles[p].particle_cell_fields;
@@ -451,7 +452,8 @@ namespace minicombust::particles
             }
 
         }
-
+        particle_timing[4] += MPI_Wtime();
+		particle_timing[5] -= MPI_Wtime();
         const uint64_t decayed_particles_size = decayed_particles.size();
         #pragma ivdep
         for (int128_t i = decayed_particles_size - 1; i >= 0; i--)
@@ -459,7 +461,7 @@ namespace minicombust::particles
             particles[decayed_particles[i]] = particles.back();
             particles.pop_back();
         }
-
+        particle_timing[5] += MPI_Wtime();
         performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_time);
     }
 
@@ -511,29 +513,52 @@ namespace minicombust::particles
 
             if ( mpi_config->particle_flow_rank == 0 )
             {
-                // printf("Timestep %6d Particle array mem (TOTAL %8.3f GB) (AVG %8.3f GB) STL mem (TOTAL %8.3f GB) (AVG %8.3f GB) Particles (TOTAL %lu) (AVG %lu) \n", count, arr_usage_total,               arr_usage_total               / mpi_config->particle_flow_world_size, 
-                //                                                                                                                                                             stl_usage_total,               stl_usage_total               / mpi_config->particle_flow_world_size, 
-                //                                                                                                                                                             total_particles_in_simulation, total_particles_in_simulation / mpi_config->particle_flow_world_size);
                 printf("Timestep %6d Particle mem (TOTAL %8.3f GB) (AVG %8.3f GB) Particles (TOTAL %lu) (AVG %lu) \n", count + 1, (arr_usage_total + stl_usage_total + mesh_usage_total), (arr_usage_total + stl_usage_total + mesh_usage_total) / mpi_config->particle_flow_world_size, 
                                                                                                                               total_particles_in_simulation,                           total_particles_in_simulation                         / mpi_config->particle_flow_world_size);
-
             }
         }
 
+        particle_timing[0] -= MPI_Wtime();
 		compute_time -= MPI_Wtime();
         particle_release();
 		compute_time += MPI_Wtime();
+        particle_timing[0] += MPI_Wtime();
 
+        particle_timing[1] -= MPI_Wtime();
         if (mpi_config->world_size != 1 && (count % comms_timestep) == 0)
             update_flow_field();
+        particle_timing[1] += MPI_Wtime();
         
+        particle_timing[2] -= MPI_Wtime();
 		compute_time -= MPI_Wtime();
         solve_spray_equations();
+        particle_timing[2] += MPI_Wtime();
 
+        particle_timing[3] -= MPI_Wtime();
         update_particle_positions();
 		compute_time += MPI_Wtime();
+        particle_timing[3] += MPI_Wtime();
 
         logger.avg_particles += (double)particles.size() / (double)num_timesteps;
+
+        if((count + 1) % 100 == 0)
+        {
+            if(mpi_config->particle_flow_rank == 0)
+            {
+                MPI_Reduce(MPI_IN_PLACE, particle_timing, 7, MPI_DOUBLE, MPI_SUM,
+                           0, mpi_config->particle_flow_world);
+                for(int i = 0; i < 7; i++)
+                {
+                    particle_timing[i] /= mpi_config->particle_flow_world_size;
+                }
+                fprintf(output_file, "\nParticle Timing: \nRelease: %f\nCalc update particles: %f\nSolve Spray: %f\nUpdate: %f\nUpdate loop1: %f\nUpdate loop2: %f\nResize: %f\n",particle_timing[0],particle_timing[1],particle_timing[2],particle_timing[3],particle_timing[4],particle_timing[5],particle_timing[6]);
+            }
+            else
+            {
+                MPI_Reduce(particle_timing, nullptr, 7, MPI_DOUBLE, MPI_SUM,
+                           0, mpi_config->particle_flow_world);
+            }
+        }
 
         count++;
 

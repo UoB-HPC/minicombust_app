@@ -58,13 +58,7 @@ namespace minicombust::flow
 
 			Mat A;
 			Vec b, u;
-			KSP ksp;
-
-			Mat grad_A;
-			Vec grad_b, grad_u, grad_bU, grad_bV, grad_bW;
-			Vec grad_bP, grad_bTE, grad_bED, grad_bT, grad_bFU;
-			Vec grad_bPR, grad_bVFU, grad_bVPR;
-			KSP grad_ksp;
+			KSP ksp, pressure_ksp;
 
             T *cell_densities;
             T *cell_volumes;
@@ -81,6 +75,10 @@ namespace minicombust::flow
             vector<MPI_Datatype> halo_mpi_vec_double_datatypes;
             vector<vector<uint64_t>> halo_rank_recv_indexes;
             unordered_map<uint64_t, uint64_t> boundary_map;
+
+			vector<uint64_t*>            halo_indexes;
+			vector<phi_vector<T>>        phi_send_buffers;
+			vector<phi_vector<vec<T>>>   phi_grad_send_buffers;
 
             MPI_Request bcast_request;
             vector<MPI_Status>  statuses;
@@ -122,6 +120,7 @@ namespace minicombust::flow
 
             uint64_t max_storage;
 
+            double flow_timings[22] = {0.0};
             double time_stats[11] = {0.0};
 			double vel_total_time = 0.0, vel_flux_time = 0.0;
 			double vel_setup_time = 0.0, vel_solve_time = 0.0;
@@ -159,7 +158,7 @@ namespace minicombust::flow
                 send_buffers_node_index_array_size   = max_storage * sizeof(uint64_t);
                 send_buffers_node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
 
-                async_locks = (bool*)malloc(4 * mesh->num_blocks * sizeof(bool));
+                async_locks = (bool*)malloc(4 * particle_ranks + 1 * sizeof(bool));
                 
                 send_counts    =              (uint64_t*) malloc(mesh->num_blocks * sizeof(uint64_t));
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
@@ -502,7 +501,7 @@ namespace minicombust::flow
 				MatSetFromOptions(A);
 				if(mpi_config->particle_flow_world_size > 1)
 				{
-					MatMPIAIJSetPreallocation(A, 7, NULL, 3, NULL);	
+					MatMPIAIJSetPreallocation(A, 7, NULL, 6, NULL);	
 				}
 				else
 				{
@@ -515,39 +514,27 @@ namespace minicombust::flow
 				VecSetFromOptions(b);
 				VecDuplicate(b, &u);
 
+				PC pc;
+
 				KSPCreate(PETSC_COMM_WORLD, &ksp);
+				KSPSetType(ksp, KSPBCGS);
+				KSPGetPC(ksp, &pc);
+                PCSetType(pc, PCNONE);
+				KSPSetPC(ksp, pc);
 				KSPSetOperators(ksp, A, A);
-				
-				//NOTE: Petsc default is 1.e-6 but -12 seems to give better results,
-				//although this costs for runtime.
-				//KSPSetType(ksp, KSPBCGS);
-				//KSPSetTolerances(ksp, 1.e-6, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
 				KSPSetFromOptions(ksp);
 
-				//Mat, Vec and ksp for dense gradient solve
-				MatCreate(MPI_COMM_SELF, &grad_A);
-				MatSetSizes(grad_A, 3, 3, 3, 3);
-				MatSetFromOptions(grad_A);
-
-				VecCreate(MPI_COMM_SELF, &grad_b);
-				VecSetSizes(grad_b, 3, 3);
-				VecSetFromOptions(grad_b);
-				VecDuplicate(grad_b, &grad_u);
-				VecDuplicate(grad_b, &grad_bU);				
-				VecDuplicate(grad_b, &grad_bV);
-				VecDuplicate(grad_b, &grad_bW);
-				VecDuplicate(grad_b, &grad_bP);
-				VecDuplicate(grad_b, &grad_bTE);
-				VecDuplicate(grad_b, &grad_bED);
-				VecDuplicate(grad_b, &grad_bT);
-				VecDuplicate(grad_b, &grad_bFU);
-				VecDuplicate(grad_b, &grad_bPR);
-				VecDuplicate(grad_b, &grad_bVFU);
-				VecDuplicate(grad_b, &grad_bVPR);
-
-				KSPCreate(MPI_COMM_SELF, &grad_ksp);
-				KSPSetOperators(grad_ksp, grad_A, grad_A);
-				KSPSetFromOptions(grad_ksp);
+				KSPCreate(PETSC_COMM_WORLD, &pressure_ksp);
+				KSPSetType(pressure_ksp, KSPFGMRES);
+                KSPGetPC(pressure_ksp, &pc);
+                PCSetType(pc, PCGAMG);
+                PCGAMGSetThresholdScale(pc, 0.0);
+                PetscReal thres[4] = {0.0,0.0,0.0,0.0};
+                PCGAMGSetThreshold(pc, thres, 4);
+                PCGAMGSetAggressiveLevels(pc,4);
+				KSPSetPC(pressure_ksp, pc);	
+                KSPSetOperators(pressure_ksp, A, A);
+                KSPSetFromOptions(pressure_ksp);
 
                 send_requests.push_back ( MPI_REQUEST_NULL );
                 send_requests.push_back ( MPI_REQUEST_NULL );
@@ -850,9 +837,10 @@ namespace minicombust::flow
                 MPI_Status status;
                 int buff_size = halo_rank_recv_indexes[0].size() + 1;
                 int      *buffer      = (int *)      malloc(buff_size * sizeof(int));
-                uint64_t *uint_buffer = (uint64_t *) malloc(buff_size * sizeof(uint64_t));
-                for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+                
+				for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
                 {
+					uint64_t * uint_buffer = (uint64_t *) malloc(buff_size * sizeof(uint64_t));
                     int num_indexes;
                     MPI_Probe (halo_ranks[r], 0, mpi_config->particle_flow_world, &status );
                     MPI_Get_count( &status, MPI_UINT64_T, &num_indexes );
@@ -865,10 +853,46 @@ namespace minicombust::flow
 
                     MPI_Recv( uint_buffer, num_indexes, MPI_UINT64_T, halo_ranks[r], 0, mpi_config->particle_flow_world, MPI_STATUS_IGNORE );
 
-                    for (int i = 0; i < num_indexes; i++)
+					for (int i = 0; i < num_indexes; i++)
                     {
-                        buffer[i] = (int)(uint_buffer[i] - mesh->local_cells_disp); 
-                    }
+                        buffer[i] = (int)(uint_buffer[i] - mesh->local_cells_disp);
+						uint_buffer[i] = uint_buffer[i] - mesh->local_cells_disp;
+					}
+					
+					halo_indexes.push_back(uint_buffer);
+
+					phi_vector<T> phi_tmp;
+					phi_vector<vec<T>> phi_grad_tmp;
+			
+					phi_tmp.U            = (T *)malloc(sizeof(T) * num_indexes);
+					phi_tmp.V            = (T *)malloc(sizeof(T) * num_indexes);
+					phi_tmp.W            = (T *)malloc(sizeof(T) * num_indexes);
+					phi_tmp.P            = (T *)malloc(sizeof(T) * num_indexes);
+                    phi_tmp.PP           = (T *)malloc(sizeof(T) * num_indexes);
+                    phi_tmp.TE           = (T *)malloc(sizeof(T) * num_indexes);
+					phi_tmp.ED           = (T *)malloc(sizeof(T) * num_indexes);
+                    phi_tmp.TEM          = (T *)malloc(sizeof(T) * num_indexes);
+                    phi_tmp.FUL          = (T *)malloc(sizeof(T) * num_indexes);
+					phi_tmp.PRO          = (T *)malloc(sizeof(T) * num_indexes);
+                    phi_tmp.VARF         = (T *)malloc(sizeof(T) * num_indexes);
+                    phi_tmp.VARP         = (T *)malloc(sizeof(T) * num_indexes);					
+
+					phi_grad_tmp.U       = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+					phi_grad_tmp.V       = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+					phi_grad_tmp.W       = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+					phi_grad_tmp.P       = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+                    phi_grad_tmp.PP      = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+                    phi_grad_tmp.TE      = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+					phi_grad_tmp.ED      = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+                    phi_grad_tmp.TEM     = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+                    phi_grad_tmp.FUL     = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+					phi_grad_tmp.PRO     = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+                    phi_grad_tmp.VARF    = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+                    phi_grad_tmp.VARP    = (vec<T> *)malloc(sizeof(vec<T>) * num_indexes);
+
+					phi_send_buffers.push_back(phi_tmp);
+					phi_grad_send_buffers.push_back(phi_grad_tmp);
+
 
                     MPI_Datatype indexed_type, vec_indexed_type;
                     MPI_Type_create_indexed_block(num_indexes, 1, buffer, MPI_DOUBLE,                    &indexed_type);
@@ -976,6 +1000,12 @@ namespace minicombust::flow
 
             bool is_halo( uint64_t cell );
 
+			void pack_phi_halo_buffer(phi_vector<T> send_buffer, phi_vector<T> phi, uint64_t *indexes, uint64_t buf_size);			
+			void pack_phi_grad_halo_buffer(phi_vector<vec<T>> send_buffer, phi_vector<vec<T>> phi_grad, uint64_t *indexes, uint64_t buf_size);
+			void pack_PP_halo_buffer(phi_vector<T> send_buffer, phi_vector<T> phi, uint64_t *indexes, uint64_t buf_size);
+			void pack_PP_grad_halo_buffer(phi_vector<vec<T>> send_buffer, phi_vector<vec<T>> phi_grad, uint64_t *indexes, uint64_t buf_size);
+			void pack_Aphi_halo_buffer(phi_vector<T> send_buffer, phi_vector<T> phi, uint64_t *indexes, uint64_t buf_size);
+
 			void output_data(uint64_t timestep);
             void print_logger_stats(uint64_t timesteps, double runtime);
             
@@ -1010,6 +1040,7 @@ namespace minicombust::flow
 			void update_mass_flux();
 			void update_P(T *phi_component, vec<T> *phi_grad_component);            
 
+            void solve(T A[][3], T *b, T *out);
             void get_phi_gradients ();
             void limit_phi_gradients ();
 			void limit_phi_gradient(T *phi_component, vec<T> *phi_grad_component);
