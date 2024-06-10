@@ -551,7 +551,7 @@ namespace minicombust::particles
                 {
                     particle_timing[i] /= mpi_config->particle_flow_world_size;
                 }
-                fprintf(output_file, "\nParticle Timing: \nRelease: %f\nCalc update particles: %f\nSolve Spray: %f\nUpdate: %f\nUpdate loop1: %f\nUpdate loop2: %f\nResize: %f\n",particle_timing[0],particle_timing[1],particle_timing[2],particle_timing[3],particle_timing[4],particle_timing[5],particle_timing[6]);
+                printf("\nParticle Timing: \nRelease: %f\nCalc update particles: %f\nSolve Spray: %f\nUpdate: %f\nUpdate loop1: %f\nUpdate loop2: %f\nResize: %f\n",particle_timing[0],particle_timing[1],particle_timing[2],particle_timing[3],particle_timing[4],particle_timing[5],particle_timing[6]);
             }
             else
             {
