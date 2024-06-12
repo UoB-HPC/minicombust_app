@@ -22,7 +22,7 @@ ParticleDistribution<double> *load_injector_particle_distribution(uint64_t parti
     double      outer_injector_radius = 0.06*box_dim.x;
     vec<double> injector_position     = {box_dim.x/10.0, box_dim.y/2.0, box_dim.z/2.0};
 
-    vec<double> cyclindrical_velocity_mean = {30*box_dim.x, M_PI, 300*box_dim.y};
+    vec<double> cyclindrical_velocity_mean = {7.5*box_dim.x, M_PI, 75*box_dim.y};
 
     double temp = 300.;
 

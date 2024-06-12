@@ -158,7 +158,7 @@ namespace minicombust::flow
                 send_buffers_node_index_array_size   = max_storage * sizeof(uint64_t);
                 send_buffers_node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
 
-                async_locks = (bool*)malloc(4 * particle_ranks + 1 * sizeof(bool));
+                async_locks = (bool*)malloc((4 * particle_ranks + 1) * sizeof(bool));
                 
                 send_counts    =              (uint64_t*) malloc(mesh->num_blocks * sizeof(uint64_t));
                 recv_indexes   =             (uint64_t**) malloc(mesh->num_blocks * sizeof(uint64_t*));
@@ -528,10 +528,6 @@ namespace minicombust::flow
 				KSPSetType(pressure_ksp, KSPFGMRES);
                 KSPGetPC(pressure_ksp, &pc);
                 PCSetType(pc, PCGAMG);
-                PCGAMGSetThresholdScale(pc, 0.0);
-                PetscReal thres[4] = {0.0,0.0,0.0,0.0};
-                PCGAMGSetThreshold(pc, thres, 4);
-                PCGAMGSetAggressiveLevels(pc,4);
 				KSPSetPC(pressure_ksp, pc);	
                 KSPSetOperators(pressure_ksp, A, A);
                 KSPSetFromOptions(pressure_ksp);

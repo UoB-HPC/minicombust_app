@@ -151,19 +151,48 @@ namespace minicombust::particles
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_flow_field.\n", mpi_config->rank);
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Sending index sizes.\n", mpi_config->rank);
 
+        // uint64_t count = 0;
+        // for (uint64_t b : active_blocks)
+        // {
+        //     neighbours_size[b] = cell_particle_field_map[b].size();
+        //     if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )
+		// 	{  
+		// 		printf("\tRank %d: Sending %d indexes to block %lu.\n", mpi_config->rank, neighbours_size[b], b);
+		// 	}
+	
+        //     MPI_Issend(cell_particle_indexes[b], neighbours_size[b], MPI_UINT64_T,                        mpi_config->particle_flow_world_size + b, 0, mpi_config->world, &send_requests[count  + 0*active_blocks.size()] );
+        //     MPI_Isend(cell_particle_aos[b],     neighbours_size[b], mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->particle_flow_world_size + b, 2, mpi_config->world, &send_requests[count++ + 1*active_blocks.size()] );
+        // }
+
         uint64_t count = 0;
+        for (uint64_t b : active_blocks)
+        {
+            // b = active_blocks[(mpi_config->rank + count) % (mpi_config->world_size - mpi_config->particle_flow_world_size)];
+            neighbours_size[b] = cell_particle_field_map[b].size();
+            if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )
+            {  
+                printf("\tRank %d: Sending %d indexes to block %lu.\n", mpi_config->rank, neighbours_size[b], b);
+            }
+            MPI_Issend(cell_particle_indexes[b], neighbours_size[b], MPI_UINT64_T,                        mpi_config->particle_flow_world_size + b, 0, mpi_config->world, &send_requests[count++  + 0*active_blocks.size()] );
+    
+            // MPI_Isend(cell_particle_aos[b],     neighbours_size[b], mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->particle_flow_world_size + b, 2, mpi_config->world, &send_requests[count++ + 1*active_blocks.size()] );
+            count++;
+        }
+        MPI_Waitall(active_blocks.size(), send_requests.data(), MPI_STATUSES_IGNORE);
+
+
+        count = 0;
         for (uint64_t b : active_blocks)
         {
             neighbours_size[b] = cell_particle_field_map[b].size();
             if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )
-			{  
-				printf("\tRank %d: Sending %d indexes to block %lu.\n", mpi_config->rank, neighbours_size[b], b);
-			}
-	
-            MPI_Issend(cell_particle_indexes[b], neighbours_size[b], MPI_UINT64_T,                        mpi_config->particle_flow_world_size + b, 0, mpi_config->world, &send_requests[count  + 0*active_blocks.size()] );
+            {  
+                printf("\tRank %d: Sending %d indexes to block %lu.\n", mpi_config->rank, neighbours_size[b], b);
+            }
+    
+            // MPI_Issend(cell_particle_indexes[b], neighbours_size[b], MPI_UINT64_T,                        mpi_config->particle_flow_world_size + b, 0, mpi_config->world, &send_requests[count  + 0*active_blocks.size()] );
             MPI_Isend(cell_particle_aos[b],     neighbours_size[b], mpi_config->MPI_PARTICLE_STRUCTURE,  mpi_config->particle_flow_world_size + b, 2, mpi_config->world, &send_requests[count++ + 1*active_blocks.size()] );
         }
-
 
         MPI_Waitall(active_blocks.size(), send_requests.data(), MPI_STATUSES_IGNORE);
 
@@ -220,9 +249,11 @@ namespace minicombust::particles
             }
 
             int recieve_done = 0;
+            int recieve_fld_done = 0;
             MPI_Test(&recv_requests[ba], &recieve_done, MPI_STATUS_IGNORE);
+            MPI_Test(&recv_requests[ba + active_blocks.size()], &recieve_fld_done, MPI_STATUS_IGNORE);
 
-            if ( recieve_done && !processed_block[ba] && posted_block_recvs[ba] )
+            if ( recieve_done && recieve_fld_done && !processed_block[ba] && posted_block_recvs[ba] )
             {
                 // uint64_t size_before = node_to_field_address_map.size();
 
