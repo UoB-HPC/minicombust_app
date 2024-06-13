@@ -1111,7 +1111,7 @@ __global__ void kernel_apply_forces(uint64_t local_mesh_size, double *cell_densi
     if(cell >= local_mesh_size) return;
 
 	// Gravity force (enthalpy)
-	const double BodyForce = -0.001*cell_densities[cell]*cell_volumes[cell]*(phi.TEM[cell] - 273);
+	const double BodyForce = -0.001*cell_densities[cell]*cell_volumes[cell]*(phi.TEM[cell] - 2000); // Set 2000 on mesh dummy terms
 	const double gravity[3] = {0.0, -9.81, 0.0};
 
 	S_phi.U[cell] += gravity[0]*BodyForce;
@@ -1136,9 +1136,9 @@ __global__ void kernel_apply_forces(uint64_t local_mesh_size, double *cell_densi
 	A_phi.W[cell] += f;
 
 	//RHS from particle code
-	S_phi.U[cell] += particle_terms[cell].momentum.x;
-	S_phi.V[cell] += particle_terms[cell].momentum.y;
-	S_phi.W[cell] += particle_terms[cell].momentum.z;
+	// S_phi.U[cell] += particle_terms[cell].momentum.x;
+	// S_phi.V[cell] += particle_terms[cell].momentum.y;
+	// S_phi.W[cell] += particle_terms[cell].momentum.z;
 }
 
 __global__ void kernel_setup_sparse_matrix(double URFactor, uint64_t local_mesh_size, int *rows_ptr, int64_t *col_indices, uint64_t local_cells_disp, gpu_Face<uint64_t> *faces, int64_t map_size, Hash_map *boundary_map, uint64_t *boundary_map_values, double *A_phi_component, gpu_Face<double> *face_fields, double *values, double *S_phi_component, double *phi_component, uint64_t mesh_size, uint64_t faces_per_cell, uint64_t *cell_faces, int *nnz)
@@ -1903,7 +1903,7 @@ __global__ void kernel_apply_pres_forces(int type, uint64_t local_mesh_size, dou
 
 	if(type == TEMP)
 	{
-		S_phi.U[cell] += particle_terms[cell].energy;
+		// S_phi.U[cell] += particle_terms[cell].energy;
 	}
 }
 
@@ -2168,11 +2168,11 @@ __global__ void kernel_interpolate_phi_to_nodes(phi_vector<double> phi, phi_vect
 	for (uint64_t n = 0; n < cell_size; n++)
 	{
 		const uint64_t node_id      = cells[phi_index*cell_size + n];
-		const vec<double> direction = vec_minus(points[node_id], cell_center);
 
 		// if (halo && node_map[node_id] == UINT64_MAX) continue; 
 
 		uint64_t local_node_id = node_map->find(node_id);
+		const vec<double> direction = vec_minus(points[local_node_id], cell_center);
 	
 		phi_nodes.U[local_node_id]   += (U + dot_product(Ug,   direction)) / node_neighbours;
 		phi_nodes.V[local_node_id]   += (V + dot_product(Vg,   direction)) / node_neighbours;

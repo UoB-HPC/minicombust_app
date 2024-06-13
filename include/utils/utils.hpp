@@ -455,6 +455,11 @@ namespace minicombust::utils
         double recieved_cells;
         double reduced_recieved_cells;
         double sent_nodes;
+
+        double min_cells_buf_size_per_timestep;
+        double min_nodes_buf_size_per_timestep;
+        double max_cells_buf_size_per_timestep;
+        double max_nodes_buf_size_per_timestep;
     };
 
     struct MPI_Config {

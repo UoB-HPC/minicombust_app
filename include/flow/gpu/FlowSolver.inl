@@ -544,6 +544,8 @@ namespace minicombust::flow
 		// for (uint64_t rank_slot = 0; rank_slot < 13; rank_slot++)
 		// 	node_starts[rank_slot] = -1;
 
+		MPI_Barrier(mpi_config->world);
+
         while(!all_processed)
         {
             time0 -= MPI_Wtime(); //1
@@ -573,7 +575,7 @@ namespace minicombust::flow
 
 				if (cell_element_disp > gpu_recv_buffer_elements)
 				{
-					printf("Cell array recv buffer overflow\n");
+					printf("Cell array recv buffer overflow disp %lu max %d\n", cell_element_disp, gpu_recv_buffer_elements);
 					exit(1);
 				}
 
@@ -644,6 +646,8 @@ namespace minicombust::flow
 					gpuErrchk(cudaMemcpyAsync(&node_elements[rank_slot], gpu_atomic_buffer_index, sizeof(uint32_t), cudaMemcpyDeviceToHost, (cudaStream_t) 0 ));
 					gpuErrchk(cudaMemsetAsync(gpu_seen_node, 0, global_node_to_local_node_map.size() * sizeof(int) , (cudaStream_t) 0 ));
 
+					
+
 					// cudaStreamSynchronize(0);
 					// printf("Rank %d has received %d cells from rank %d (slot %lu). Start position in buffer %d, length %d\n", mpi_config->particle_flow_rank, elements[rank_slot], ranks[rank_slot], rank_slot, node_starts[rank_slot], node_elements[rank_slot]);
 					// printf("Rank %d Node starts 0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d 8:%d 9:%d 10:%d 11:%d 12:%d \n", mpi_config->particle_flow_rank, node_starts[0], node_starts[1], node_starts[2], node_starts[3], node_starts[4], node_starts[5], node_starts[6], node_starts[7], node_starts[8], node_starts[9], node_starts[10], node_starts[11], node_starts[12]);
@@ -675,6 +679,10 @@ namespace minicombust::flow
 
         logger.sent_nodes += neighbour_point_size;
 
+		
+
+		
+
 		nvtxRangePush("update_flow::pack_and_post_buffers");
 		// printf("Rank %d Node starts before 0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d 8:%d 9:%d 10:%d 11:%d 12:%d \n", mpi_config->particle_flow_rank, node_starts[0], node_starts[1], node_starts[2], node_starts[3], node_starts[4], node_starts[5], node_starts[6], node_starts[7], node_starts[8], node_starts[9], node_starts[10], node_starts[11], node_starts[12]);
 
@@ -698,11 +706,27 @@ namespace minicombust::flow
             // MPI_Isend ( &send_buffers_interp_node_flow_fields[ptr_disp], node_elements[p], mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
             
 			ptr_disp += node_elements[p];
+			node_element_disp += node_elements[p];
 
             processed_cell_fields[p] = false; // Invalid write
 
             recv_time2  += MPI_Wtime();
         }
+
+		
+		if ( logger.min_cells_buf_size_per_timestep == 0 )
+			logger.min_cells_buf_size_per_timestep = cell_element_disp;
+
+		if ( logger.min_cells_buf_size_per_timestep == 0 )
+			logger.min_nodes_buf_size_per_timestep = node_element_disp;
+
+		logger.min_cells_buf_size_per_timestep = min(logger.min_cells_buf_size_per_timestep, (double)cell_element_disp); 
+		logger.min_nodes_buf_size_per_timestep = min(logger.min_nodes_buf_size_per_timestep, (double)node_element_disp); 
+		logger.max_cells_buf_size_per_timestep = max(logger.max_cells_buf_size_per_timestep, (double)cell_element_disp);
+		logger.max_nodes_buf_size_per_timestep = max(logger.max_nodes_buf_size_per_timestep, (double)node_element_disp);
+
+		if (mpi_config->particle_flow_rank == 0)
+			printf("Cell buffer used %lu (of %d) Node buffer used %lu (of %d) \n", cell_element_disp, gpu_send_buffer_elements, node_element_disp, gpu_recv_buffer_elements);
 
 
 		nvtxRangePop();
@@ -925,16 +949,18 @@ namespace minicombust::flow
 	*/
 			AMGX_SAFE_CALL(AMGX_vector_bind(u, A));
 			AMGX_SAFE_CALL(AMGX_vector_bind(b, A));
+			AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
+
 			
 			AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		}
 		else
 		{
+			AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
 			AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL));
 			AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		}
 
-		AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
         AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
 
 		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
@@ -974,12 +1000,12 @@ namespace minicombust::flow
 		// gpuErrchk(cudaDeviceSynchronize());
 
 		AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL));
-	    	AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.W));
+		AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.W));
 		AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
-	    	AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
+		AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		
 		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
-	    	AMGX_SAFE_CALL(AMGX_vector_download(u, gpu_phi.W));
+		AMGX_SAFE_CALL(AMGX_vector_download(u, gpu_phi.W));
 	}
 
 	template<typename T> void FlowSolver<T>::precomp_AU()
@@ -1322,6 +1348,17 @@ namespace minicombust::flow
         double min_nodes = loggers[0].sent_nodes;
         double max_nodes = loggers[0].sent_nodes;
 
+
+		double min_min_cells_buf_size_per_timestep = loggers[0].min_cells_buf_size_per_timestep;
+		double min_min_nodes_buf_size_per_timestep = loggers[0].min_nodes_buf_size_per_timestep;
+		double min_max_cells_buf_size_per_timestep = loggers[0].max_cells_buf_size_per_timestep;
+		double min_max_nodes_buf_size_per_timestep = loggers[0].max_nodes_buf_size_per_timestep;
+
+		double max_min_cells_buf_size_per_timestep = loggers[0].min_cells_buf_size_per_timestep;
+		double max_min_nodes_buf_size_per_timestep = loggers[0].min_nodes_buf_size_per_timestep;
+		double max_max_cells_buf_size_per_timestep = loggers[0].max_cells_buf_size_per_timestep;
+		double max_max_nodes_buf_size_per_timestep = loggers[0].max_nodes_buf_size_per_timestep;
+
         double non_zero_blocks      = 0;
         double total_cells_recieved = 0;
         double total_reduced_cells_recieves = 0;
@@ -1335,6 +1372,21 @@ namespace minicombust::flow
                 logger.reduced_recieved_cells += loggers[rank].reduced_recieved_cells;
                 logger.recieved_cells         += loggers[rank].recieved_cells;
                 logger.sent_nodes             += loggers[rank].sent_nodes;
+
+				logger.min_cells_buf_size_per_timestep += loggers[rank].min_cells_buf_size_per_timestep;
+                logger.min_nodes_buf_size_per_timestep += loggers[rank].min_nodes_buf_size_per_timestep;
+                logger.max_cells_buf_size_per_timestep += loggers[rank].max_cells_buf_size_per_timestep;
+                logger.max_nodes_buf_size_per_timestep += loggers[rank].max_nodes_buf_size_per_timestep;
+
+				if ( min_min_cells_buf_size_per_timestep > loggers[rank].min_cells_buf_size_per_timestep ) min_min_cells_buf_size_per_timestep = loggers[rank].min_cells_buf_size_per_timestep;
+                if ( min_min_nodes_buf_size_per_timestep > loggers[rank].min_nodes_buf_size_per_timestep ) min_min_nodes_buf_size_per_timestep = loggers[rank].min_nodes_buf_size_per_timestep;
+                if ( min_max_cells_buf_size_per_timestep > loggers[rank].max_cells_buf_size_per_timestep ) min_max_cells_buf_size_per_timestep = loggers[rank].max_cells_buf_size_per_timestep;
+                if ( min_max_nodes_buf_size_per_timestep > loggers[rank].max_nodes_buf_size_per_timestep ) min_max_nodes_buf_size_per_timestep = loggers[rank].max_nodes_buf_size_per_timestep;
+
+				if ( max_min_cells_buf_size_per_timestep < loggers[rank].min_cells_buf_size_per_timestep ) max_min_cells_buf_size_per_timestep = loggers[rank].min_cells_buf_size_per_timestep;
+				if ( max_min_nodes_buf_size_per_timestep < loggers[rank].min_nodes_buf_size_per_timestep ) max_min_nodes_buf_size_per_timestep = loggers[rank].min_nodes_buf_size_per_timestep;
+				if ( max_max_cells_buf_size_per_timestep < loggers[rank].max_cells_buf_size_per_timestep ) max_max_cells_buf_size_per_timestep = loggers[rank].max_cells_buf_size_per_timestep;
+				if ( max_max_nodes_buf_size_per_timestep < loggers[rank].max_nodes_buf_size_per_timestep ) max_max_nodes_buf_size_per_timestep = loggers[rank].max_nodes_buf_size_per_timestep;
 
 
                 if ( min_cells > loggers[rank].recieved_cells )  min_cells = loggers[rank].recieved_cells ;
@@ -1350,18 +1402,32 @@ namespace minicombust::flow
             for (int rank = 0; rank < mpi_config->particle_flow_world_size; rank++) 
                 non_zero_blocks += loggers[rank].recieved_cells > (0.01 * max_cells) ;
 
-
             logger.reduced_recieved_cells /= non_zero_blocks;
             logger.recieved_cells /= non_zero_blocks;
             logger.sent_nodes     /= non_zero_blocks;
+
+			logger.min_cells_buf_size_per_timestep /= mpi_config->particle_flow_world_size;
+			logger.min_nodes_buf_size_per_timestep /= mpi_config->particle_flow_world_size;
+			logger.max_cells_buf_size_per_timestep /= mpi_config->particle_flow_world_size;
+			logger.max_nodes_buf_size_per_timestep /= mpi_config->particle_flow_world_size;
             
             printf("Flow Solver Stats:\t                            AVG       MIN       MAX\n");
-            printf("\tReduced Recieved Cells ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.reduced_recieved_cells / timesteps), round(min_red_cells / timesteps), round(max_red_cells / timesteps));
-            printf("\tRecieved Cells ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.recieved_cells / timesteps), round(min_cells / timesteps), round(max_cells / timesteps));
-            printf("\tSent Nodes     ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.sent_nodes     / timesteps), round(min_nodes / timesteps), round(max_nodes / timesteps));
-            printf("\tFlow blocks with <1%% max droplets  : %d\n", mpi_config->particle_flow_world_size - (int)non_zero_blocks); 
+            // printf("\tReduced Recieved Cells ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.reduced_recieved_cells / timesteps), round(min_red_cells / timesteps), round(max_red_cells / timesteps));
+            // printf("\tRecieved Cells ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.recieved_cells / timesteps), round(min_cells / timesteps), round(max_cells / timesteps));
+            // printf("\tSent Nodes     ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.sent_nodes     / timesteps), round(min_nodes / timesteps), round(max_nodes / timesteps));
+            printf("\tmin_cells_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.min_cells_buf_size_per_timestep, min_min_cells_buf_size_per_timestep, max_min_cells_buf_size_per_timestep);
+            printf("\tmax_cells_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.max_cells_buf_size_per_timestep, min_max_cells_buf_size_per_timestep, max_max_cells_buf_size_per_timestep);
+			printf("\tmin_nodes_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.min_cells_buf_size_per_timestep, min_min_cells_buf_size_per_timestep, max_min_cells_buf_size_per_timestep);
+            printf("\tmax_nodes_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.max_cells_buf_size_per_timestep, min_max_cells_buf_size_per_timestep, max_max_cells_buf_size_per_timestep);
+           
+		   
+		   
+		    printf("\tFlow blocks with <1%% max droplets  : %d\n", mpi_config->particle_flow_world_size - (int)non_zero_blocks); 
             printf("\tAvg Cells with droplets             : %.2f%%\n", 100 * total_cells_recieved / (timesteps * mesh->mesh_size));
             printf("\tCell copies across particle ranks   : %.2f%%\n", 100.*(1 - total_reduced_cells_recieves / total_cells_recieved ));
+
+
+
 
             
             MPI_Barrier (mpi_config->particle_flow_world);
@@ -1393,14 +1459,17 @@ namespace minicombust::flow
 
         int comms_timestep = 1;
 		if ( mpi_config->particle_flow_rank == 0 )
-			printf("\ntimestep %lu\n",timestep_count + 1);
+			printf("timestep %lu\n",timestep_count + 1);
+
+		
+		// mtracker->print_usage();
 
 		size_t free_mem, total;
 		cudaMemGetInfo( &free_mem, &total );
 
 		if (mpi_config->particle_flow_rank == 0)
 		{
-		printf("GPU memory %lu free of %lu", free_mem, total);
+		printf("GPU memory %lu free of %lu\n", free_mem, total);
 		}
 		
         if (((timestep_count + 1) % 100) == 0)
@@ -1498,7 +1567,6 @@ namespace minicombust::flow
 			// gpuErrchk( cudaPeekAtLastError() );
 
 			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_interpolate_phi_to_nodes mesh_size + halos %lu mesh_size %lu halos %lu\n", mesh->local_mesh_size + nhalos, mesh->local_mesh_size , nhalos);
-			
 
 			C_kernel_interpolate_phi_to_nodes(block_count, thread_count, gpu_phi, gpu_phi_grad, gpu_phi_nodes, gpu_local_nodes, gpu_node_hash_map, gpu_boundary_hash_map, gpu_cells_per_point, gpu_local_cells, gpu_cell_centers, mesh->local_mesh_size, mesh->local_cells_disp, global_node_to_local_node_map.size(), nhalos);
 			gpuErrchk( cudaPeekAtLastError() );

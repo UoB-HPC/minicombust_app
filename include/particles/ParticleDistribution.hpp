@@ -212,8 +212,8 @@ namespace minicombust::particles
                     cyclindrical_velocity_upper.y = 2 * M_PI;
 
 
-                    // cyclindrical_velocity_lower.y = (mpi_config->particle_flow_rank + 0) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
-                    // cyclindrical_velocity_upper.y = (mpi_config->particle_flow_rank + 1) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
+                    cyclindrical_velocity_lower.y = (mpi_config->particle_flow_rank + 0) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
+                    cyclindrical_velocity_upper.y = (mpi_config->particle_flow_rank + 1) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
 
 
                     vec<T> cyclindrical_position_lower = { inner_injector_radius,      0.0, -0.0001 }; 

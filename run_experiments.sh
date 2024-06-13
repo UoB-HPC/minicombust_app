@@ -2,7 +2,13 @@
 
 export LD_LIBRARY_PATH=/lustre/fsw/coreai_devtech_all/hwaugh/repos/AMGX/install/lib/:$LD_LIBRARY_PATH
 
-for x in {8,4,2,1}
+kill $(pidof nsys)
+kill $(pidof gpu_minicombust)
+
+# for x in {8,}
+# for x in {1,}
+# for x in {2,}
+for x in {8,}
 do
 	echo "RUNNING EXPERIMENT with $x GPUS"
 	export MINICOMBUST_GPUS=$x

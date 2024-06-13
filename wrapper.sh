@@ -6,7 +6,8 @@
 # UCX_IB_PREFER_NEAREST_DEVICE=y 
 # OMPI_MCA_coll=^hcoll
 
-UCX_TLS=^gdr_copy
+# UCX_TLS=cuda_copy,cuda_ipc,gdr_copy
+# UCX_TLS=self,rc,shm,cuda,tcp,cuda_copy,cuda_ipc,gdr_copy
 
 export CUDA_VISIBLE_DEVICES=
 if [ $OMPI_COMM_WORLD_RANK -gt $(( MINICOMBUST_PRANKS-1 )) ]; then
@@ -33,8 +34,9 @@ export MINICOMBUST_RANK_ID=$OMPI_COMM_WORLD_RANK
 if [ $OMPI_COMM_WORLD_RANK = $MINICOMBUST_PRANKS  ] || [ $OMPI_COMM_WORLD_RANK = 0 ]; then
 	outfile="RANK$OMPI_COMM_WORLD_RANK-RANKS$MINICOMBUST_RANKS-GPUS$MINICOMBUST_GPUS-CELLS$MINICOMBUST_CELLS-PARTICLES-$MINICOMBUST_PARTICLES-ITERS$MINICOMBUST_ITERS"
   prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$OMPI_COMM_WORLD_RANK.log " 
-  prof_cmd="ncu -f --set full  --kernel-name kernel_get_phi_gradient --launch-count 1 --launch-skip 6 -o $outfile " 
+  prof_cmd="compute-sanitizer " 
   prof_cmd="" 
+  prof_cmd="ncu -f --set full  --kernel-name kernel_interpolate_phi_to_nodes --launch-count 5 --launch-skip 1 -o $outfile " 
   prof_cmd="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --sample=none --cpuctxsw=none --trace=cuda,nvtx,mpi --force-overwrite=true -o $outfile " 
 	echo "$OMPI_COMM_WORLD_RANK rank prof_cmd:  $prof_cmd"
 	echo "cmd:  $prof_cmd"

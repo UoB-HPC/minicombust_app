@@ -303,6 +303,13 @@ int main (int argc, char ** argv)
 	//PMPI_Finalize error for Device or resource busy 
 	//need to look into this and work out what is going on.
 	//can test with 0 7 241 -1 1 with 482 threads
+
+    MPI_Win_free(&mpi_config.win_cell_centers);
+    MPI_Win_free(&mpi_config.win_cells);
+    MPI_Win_free(&mpi_config.win_cell_neighbours);
+    MPI_Win_free(&mpi_config.win_points);
+    MPI_Win_free(&mpi_config.win_cells_per_point);
+
 	MPI_Finalize();
     return 0;
 }

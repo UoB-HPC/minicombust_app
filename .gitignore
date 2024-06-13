@@ -1,5 +1,8 @@
 # Prerequisites
 *.d
+*.log
+*.nsys-rep
+*ncu-rep
 
 # Compiled Object files
 *.slo
