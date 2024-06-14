@@ -914,14 +914,14 @@ namespace minicombust::flow
         }
 
         out[0] = (b[0] * invdet * (A[1][1] * A[2][2] - A[2][1] * A[1][2])) +
-                (b[1] * invdet * (A[2][1] * A[0][2] - A[0][1] * A[2][2])) +
-                (b[2] * invdet * (A[0][1] * A[1][2] - A[1][1] * A[0][2]));
+                 (b[1] * invdet * (A[2][1] * A[0][2] - A[0][1] * A[2][2])) +
+                 (b[2] * invdet * (A[0][1] * A[1][2] - A[1][1] * A[0][2]));
         out[1] = (b[0] * invdet * (A[1][2] * A[2][0] - A[1][0] * A[2][2])) +
-                (b[1] * invdet * (A[0][0] * A[2][2] - A[2][0] * A[0][2])) +
-                (b[2] * invdet * (A[1][0] * A[0][2] - A[0][0] * A[1][2]));
+                 (b[1] * invdet * (A[0][0] * A[2][2] - A[2][0] * A[0][2])) +
+                 (b[2] * invdet * (A[1][0] * A[0][2] - A[0][0] * A[1][2]));
         out[2] = (b[0] * invdet * (A[1][0] * A[2][1] - A[2][0] * A[1][1])) +
-                (b[1] * invdet * (A[2][0] * A[0][1] - A[0][0] * A[2][1])) +
-                (b[2] * invdet * (A[0][0] * A[1][1] - A[1][0] * A[0][1]));
+                 (b[1] * invdet * (A[2][0] * A[0][1] - A[0][0] * A[2][1])) +
+                 (b[2] * invdet * (A[0][0] * A[1][1] - A[1][0] * A[0][1]));
     }
 
     template<typename T> void FlowSolver<T>::get_phi_gradients ()
@@ -1412,6 +1412,9 @@ namespace minicombust::flow
     {
 		/*Solve the linear system Au=b using PETSc*/
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_sparse_matrix.\n", mpi_config->rank);
+
+        performance_logger.my_papi_start();
+
         VecZeroEntries(u);
 
 		KSPSolve(ksp, b, u);
@@ -1423,6 +1426,8 @@ namespace minicombust::flow
 			indx[i] = i+mesh->local_cells_disp;
 		}
 		VecGetValues(u, mesh->local_mesh_size, indx, phi_component);
+
+        performance_logger.my_papi_stop(performance_logger.standard_solve_event_count, &performance_logger.standard_solve_time);
     }
 
     template<typename T> void FlowSolver<T>::calculate_flux_UVW()
@@ -1711,8 +1716,6 @@ namespace minicombust::flow
 		  4. Account transent forces
 		  5. Solve each velocity component*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_UVW.\n", mpi_config->rank);
-		
-        performance_logger.my_papi_start();
 
         vel_total_time -= MPI_Wtime(); 
 
@@ -1803,8 +1806,6 @@ namespace minicombust::flow
         solve_sparse_matrix (phi.W);
         vel_solve_time += MPI_Wtime();
 		vel_total_time += MPI_Wtime();
-
-        performance_logger.my_papi_stop(performance_logger.solve_uvw_event_counts, &performance_logger.solve_uvw_time);
 
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) 
 				&& FLOW_SOLVER_FINE_TIME)
@@ -2124,6 +2125,7 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::setup_pressure_matrix()
     {
+        performance_logger.my_papi_start();
 		/*Set up a sparse A matrix using PETSc for the pressure solve*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_pressure_matrix.\n", mpi_config->rank);
 
@@ -2159,12 +2161,15 @@ namespace minicombust::flow
 
 		MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
         MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+        performance_logger.my_papi_stop(performance_logger.pressure_setup_event_count, &performance_logger.pressure_setup_time);
     }
 
     template<typename T> void FlowSolver<T>::solve_pressure_matrix()
     {
-		/*Set up b vectory and solve linear system Au=b using PETSc*/
+		/*Set up b vector and solve linear system Au=b using PETSc*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_pressure_matrix.\n", mpi_config->rank);
+
+        performance_logger.my_papi_start();
 
 		VecZeroEntries(b);
 		VecZeroEntries(u);
@@ -2173,7 +2178,7 @@ namespace minicombust::flow
 		{
 			VecSetValue(b, i+mesh->local_cells_disp, S_phi.U[i], INSERT_VALUES);
 		}
-		
+
 		VecAssemblyBegin(b);
         VecAssemblyEnd(b);
 
@@ -2185,6 +2190,8 @@ namespace minicombust::flow
             indx[i] = i+mesh->local_cells_disp;
         }
         VecGetValues(u, mesh->local_mesh_size, indx, phi.PP);
+
+        performance_logger.my_papi_stop(performance_logger.pressure_solve_event_count, &performance_logger.pressure_solve_time);
     }
 
 	template<typename T> void FlowSolver<T>::Update_P_at_boundaries(T *phi_component)
@@ -2239,7 +2246,6 @@ namespace minicombust::flow
             5. Correct the cell velocities
         */
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
-        performance_logger.my_papi_start();
 		pres_total_time -= MPI_Wtime();
 		int Loop_num = 0;
 		bool Loop_continue = true;
@@ -2333,11 +2339,12 @@ namespace minicombust::flow
 				T Ar = (A_phi.U[cell] != 0.0) ? 1.0 / A_phi.U[cell] : 0.0;
 				T fact = cell_volumes[cell] * Ar;
 
-				phi.P[cell] += 0.2*phi.PP[cell];
+                phi.P[cell] += 0.2*phi.PP[cell];
 
-				phi.U[cell] -= phi_grad.PP[cell].x * fact;
-				phi.V[cell] -= phi_grad.PP[cell].y * fact; 
-				phi.W[cell] -= phi_grad.PP[cell].z * fact;
+                phi.U[cell] -= phi_grad.PP[cell].x * fact;
+                phi.V[cell] -= phi_grad.PP[cell].y * fact; 
+                phi.W[cell] -= phi_grad.PP[cell].z * fact;
+
 			}
 			
 			//Reset Su for the next partial solve.
@@ -2369,8 +2376,6 @@ namespace minicombust::flow
 		
 		update_P(phi.P, phi_grad.P); //Final update of pressure field.
 		pres_total_time += MPI_Wtime();
-
-        performance_logger.my_papi_stop(performance_logger.solve_pres_event_counts, &performance_logger.solve_pres_time);
 	
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) 
 			&& FLOW_SOLVER_FINE_TIME)
@@ -3240,7 +3245,7 @@ namespace minicombust::flow
 			}
         }
 
-        if((timestep_count + 1) % 100 == 0)
+        if((timestep_count + 1) % 10 == 0)
 		{
 			if(mpi_config->particle_flow_rank == 0)
 			{

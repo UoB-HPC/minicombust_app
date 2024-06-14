@@ -42,8 +42,9 @@ namespace minicombust::performance
             int128_t *get_flow_gradients_event_counts;
             int128_t *FGM_lookup_event_counts;
             int128_t *FLUX_event_counts;
-            int128_t *solve_uvw_event_counts;
-            int128_t *solve_pres_event_counts;
+            int128_t *standard_solve_event_count;
+            int128_t *pressure_solve_event_count;
+            int128_t *pressure_setup_event_count;
 
             double position_time = 0.;
             double interpolation_time = 0.;
@@ -54,8 +55,9 @@ namespace minicombust::performance
             double get_flow_gradients_time = 0.;
             double FGM_lookup_time = 0.;
             double FLUX_time = 0.;
-            double solve_uvw_time = 0.;
-            double solve_pres_time = 0.;
+            double standard_solve_time = 0.;
+            double pressure_solve_time = 0.;
+            double pressure_setup_time = 0.;
             double output; 
             
             vector<string> event_names;
@@ -125,15 +127,21 @@ namespace minicombust::performance
                 #endif
                 myfile << endl;
 
-                myfile << "solve_uvw," << solve_uvw_time;
+                myfile << "solve_pressure_mat," << pressure_solve_time;
                 #ifdef PAPI
-                for (int e = 0; e < num_events; e++)    myfile << "," << solve_uvw_event_counts[e];
+                for (int e = 0; e < num_events; e++)    myfile << "," << pressure_solve_event_count[e];
                 #endif
                 myfile << endl;
 
-                myfile << "solve_pres," << solve_pres_time;
+                myfile << "setup_pressure_mat," << pressure_setup_time;
                 #ifdef PAPI
-                for (int e = 0; e < num_events; e++)    myfile << "," << solve_pres_event_counts[e];
+                for (int e = 0; e < num_events; e++)    myfile << "," << pressure_setup_event_count[e];
+                #endif
+                myfile << endl;
+
+                myfile << "solve_standard_mat," << standard_solve_time;
+                #ifdef PAPI
+                for (int e = 0; e < num_events; e++)    myfile << "," << standard_solve_event_count[e];
                 #endif
                 myfile << endl;
 
@@ -368,16 +376,22 @@ namespace minicombust::performance
                     FLUX_event_counts[i] = 0;
                 }
 
-                solve_uvw_event_counts = (int128_t*)malloc(sizeof(int128_t)*num_events);
+                pressure_solve_event_count = (int128_t*)malloc(sizeof(int128_t)*num_events);
                 for (int i = 0; i < num_events; i++) 
                 {
-                    solve_uvw_event_counts[i] = 0;
+                    pressure_solve_event_count[i] = 0;
                 }
 
-                solve_pres_event_counts = (int128_t*)malloc(sizeof(int128_t)*num_events);
+                pressure_setup_event_count = (int128_t*)malloc(sizeof(int128_t)*num_events);
                 for (int i = 0; i < num_events; i++) 
                 {
-                    solve_pres_event_counts[i] = 0;
+                    pressure_setup_event_count[i] = 0;
+                }
+
+                standard_solve_event_count = (int128_t*)malloc(sizeof(int128_t)*num_events);
+                for (int i = 0; i < num_events; i++) 
+                {
+                    standard_solve_event_count[i] = 0;
                 }
 
                 temp_count_store = (int128_t*)malloc(sizeof(int128_t)*num_events);
