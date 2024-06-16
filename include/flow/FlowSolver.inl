@@ -713,7 +713,6 @@ namespace minicombust::flow
         time_stats[time_count]   -= MPI_Wtime(); //4
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
-        
         time_stats[time_count++] += MPI_Wtime();
 
         if (((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) 
@@ -1323,7 +1322,6 @@ namespace minicombust::flow
     {
 		/*Set up A matrix and b vector using PETSc for a sparse linear solve*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_sparse_matrix.\n", mpi_config->rank);
-
         T RURF = 1. / URFactor;
 
 		MatZeroEntries(A);
@@ -1410,15 +1408,21 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::solve_sparse_matrix ( T *phi_component)
     {
+        flow_timings[23] -= MPI_Wtime();
 		/*Solve the linear system Au=b using PETSc*/
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_sparse_matrix.\n", mpi_config->rank);
 
         performance_logger.my_papi_start();
 
         VecZeroEntries(u);
-
-		KSPSolve(ksp, b, u);
-
+        KSPConvergedReason reason;
+        KSPSolve(ksp, b, u);
+        KSPGetConvergedReason(ksp, &reason);
+        if(reason < 0)
+        {
+            printf("ERROR: linear solve failed to converge\n");
+        }
+		
 		PetscInt indx[mesh->local_mesh_size];
 		
 		for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
@@ -1428,6 +1432,7 @@ namespace minicombust::flow
 		VecGetValues(u, mesh->local_mesh_size, indx, phi_component);
 
         performance_logger.my_papi_stop(performance_logger.standard_solve_event_count, &performance_logger.standard_solve_time);
+        flow_timings[23] += MPI_Wtime();
     }
 
     template<typename T> void FlowSolver<T>::calculate_flux_UVW()
@@ -2091,9 +2096,9 @@ namespace minicombust::flow
 					face_mass_fluxes[face] = ratearea*face_areas[face];
 					T FaceFlux = face_mass_fluxes[face]/cell_densities[0]/face_areas[face];
 					
-					phi.U[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).x;
-					phi.V[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).y;
-					phi.W[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).z;
+					phi.U[mesh->local_mesh_size + nhalos + boundary_cell] = mesh->dummy_gas_vel.x;//FaceFlux*normalise(face_normals[face]).x;
+					phi.V[mesh->local_mesh_size + nhalos + boundary_cell] = mesh->dummy_gas_vel.y;//FaceFlux*normalise(face_normals[face]).y;
+					phi.W[mesh->local_mesh_size + nhalos + boundary_cell] = mesh->dummy_gas_vel.z;//FaceFlux*normalise(face_normals[face]).z;
 
 					FlowOut += face_mass_fluxes[face];
 				}
@@ -2112,9 +2117,9 @@ namespace minicombust::flow
 				face_mass_fluxes[face] *= FlowFact[step];
 				step ++;
 				 	
-				phi.U[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
-				phi.V[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
-				phi.W[mesh->local_mesh_size + nhalos + boundary_cell] *= fact; 
+				//phi.U[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
+				//phi.V[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
+				//phi.W[mesh->local_mesh_size + nhalos + boundary_cell] *= fact; 
 
 			
 				const uint64_t block_cell0 = mesh->faces[face].cell0 - mesh->local_cells_disp;
@@ -2168,7 +2173,7 @@ namespace minicombust::flow
     {
 		/*Set up b vector and solve linear system Au=b using PETSc*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_pressure_matrix.\n", mpi_config->rank);
-
+        flow_timings[22] -= MPI_Wtime();
         performance_logger.my_papi_start();
 
 		VecZeroEntries(b);
@@ -2178,11 +2183,17 @@ namespace minicombust::flow
 		{
 			VecSetValue(b, i+mesh->local_cells_disp, S_phi.U[i], INSERT_VALUES);
 		}
-
+		
 		VecAssemblyBegin(b);
         VecAssemblyEnd(b);
 
+        KSPConvergedReason reason;
 		KSPSolve(pressure_ksp, b, u);
+        KSPGetConvergedReason(pressure_ksp, &reason);
+        if(reason < 0)
+        {
+            printf("ERROR: pressure failed to converge\n");
+        }
 
 		PetscInt indx[mesh->local_mesh_size];
         for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
@@ -2192,6 +2203,7 @@ namespace minicombust::flow
         VecGetValues(u, mesh->local_mesh_size, indx, phi.PP);
 
         performance_logger.my_papi_stop(performance_logger.pressure_solve_event_count, &performance_logger.pressure_solve_time);
+        flow_timings[22] += MPI_Wtime();
     }
 
 	template<typename T> void FlowSolver<T>::Update_P_at_boundaries(T *phi_component)
@@ -2246,7 +2258,7 @@ namespace minicombust::flow
             5. Correct the cell velocities
         */
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
-		pres_total_time -= MPI_Wtime();
+        pres_total_time -= MPI_Wtime();
 		int Loop_num = 0;
 		bool Loop_continue = true;
 		T Pressure_correction_max = 0;
@@ -2339,12 +2351,14 @@ namespace minicombust::flow
 				T Ar = (A_phi.U[cell] != 0.0) ? 1.0 / A_phi.U[cell] : 0.0;
 				T fact = cell_volumes[cell] * Ar;
 
-                phi.P[cell] += 0.2*phi.PP[cell];
+                // if(timestep_count == 0)
+                // {
+                //     phi.P[cell] += 0.2*phi.PP[cell];
 
-                phi.U[cell] -= phi_grad.PP[cell].x * fact;
-                phi.V[cell] -= phi_grad.PP[cell].y * fact; 
-                phi.W[cell] -= phi_grad.PP[cell].z * fact;
-
+                //     phi.U[cell] -= phi_grad.PP[cell].x * fact;
+                //     phi.V[cell] -= phi_grad.PP[cell].y * fact; 
+                //     phi.W[cell] -= phi_grad.PP[cell].z * fact;
+                // // }
 			}
 			
 			//Reset Su for the next partial solve.
@@ -3101,6 +3115,7 @@ namespace minicombust::flow
         
 		// Note: After pointer swap, last iterations phi is now in phi.
 		//TODO: Should we be doing this?
+
 		compute_time -= MPI_Wtime();
 		exchange_phi_halos();
 
@@ -3249,17 +3264,17 @@ namespace minicombust::flow
 		{
 			if(mpi_config->particle_flow_rank == 0)
 			{
-				MPI_Reduce(MPI_IN_PLACE, flow_timings, 22, MPI_DOUBLE, MPI_SUM,
+				MPI_Reduce(MPI_IN_PLACE, flow_timings, 24, MPI_DOUBLE, MPI_SUM,
 						   0, mpi_config->particle_flow_world);
-				for(int i = 0; i < 22; i++)
+				for(int i = 0; i < 24; i++)
 				{
 					flow_timings[i] /= mpi_config->particle_flow_world_size;
 				}
-				printf("\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\nCommunication time: %f\nSetup: %f\nFirst loop: %f\ninterp: %f\nsmall loop: %f\nResize send buff: %f\nResize cell part: %f\nSecond loop: %f\nthrid loop: %f\nresize node array: %f\nGet Neighbours %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10],flow_timings[11],flow_timings[19],flow_timings[12],flow_timings[13],flow_timings[14],flow_timings[15],flow_timings[16],flow_timings[17],flow_timings[18],flow_timings[20],flow_timings[21]);
+				printf("\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\nCommunication time: %f\nSetup: %f\nFirst loop: %f\ninterp: %f\nsmall loop: %f\nResize send buff: %f\nResize cell part: %f\nSecond loop: %f\nthrid loop: %f\nresize node array: %f\nGet Neighbours %f\nPressure solve: %f\nNormal solve: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10],flow_timings[11],flow_timings[19],flow_timings[12],flow_timings[13],flow_timings[14],flow_timings[15],flow_timings[16],flow_timings[17],flow_timings[18],flow_timings[20],flow_timings[21],flow_timings[22],flow_timings[23]);
 			}
 			else
 			{
-				MPI_Reduce(flow_timings, nullptr, 22, MPI_DOUBLE, MPI_SUM,
+				MPI_Reduce(flow_timings, nullptr, 24, MPI_DOUBLE, MPI_SUM,
 						   0, mpi_config->particle_flow_world);
 			}
 		}
