@@ -1403,6 +1403,7 @@ __global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows
             if(block_cell0 >= local_mesh_size)
             {
 				phi_index0 = boundary_map->find(faces[face].cell0);
+				// printf("phi_index0 %lu", phi_index0);
             }
             else
             {
@@ -1428,6 +1429,8 @@ __global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows
             if(block_cell1 >= local_mesh_size)
             {
 				phi_index1 = boundary_map->find(faces[face].cell1);
+				// printf("phi_index1 %lu", phi_index1);
+
             }
             else
             {
@@ -1438,6 +1441,8 @@ __global__ void kernel_setup_pressure_matrix(uint64_t local_mesh_size, int *rows
             col_indices[tmp_nnz] = faces[true_face].cell0;
             values[tmp_nnz] = face_fields[true_face].cell0;
 		}
+		// if ( col_indices[tmp_nnz] >= local_mesh_size )
+		// 	printf("col_indices[%lu] %lu > local_mesh_size %lu\n", tmp_nnz, col_indices[tmp_nnz], local_mesh_size );
 		tmp_nnz += 1;
 
 	}

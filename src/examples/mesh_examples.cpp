@@ -566,7 +566,7 @@ Mesh<double> *load_mesh(MPI_Config *mpi_config, vec<double> mesh_dim, vec<uint64
 
     MPI_Barrier(mpi_config->world);
 
-    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, shmem_points, shmem_cells, faces, cell_faces, shmem_cell_neighbours, shmem_cells_per_point, num_blocks, shmem_cell_disps, shmem_point_disps, block_element_disp, block_dim, num_boundary_cells, boundary_cells, num_boundary_points, boundary_points, boundary_types);
+    Mesh<double> *mesh = new Mesh<double>(mpi_config, num_points, num_cubes, cell_size, faces_size, faces_per_cell, shmem_points, shmem_cells, faces, cell_faces, shmem_cell_neighbours, shmem_cells_per_point, num_blocks, shmem_cell_disps, shmem_point_disps, block_element_disp, block_dim, num_boundary_cells, boundary_cells, num_boundary_points, boundary_points, boundary_types, mesh_dim);
 
     return mesh;
 }

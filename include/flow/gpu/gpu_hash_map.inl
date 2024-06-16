@@ -6,19 +6,22 @@ class Hash_map
 		uint64_t current_elements;
 		uint64_t map_size;
 		int rank;
+		const bool no_hash;
 	public:
 
 	__device__ __forceinline__ void insert(uint64_t key, uint64_t value);
 	__device__ __forceinline__ uint64_t find(uint64_t key);
 	__device__ __forceinline__ void print();
 
-	Hash_map(int rank, uint64_t size, uint64_t *keys, uint64_t *values) : rank(rank), keys(keys), values(values)
+	Hash_map(int rank, uint64_t size, uint64_t *keys, uint64_t *values, bool no_hash) : rank(rank), keys(keys), values(values), no_hash(no_hash)
 	{
 		current_elements = 0;
 		map_size = size;
-
-		cudaMemset(keys,    -1, sizeof(uint64_t) * size);
-		cudaMemset(values,  -1, sizeof(uint64_t) * size);
+		if (!no_hash)
+		{
+			cudaMemset(keys,    -1, sizeof(uint64_t) * size);
+			cudaMemset(values,  -1, sizeof(uint64_t) * size);
+		}
 	}
 };
 
@@ -64,6 +67,8 @@ __device__ __forceinline__ void Hash_map::insert(uint64_t key, uint64_t value)
 	uint64_t tries = 0;
 	// uint64_t location = key & (map_size-1);
 
+	if (no_hash)  return;
+
 	uint64_t location = gen_hash(key, tries++, 0, map_size );
 	uint64_t slots_checked = 0;
 
@@ -108,6 +113,8 @@ __device__ __forceinline__ uint64_t Hash_map::find(uint64_t key)
 
 	uint64_t location = gen_hash(key, tries++, 0, map_size );
 	uint64_t slots_checked = 0;
+
+	if (no_hash)  return key;
 
 	while(keys[location] != key)
 	{

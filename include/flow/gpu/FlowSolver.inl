@@ -1105,11 +1105,18 @@ namespace minicombust::flow
 
 		calculate_mass_flux();
 		//wait for flux happens in C kernel.
-
+		size_t free_mem, total;
+		cudaMemGetInfo( &free_mem, &total );
+		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0)
+		{
+			printf("GPU memory %lu free of %lu\n", free_mem, total);
+		}
 		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
 		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("calculate_mass_flux\n");
 		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
+		if (mpi_config->particle_flow_rank == 0)
+		
 
 
 		//C_kernel_print(gpu_S_phi.U, mesh->local_mesh_size);
@@ -1127,6 +1134,11 @@ namespace minicombust::flow
 		C_kernel_setup_pressure_matrix(block_count, thread_count, mesh->local_mesh_size, rows_ptr, col_indices, mesh->local_cells_disp, (gpu_Face<uint64_t> *) gpu_faces, boundary_map.size(), gpu_boundary_hash_map, gpu_boundary_map_values, (gpu_Face<T> *) gpu_face_fields, values, mesh->mesh_size, mesh->faces_per_cell, gpu_cell_faces, nnz, gpu_face_mass_fluxes, gpu_A_phi, gpu_S_phi);
 		gpuErrchk( cudaPeekAtLastError() );
 
+		cudaMemGetInfo( &free_mem, &total );
+		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0)
+		{
+			printf("GPU memory %lu free of %lu\n", free_mem, total);
+		}
 		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
 		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_setup_pressure_matrix\n");
 		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
@@ -1221,6 +1233,12 @@ namespace minicombust::flow
 
 		C_kernel_Update_P(block_count, thread_count, mesh->faces_size, mesh->local_mesh_size, nhalos, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->mesh_size, gpu_cell_centers, gpu_face_centers, gpu_boundary_types, gpu_phi.P, gpu_phi_grad.P);
 		gpuErrchk( cudaPeekAtLastError() );
+
+		cudaMemGetInfo( &free_mem, &total );
+		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0)
+		{
+			printf("After pressure GPU memory %lu free of %lu\n", free_mem, total);
+		}
 	}
 
 	template<typename T> void FlowSolver<T>::Scalar_solve(int type, T *phi_component, vec<T> *phi_grad_component)
@@ -1469,7 +1487,7 @@ namespace minicombust::flow
 
 		if (mpi_config->particle_flow_rank == 0)
 		{
-		printf("GPU memory %lu free of %lu\n", free_mem, total);
+			printf("GPU memory %lu free of %lu\n", free_mem, total);
 		}
 		
         if (((timestep_count + 1) % 100) == 0)
