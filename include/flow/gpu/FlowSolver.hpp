@@ -596,7 +596,7 @@ namespace minicombust::flow
                 effective_viscosity = visc_lambda; // NOTE: Localise this to cells and boundaries when implementing Turbulence model
 
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up cell data.\n", mpi_config->particle_flow_rank);
-                T gradient_percent = 0.2;
+                T gradient_percent = 0.01;
 
                 #pragma ivdep
                 for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
@@ -604,18 +604,19 @@ namespace minicombust::flow
                     const uint64_t shmem_cell = block_cell + mesh->local_cells_disp - mesh->shmem_cell_disp;
                     const uint64_t *cell_nodes = &mesh->cells[shmem_cell * mesh->cell_size];
 
-                    const T gradient_val = mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x;
+                    // const T gradient_val = mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x;
+                    const T gradient_val = (mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x) / mesh->mesh_dim.x;
 
+                
 
-                    // A_phi.U[block_cell]   = mesh->dummy_gas_vel.x;
-                    A_phi.U[block_cell]   = gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
-                    A_phi.V[block_cell]   = mesh->dummy_gas_vel.y;
-                    A_phi.W[block_cell]   = mesh->dummy_gas_vel.z;
+                    A_phi.U[block_cell]   = 0.0;//gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
+                    A_phi.V[block_cell]   = 0.0;//mesh->dummy_gas_vel.y;
+                    A_phi.W[block_cell]   = 0.0;//mesh->dummy_gas_vel.z;
 				
                     phi.U[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
                     phi.V[block_cell]     = mesh->dummy_gas_vel.y;
                     phi.W[block_cell]     = mesh->dummy_gas_vel.z;
-                    phi.P[block_cell]     = mesh->dummy_gas_pre;
+                    phi.P[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_pre + (1.-gradient_percent) * mesh->dummy_gas_pre;;
 					phi.PP[block_cell]    = 0.0;
 					phi.TE[block_cell]    = mesh->dummy_gas_turbTE;
 					phi.ED[block_cell]    = mesh->dummy_gas_turbED;
@@ -745,8 +746,8 @@ namespace minicombust::flow
 					}
                     else if ( mesh->boundary_types[boundary_cell] == OUTLET )
                     {
-                        // phi.U[block_cell]     = 0.1;
-                        phi.U[block_cell]     = (1. - gradient_percent) * mesh->dummy_gas_vel.x;
+                        // phi.U[block_cell]     = (1. - gradient_percent) * mesh->dummy_gas_vel.x;
+                        phi.U[block_cell]     = mesh->dummy_gas_vel.x;
                         phi.V[block_cell]     = 0.0;
                         phi.W[block_cell]     = 0.0;
                         phi.P[block_cell]     = mesh->dummy_gas_pre;

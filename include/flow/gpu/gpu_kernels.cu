@@ -793,9 +793,13 @@ __global__ void kernel_correct_flow(int *count_out, double *FlowOut, double *Flo
 				face_mass_fluxes[face] = ratearea*face_areas[face];
 				double FaceFlux = face_mass_fluxes[face]/cell_densities[0]/face_areas[face];
 
-				phi.U[local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).x;
-				phi.V[local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).y;
-				phi.W[local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).z;
+				// phi.U[local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).x;
+				// phi.V[local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).y;
+				// phi.W[local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).z;
+
+				phi.U[local_mesh_size + nhalos + boundary_cell] = 50.0;
+				phi.V[local_mesh_size + nhalos + boundary_cell] = 0.0;
+				phi.W[local_mesh_size + nhalos + boundary_cell] = 0.0;
 
 				atomicAdd(FlowOut, face_mass_fluxes[face]);
 			}
@@ -817,9 +821,9 @@ __global__ void kernel_correct_flow2(int *count_out, double *FlowOut, double *Fl
 		{
 			face_mass_fluxes[face] *= *FlowFact;
 	
-			phi.U[local_mesh_size + nhalos + boundary_cell] *= fact;
-			phi.V[local_mesh_size + nhalos + boundary_cell] *= fact;
-			phi.W[local_mesh_size + nhalos + boundary_cell] *= fact;
+			// phi.U[local_mesh_size + nhalos + boundary_cell] *= fact;
+			// phi.V[local_mesh_size + nhalos + boundary_cell] *= fact;
+			// phi.W[local_mesh_size + nhalos + boundary_cell] *= fact;
 
 			const uint64_t block_cell0 = faces[face].cell0 - local_cells_disp;
 			atomicAdd(&S_phi.U[block_cell0], -1 * face_mass_fluxes[face]);
