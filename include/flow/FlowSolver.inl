@@ -18,8 +18,7 @@ namespace minicombust::flow
 	template<class T>void FlowSolver<T>::output_data(uint64_t timestep)
     {
 		VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
-        vtk_writer->write_flow_velocities("out/minicombust", timestep, &phi);
-		vtk_writer->write_flow_pressure("out/minicombust", timestep, &phi);
+        vtk_writer->write_flow("out/flow/minicombust", timestep, &phi);
     }
 	
     template<typename T> inline bool FlowSolver<T>::is_halo ( uint64_t cell )
@@ -28,6 +27,65 @@ namespace minicombust::flow
         return ( cell - mesh->local_cells_disp >= mesh->local_mesh_size );
     }
 
+	template<typename T> void FlowSolver<T>::pack_phi_halo_buffer(phi_vector<T> send_buffer, phi_vector<T> phi, uint64_t *indexes, uint64_t buf_size)
+	{
+		for(uint64_t i = 0; i < buf_size; i++)
+		{
+			send_buffer.U[i]    = phi.U[indexes[i]];
+			send_buffer.V[i]    = phi.V[indexes[i]];
+			send_buffer.W[i]    = phi.W[indexes[i]];
+			send_buffer.P[i]    = phi.P[indexes[i]];
+			send_buffer.TE[i]   = phi.TE[indexes[i]];
+			send_buffer.ED[i]   = phi.ED[indexes[i]];
+			send_buffer.TEM[i]  = phi.TEM[indexes[i]];
+			send_buffer.FUL[i]  = phi.FUL[indexes[i]];
+			send_buffer.PRO[i]  = phi.PRO[indexes[i]];
+			send_buffer.VARF[i] = phi.VARF[indexes[i]];
+			send_buffer.VARP[i] = phi.VARP[indexes[i]];
+		}
+	}
+
+	template<typename T> void FlowSolver<T>::pack_phi_grad_halo_buffer(phi_vector<vec<T>> send_buffer, phi_vector<vec<T>> phi_grad, uint64_t *indexes, uint64_t buf_size)
+    {
+        for(uint64_t i = 0; i < buf_size; i++)
+        {
+            send_buffer.U[i]    = phi_grad.U[indexes[i]];
+            send_buffer.V[i]    = phi_grad.V[indexes[i]];
+            send_buffer.W[i]    = phi_grad.W[indexes[i]];
+            send_buffer.P[i]    = phi_grad.P[indexes[i]];
+            send_buffer.TE[i]   = phi_grad.TE[indexes[i]];
+            send_buffer.ED[i]   = phi_grad.ED[indexes[i]];
+            send_buffer.TEM[i]  = phi_grad.TEM[indexes[i]];
+            send_buffer.FUL[i]  = phi_grad.FUL[indexes[i]];
+            send_buffer.PRO[i]  = phi_grad.PRO[indexes[i]];
+            send_buffer.VARF[i] = phi_grad.VARF[indexes[i]];
+            send_buffer.VARP[i] = phi_grad.VARP[indexes[i]];
+        }
+    }
+
+	template<typename T> void FlowSolver<T>::pack_PP_halo_buffer(phi_vector<T> send_buffer, phi_vector<T> phi, uint64_t *indexes, uint64_t buf_size)
+	{
+		for(uint64_t i = 0; i < buf_size; i++)
+		{
+			send_buffer.PP[i]    = phi.PP[indexes[i]];
+		}
+	}
+
+	template<typename T> void FlowSolver<T>::pack_PP_grad_halo_buffer(phi_vector<vec<T>> send_buffer, phi_vector<vec<T>> phi_grad, uint64_t *indexes, uint64_t buf_size)
+    {
+        for(uint64_t i = 0; i < buf_size; i++)
+        {
+            send_buffer.PP[i]    = phi_grad.PP[indexes[i]];
+        }
+    }
+
+	template<typename T> void FlowSolver<T>::pack_Aphi_halo_buffer(phi_vector<T> send_buffer, phi_vector<T> phi, uint64_t *indexes, uint64_t buf_size)
+	{
+		for(uint64_t i = 0; i < buf_size; i++)
+		{
+			send_buffer.U[i]    = phi.U[indexes[i]];
+		}
+	}
 
     template<typename T> void FlowSolver<T>::exchange_cell_info_halos ()
     {
@@ -61,15 +119,20 @@ namespace minicombust::flow
         MPI_Request recv_requests[halo_ranks.size() * num_requests];
 	
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-		{
-			MPI_Isend(phi_component, 1, halo_mpi_double_datatypes[r], halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
+		{	
+			MPI_Irecv( &phi_component[mesh->local_mesh_size + halo_disps[r]],        halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 3,  mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
 		}
-		
+        
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
 		{
-			MPI_Irecv(&phi_component[mesh->local_mesh_size + halo_disps[r]], halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );	
-		}
+			int bytes_size;
+			MPI_Type_size(halo_mpi_double_datatypes[r], &bytes_size);
 		
+			int elements = halo_sizes[r];
+			pack_PP_halo_buffer(phi_send_buffers[r], phi, halo_indexes[r], (uint64_t)(elements));
+		
+			MPI_Isend( phi_send_buffers[r].PP,    halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 3,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 0] );
+		}
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
         MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);	
 	}
@@ -84,39 +147,32 @@ namespace minicombust::flow
 
         for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
         {
-			MPI_Isend(phi_grad_component, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0]);
-        }
+			MPI_Irecv( &phi_grad_component[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 3, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
+		}
 
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
         {
-			MPI_Irecv(&phi_grad_component[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0]);
+            int bytes_size;
+            MPI_Type_size(halo_mpi_vec_double_datatypes[r], &bytes_size);
+
+            int elements = halo_sizes[r];
+			pack_PP_grad_halo_buffer(phi_grad_send_buffers[r], phi_grad, halo_indexes[r], (uint64_t)(elements));
+			
+			MPI_Isend( phi_grad_send_buffers[r].PP,    3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 3,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 0] );
         }
 
-        MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
+		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
         MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
     }
 
 	template<typename T> void FlowSolver<T>::exchange_grad_halos()
 	{
 		/*Group exchange of most phi gradient vectors over the halos*/
-		int num_requests = 9;
+		int num_requests = 11;
 		
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
         MPI_Request recv_requests[halo_ranks.size() * num_requests];
         
-		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-		{
-			MPI_Isend( phi_grad.U,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-            MPI_Isend( phi_grad.V,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
-            MPI_Isend( phi_grad.W,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
-            MPI_Isend( phi_grad.P,   1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
-            MPI_Isend( phi_grad.TE,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );
-            MPI_Isend( phi_grad.ED,  1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
-            MPI_Isend( phi_grad.TEM, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
-            MPI_Isend( phi_grad.FUL, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] );
-            MPI_Isend( phi_grad.PRO, 1, halo_mpi_vec_double_datatypes[r], halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
-		}
-
 		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
         {
 			MPI_Irecv( &phi_grad.U[mesh->local_mesh_size + halo_disps[r]],   3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
@@ -128,6 +184,29 @@ namespace minicombust::flow
             MPI_Irecv( &phi_grad.TEM[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
             MPI_Irecv( &phi_grad.FUL[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
             MPI_Irecv( &phi_grad.PRO[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
+			MPI_Irecv( &phi_grad.VARF[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
+			MPI_Irecv( &phi_grad.VARP[mesh->local_mesh_size + halo_disps[r]], 3*halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
+		}
+
+		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+		{
+			int bytes_size;
+            MPI_Type_size(halo_mpi_vec_double_datatypes[r], &bytes_size);
+
+            int elements = halo_sizes[r];
+			pack_phi_grad_halo_buffer(phi_grad_send_buffers[r], phi_grad, halo_indexes[r], (uint64_t)(elements));
+
+			MPI_Isend( phi_grad_send_buffers[r].U,    3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 0,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 0] );
+            MPI_Isend( phi_grad_send_buffers[r].V,    3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 1,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 1] );
+            MPI_Isend( phi_grad_send_buffers[r].W,    3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 2,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 2] );
+            MPI_Isend( phi_grad_send_buffers[r].P,    3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 3,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 3] );
+            MPI_Isend( phi_grad_send_buffers[r].TE,   3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 4,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 4] );
+            MPI_Isend( phi_grad_send_buffers[r].ED,   3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 5,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 5] );
+            MPI_Isend( phi_grad_send_buffers[r].TEM,  3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 6,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 6] );
+            MPI_Isend( phi_grad_send_buffers[r].FUL,  3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 7,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 7] );
+            MPI_Isend( phi_grad_send_buffers[r].PRO,  3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 8,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 8] );
+            MPI_Isend( phi_grad_send_buffers[r].VARF, 3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 9,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 9] );
+            MPI_Isend( phi_grad_send_buffers[r].VARP, 3*halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 10,  mpi_config->particle_flow_world,  &send_requests[num_requests*r + 10] );
 		}
 
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
@@ -137,23 +216,10 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::exchange_phi_halos ()
     {
 		/*Group exchange of most phi values over the halos*/
-        int num_requests = 9;
+        int num_requests = 11;
         
 		MPI_Request send_requests[halo_ranks.size() * num_requests];
         MPI_Request recv_requests[halo_ranks.size() * num_requests];
-
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
-            MPI_Isend( phi.U,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-            MPI_Isend( phi.V,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 1, mpi_config->particle_flow_world, &send_requests[num_requests*r + 1] );
-            MPI_Isend( phi.W,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 2, mpi_config->particle_flow_world, &send_requests[num_requests*r + 2] );
-            MPI_Isend( phi.P,        1, halo_mpi_double_datatypes[r],     halo_ranks[r], 3, mpi_config->particle_flow_world, &send_requests[num_requests*r + 3] );
-			MPI_Isend( phi.TE,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 4, mpi_config->particle_flow_world, &send_requests[num_requests*r + 4] );	
-			MPI_Isend( phi.ED,       1, halo_mpi_double_datatypes[r],     halo_ranks[r], 5, mpi_config->particle_flow_world, &send_requests[num_requests*r + 5] );
-			MPI_Isend( phi.TEM,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 6, mpi_config->particle_flow_world, &send_requests[num_requests*r + 6] );
-			MPI_Isend( phi.FUL,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 7, mpi_config->particle_flow_world, &send_requests[num_requests*r + 7] ); 
-			MPI_Isend( phi.PRO,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 8, mpi_config->particle_flow_world, &send_requests[num_requests*r + 8] );
-		}
 
         for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
         {
@@ -166,8 +232,30 @@ namespace minicombust::flow
 			MPI_Irecv( &phi.TEM[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 6, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 6] );
 			MPI_Irecv( &phi.FUL[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 7, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 7] );
 			MPI_Irecv( &phi.PRO[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 8, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 8] );
+			MPI_Irecv( &phi.VARF[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 9, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 9] );
+			MPI_Irecv( &phi.VARP[mesh->local_mesh_size + halo_disps[r]],      halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 10, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 10] );
 		}
-		
+
+		for(uint64_t r = 0; r < halo_ranks.size(); r++ )
+		{
+			int bytes_size;
+			MPI_Type_size(halo_mpi_double_datatypes[r], &bytes_size);
+			int elements = halo_sizes[r];
+			
+			pack_phi_halo_buffer(phi_send_buffers[r], phi, halo_indexes[r], (uint64_t)(elements));
+			
+			MPI_Isend( phi_send_buffers[r].U,    halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 0,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 0] );
+            MPI_Isend( phi_send_buffers[r].V,    halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 1,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 1] );
+            MPI_Isend( phi_send_buffers[r].W,    halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 2,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 2] );
+            MPI_Isend( phi_send_buffers[r].P,    halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 3,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 3] );
+            MPI_Isend( phi_send_buffers[r].TE,   halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 4,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 4] );
+            MPI_Isend( phi_send_buffers[r].ED,   halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 5,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 5] );
+            MPI_Isend( phi_send_buffers[r].TEM,  halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 6,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 6] );
+            MPI_Isend( phi_send_buffers[r].FUL,  halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 7,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 7] );
+            MPI_Isend( phi_send_buffers[r].PRO,  halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 8,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 8] );
+            MPI_Isend( phi_send_buffers[r].VARF, halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 9,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 9] );
+            MPI_Isend( phi_send_buffers[r].VARP, halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 10,  mpi_config->particle_flow_world,  &send_requests[num_requests*r + 10] );	
+		}	
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
         MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
     }
@@ -180,15 +268,22 @@ namespace minicombust::flow
 
         MPI_Request send_requests[halo_ranks.size() * num_requests];
         MPI_Request recv_requests[halo_ranks.size() * num_requests];
-        for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
-        {
-            MPI_Isend( A_phi_component,      1, halo_mpi_double_datatypes[r],     halo_ranks[r], 0, mpi_config->particle_flow_world, &send_requests[num_requests*r + 0] );
-        }
 
         for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
         {
             MPI_Irecv( &A_phi_component[mesh->local_mesh_size + halo_disps[r]],        halo_sizes[r], MPI_DOUBLE, halo_ranks[r], 0, mpi_config->particle_flow_world, &recv_requests[num_requests*r + 0] );
         }
+
+		for ( uint64_t r = 0; r < halo_ranks.size(); r++ )
+        {
+            int bytes_size;
+            MPI_Type_size(halo_mpi_double_datatypes[r], &bytes_size);
+
+            int elements = halo_sizes[r];
+			pack_Aphi_halo_buffer(phi_send_buffers[r], A_phi, halo_indexes[r], (uint64_t)(elements));
+			
+			MPI_Isend( phi_send_buffers[r].U,    halo_sizes[r], MPI_DOUBLE,  halo_ranks[r], 0,   mpi_config->particle_flow_world,  &send_requests[num_requests*r + 0] );
+		}
 		
 		MPI_Waitall(num_requests * halo_ranks.size(), send_requests, MPI_STATUSES_IGNORE);
         MPI_Waitall(num_requests * halo_ranks.size(), recv_requests, MPI_STATUSES_IGNORE);
@@ -201,7 +296,9 @@ namespace minicombust::flow
         double node_neighbours   = 8;
         const uint64_t cell_size = mesh->cell_size;
 
+        flow_timings[17] -= MPI_Wtime();
         resize_nodes_arrays(node_to_position_map.size() + elements[recv_id] * cell_size + 1 );
+        flow_timings[17] += MPI_Wtime();
 
         #pragma ivdep
         for (int i = 0; i < elements[recv_id]; i++)
@@ -343,23 +440,23 @@ namespace minicombust::flow
             const uint64_t shmem_cell      = cell - mesh->shmem_cell_disp;
 
             flow_aos<T> flow_term;      
-            flow_aos<T> flow_grad_term; 
+            flow_aos<vec<T>> flow_grad_term; 
 
             if (is_halo(cell)) 
             {
-                flow_term.temp          = mesh->dummy_gas_tem;      
-                flow_grad_term.temp     = 0.0;  
+                flow_term.temp          = phi.TEM[boundary_map[cell]];      
+                flow_grad_term.temp     = {0.0, 0.0, 0.0};  
 
                 flow_term.pressure      = phi.P[boundary_map[cell]];      
-                flow_grad_term.pressure = 0.0; 
-
-                // if (!boundary_map.contains(cell)) exit(1);
+                flow_grad_term.pressure = {0.0, 0.0, 0.0}; 
                 
                 flow_term.vel.x         = phi.U[boundary_map[cell]]; 
                 flow_term.vel.y         = phi.V[boundary_map[cell]]; 
                 flow_term.vel.z         = phi.W[boundary_map[cell]]; 
-                // flow_term.vel      = mesh->dummy_gas_vel; 
-                flow_grad_term.vel = { 0.0, 0.0, 0.0 }; 
+             
+                flow_grad_term.vel.x = { 0.0, 0.0, 0.0 }; 
+                flow_grad_term.vel.y = { 0.0, 0.0, 0.0 };
+                flow_grad_term.vel.z = { 0.0, 0.0, 0.0 };
             }
             else
             {
@@ -368,21 +465,16 @@ namespace minicombust::flow
                 flow_term.vel.y    = phi.V[block_cell];
                 flow_term.vel.z    = phi.W[block_cell];
                 flow_term.pressure = phi.P[block_cell];
-                flow_term.temp     = mesh->flow_terms[block_cell].temp;
+                flow_term.temp     = phi.TEM[block_cell];
 
-                flow_grad_term = mesh->flow_grad_terms[block_cell]; 
+                flow_grad_term.vel.x = phi_grad.U[block_cell];
+ 				flow_grad_term.vel.y = phi_grad.V[block_cell];
+ 				flow_grad_term.vel.z = phi_grad.W[block_cell];
+				flow_grad_term.pressure = phi_grad.P[block_cell];
+ 				flow_grad_term.temp     = phi_grad.TEM[block_cell]; 
             }
 
-            // cout << "vel " << print_vec(flow_term.vel) << " pressure " << flow_term.pressure << " temperature " << flow_term.temp << endl;
-
-
             const vec<T> cell_centre         = mesh->cell_centers[shmem_cell];
-
-            // check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      cell );
-            // check_flow_field_exit ( "INTERP NODAL ERROR: Flow grad value", &flow_grad_term, &mesh->dummy_flow_field_grad, cell );
-
-            // if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      cell );
-            // if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow grad value", &flow_grad_term, &mesh->dummy_flow_field_grad, cell );
 
             #pragma ivdep
             for (uint64_t n = 0; n < cell_size; n++)
@@ -395,7 +487,9 @@ namespace minicombust::flow
 
                     interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
                     interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-                    interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[node_id]].vel.x      += (flow_term.vel.x      + dot_product(flow_grad_term.vel.x,      direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[node_id]].vel.y      += (flow_term.vel.y      + dot_product(flow_grad_term.vel.y,      direction)) / node_neighbours;
+                    interp_node_flow_fields[node_to_position_map[node_id]].vel.z      += (flow_term.vel.z      + dot_product(flow_grad_term.vel.z,      direction)) / node_neighbours;
                 }
             }
         }
@@ -405,12 +499,15 @@ namespace minicombust::flow
     {
 		/*Collect and send cell values to particle solve and receive
 		  values from particle solve.*/
+        flow_timings[11] -= MPI_Wtime();
         int time_count = 0;
         time_stats[time_count]  -= MPI_Wtime(); //0
         unordered_neighbours_set[0].clear();
         node_to_position_map.clear();
         new_cells_set.clear();
         ranks.clear();
+
+        memset(mesh->particle_terms, 0, sizeof(particle_aos<T>)*mesh->local_mesh_size);
 
         for (uint64_t i = 0; i < local_particle_node_sets.size(); i++)
         {
@@ -421,8 +518,8 @@ namespace minicombust::flow
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //1
-        static double time0=0., time1=0., time2=0.;
-        static double recv_time1=0., recv_time2=0., recv_time3=0.;
+        // static double time0=0., time1=0., time2=0.;
+        // static double recv_time1=0., recv_time2=0., recv_time3=0.;
 
         int recvs_complete = 0;
         MPI_Ibcast(&recvs_complete, 1, MPI_INT, 0, mpi_config->world, &bcast_request);       
@@ -432,16 +529,21 @@ namespace minicombust::flow
 
         bool  all_processed        = false;
         bool *processed_neighbours = async_locks;
+        flow_timings[11] += MPI_Wtime();
+		flow_timings[12] -= MPI_Wtime();
         while(!all_processed)
         {
-            time0 -= MPI_Wtime(); //1
+            // time0 -= MPI_Wtime(); //1
             if ( message_waiting )
             {
                 uint64_t rank_slot = ranks.size();
                 ranks.push_back(statuses[rank_slot].MPI_SOURCE);
                 MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
 
+                flow_timings[16] -= MPI_Wtime();
                 resize_cell_particle(elements[rank_slot], rank_slot);
+                flow_timings[16] += MPI_Wtime();
+
                 if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
 
                 logger.recieved_cells += elements[rank_slot];
@@ -472,8 +574,8 @@ namespace minicombust::flow
                 continue;
              }
 
-            time0 += MPI_Wtime(); //1
-            time1 -= MPI_Wtime(); //1
+            // time0 += MPI_Wtime(); //1
+            // time1 -= MPI_Wtime(); //1
             
             all_processed = true;
             for ( uint64_t p = 0; p < ranks.size(); p++ )
@@ -485,7 +587,10 @@ namespace minicombust::flow
                 {
                     if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
                     
+                    flow_timings[21] -= MPI_Wtime();
                     get_neighbour_cells (p);
+                    flow_timings[21] += MPI_Wtime();
+
                     processed_neighbours[p] = true;
 
                 }
@@ -493,34 +598,30 @@ namespace minicombust::flow
                 all_processed &= processed_neighbours[p];
             }
 
-            time1 += MPI_Wtime(); //1
-            time2 -= MPI_Wtime(); //1
+            // time1 += MPI_Wtime(); //1
+            // time2 -= MPI_Wtime(); //1
 
             MPI_Test ( &bcast_request, &recvs_complete, MPI_STATUS_IGNORE );
             MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
 
             if ( FLOW_SOLVER_DEBUG && recvs_complete ) if(recvs_complete) printf("\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
             all_processed = all_processed & !message_waiting & recvs_complete;
-			time2 += MPI_Wtime(); //1
+			// time2 += MPI_Wtime(); //1
         }
 
+        flow_timings[12] += MPI_Wtime();
         logger.reduced_recieved_cells += new_cells_set.size();
 
         if ( FLOW_SOLVER_DEBUG ) printf("\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
-
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //3
         
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //4
-        
+        flow_timings[13] -= MPI_Wtime();
         interpolate_to_nodes ();
+        flow_timings[13] += MPI_Wtime();
 
+		flow_timings[14] -= MPI_Wtime();
         // Send size of reduced neighbours of cells back to ranks.
         uint64_t neighbour_point_size = node_to_position_map.size();
 
@@ -531,16 +632,21 @@ namespace minicombust::flow
         {
             max_send_buffer_size += local_particle_node_sets[p].size();
         }
+        flow_timings[14] += MPI_Wtime();
+
+		flow_timings[15] -= MPI_Wtime();
         resize_send_buffers_nodes_arrays (max_send_buffer_size);
+        flow_timings[15] += MPI_Wtime();
 
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //5
+        time_stats[time_count]   -= MPI_Wtime(); //3
 
+        flow_timings[17] -= MPI_Wtime();
         uint64_t ptr_disp = 0;
         bool *processed_cell_fields = async_locks;
         for (uint64_t p = 0; p < ranks.size(); p++)
         {
-            recv_time1  -= MPI_Wtime();
+            // recv_time1  -= MPI_Wtime();
             uint64_t local_disp = 0;
             #pragma ivdep
             for ( uint64_t node : local_particle_node_sets[p] )
@@ -550,8 +656,8 @@ namespace minicombust::flow
                 local_disp++;
                 
             }
-            recv_time1  += MPI_Wtime();
-            recv_time2  -= MPI_Wtime();
+            // recv_time1  += MPI_Wtime();
+            // recv_time2  -= MPI_Wtime();
 
             MPI_Isend ( send_buffers_interp_node_indexes + ptr_disp,     local_disp, MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
             MPI_Isend ( send_buffers_interp_node_flow_fields + ptr_disp, local_disp, mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
@@ -559,11 +665,13 @@ namespace minicombust::flow
 
             processed_cell_fields[p] = false;
 
-            recv_time2  += MPI_Wtime();
+            // recv_time2  += MPI_Wtime();
         }
+        flow_timings[17] += MPI_Wtime();
         
-        recv_time3  -= MPI_Wtime();
+        // recv_time3  -= MPI_Wtime();
 
+        flow_timings[18] -= MPI_Wtime();
         if ( FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0 )  printf("\tFlow Rank %d: Posted sends.\n", mpi_config->rank);
 
         all_processed = false;
@@ -592,8 +700,9 @@ namespace minicombust::flow
             }
             if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
         }
+        flow_timings[18] += MPI_Wtime();
 
-        recv_time3 += MPI_Wtime();
+        // recv_time3 += MPI_Wtime();
 
         MPI_Waitall(send_requests.size() - 2, send_requests.data(), MPI_STATUSES_IGNORE); // Check field values later on!
 
@@ -601,16 +710,9 @@ namespace minicombust::flow
 
         MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //6
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //7
-
-        time_stats[time_count++] += MPI_Wtime();
-        time_stats[time_count]   -= MPI_Wtime(); //8
+        time_stats[time_count]   -= MPI_Wtime(); //4
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
-        
         time_stats[time_count++] += MPI_Wtime();
 
         if (((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) 
@@ -650,8 +752,8 @@ namespace minicombust::flow
         for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
         {
             const uint64_t cell = block_cell + mesh->local_cells_disp;
-			MatZeroEntries(grad_A);
-			VecZeroEntries(grad_b);
+			T data_A[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}}; 
+            T data_b[] = {0.0, 0.0, 0.0};
             for ( uint64_t f = 0; f < mesh->faces_per_cell; f++ )
             {
                 const uint64_t face  = mesh->cell_faces[block_cell * mesh->faces_per_cell + f];
@@ -688,36 +790,24 @@ namespace minicombust::flow
 					dX = face_centers[face] - mesh->cell_centers[shmem_cell0];
                 }
 			
-				MatSetValue(grad_A, 0, 0, (dX.x * dX.x), ADD_VALUES);
-				MatSetValue(grad_A, 1, 0, (dX.x * dX.y), ADD_VALUES);
-				MatSetValue(grad_A, 2, 0, (dX.x * dX.z), ADD_VALUES);
+				data_A[0][0] += (dX.x * dX.x);
+                data_A[1][0] += (dX.x * dX.y);
+                data_A[2][0] += (dX.x * dX.z);
 
-				MatSetValue(grad_A, 0, 1, (dX.y * dX.x), ADD_VALUES);
-				MatSetValue(grad_A, 1, 1, (dX.y * dX.y), ADD_VALUES);
-				MatSetValue(grad_A, 2, 1, (dX.y * dX.z) ,ADD_VALUES);
+                data_A[0][1] += (dX.y * dX.x);
+                data_A[1][1] += (dX.y * dX.y);
+                data_A[2][1] += (dX.y * dX.z);
 
-				MatSetValue(grad_A, 0, 2, (dX.z * dX.x), ADD_VALUES);
-				MatSetValue(grad_A, 1, 2, (dX.z * dX.y), ADD_VALUES);
-				MatSetValue(grad_A, 2, 2, (dX.z * dX.z), ADD_VALUES);
+                data_A[0][2] += (dX.z * dX.x);
+                data_A[1][2] += (dX.z * dX.y);
+                data_A[2][2] += (dX.z * dX.z);
 
-				VecSetValue(grad_b, 0, (dX.x * dPhi), ADD_VALUES);
-				VecSetValue(grad_b, 1, (dX.y * dPhi), ADD_VALUES);
-				VecSetValue(grad_b, 2, (dX.z * dPhi), ADD_VALUES);
+                data_b[0] += (dX.x * dPhi);
+                data_b[1] += (dX.y * dPhi);
+                data_b[2] += (dX.z * dPhi);
             }
 
-			T time = 0;
-		
-			time -=	MPI_Wtime(); 
-			MatAssemblyBegin(grad_A, MAT_FINAL_ASSEMBLY);
-			MatAssemblyEnd(grad_A, MAT_FINAL_ASSEMBLY);
-
-			VecAssemblyBegin(grad_b);
-			VecAssemblyEnd(grad_b);
-
-			KSPSolve(grad_ksp, grad_b, grad_u);
-			PetscInt indx[3] = {0, 1, 2};
-			VecGetValues(grad_u, 3, indx, &phi_grad_component[block_cell].x);
-			time += MPI_Wtime();
+            solve(data_A, data_b, &phi_grad_component[block_cell].x);
         }
 	}
 
@@ -798,7 +888,6 @@ namespace minicombust::flow
     {
 		/*High level function to limit the gradient of variables*/
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function limit_phi_gradients.\n", mpi_config->rank);
-		printf("coming here\n");
 		limit_phi_gradient(phi.U, phi_grad.U);
 		limit_phi_gradient(phi.V, phi_grad.V);
 		limit_phi_gradient(phi.W, phi_grad.W);
@@ -812,27 +901,50 @@ namespace minicombust::flow
 		limit_phi_gradient(phi.VARP, phi_grad.VARP);
 	}
 
+    template<typename T> void FlowSolver<T>::solve(T A[][3], T *b, T *out)
+    {
+        T det = (A[0][0] * (A[1][1] * A[2][2] - A[2][1] * A[1][2])) -
+                    (A[0][1] * (A[1][0] * A[2][2] - A[2][0] * A[1][2])) +
+                    (A[0][2] * (A[1][0] * A[2][1] - A[2][0] * A[1][1]));
+
+        T invdet = 0.0;
+        if(det != 0.0){
+            invdet = 1 / det;
+        }
+
+        out[0] = (b[0] * invdet * (A[1][1] * A[2][2] - A[2][1] * A[1][2])) +
+                 (b[1] * invdet * (A[2][1] * A[0][2] - A[0][1] * A[2][2])) +
+                 (b[2] * invdet * (A[0][1] * A[1][2] - A[1][1] * A[0][2]));
+        out[1] = (b[0] * invdet * (A[1][2] * A[2][0] - A[1][0] * A[2][2])) +
+                 (b[1] * invdet * (A[0][0] * A[2][2] - A[2][0] * A[0][2])) +
+                 (b[2] * invdet * (A[1][0] * A[0][2] - A[0][0] * A[1][2]));
+        out[2] = (b[0] * invdet * (A[1][0] * A[2][1] - A[2][0] * A[1][1])) +
+                 (b[1] * invdet * (A[2][0] * A[0][1] - A[0][0] * A[2][1])) +
+                 (b[2] * invdet * (A[0][0] * A[1][1] - A[1][0] * A[0][1]));
+    }
+
     template<typename T> void FlowSolver<T>::get_phi_gradients ()
     {
 		/*Use the Least Squares method to find the gradient of most phi components*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function get_phi_gradients.\n", mpi_config->rank);
         // NOTE: Currently Least squares is the only method supported
 
+        performance_logger.my_papi_start();
         for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
         {
             const uint64_t cell = block_cell + mesh->local_cells_disp;
-            MatZeroEntries(grad_A);
-            VecZeroEntries(grad_bU);
-			VecZeroEntries(grad_bV);
-			VecZeroEntries(grad_bW);
-			VecZeroEntries(grad_bP);
-			VecZeroEntries(grad_bTE);
-			VecZeroEntries(grad_bED);
-			VecZeroEntries(grad_bT);
-			VecZeroEntries(grad_bFU);
-			VecZeroEntries(grad_bPR);
-			VecZeroEntries(grad_bVFU);
-			VecZeroEntries(grad_bVPR);
+            T data_A[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}}; 
+            T data_bU[] = {0.0, 0.0, 0.0};
+            T data_bV[] = {0.0, 0.0, 0.0}; 
+            T data_bW[] = {0.0, 0.0, 0.0};
+            T data_bP[] = {0.0, 0.0, 0.0};
+            T data_bTE[] = {0.0, 0.0, 0.0};
+            T data_bED[] = {0.0, 0.0, 0.0};
+            T data_bT[] = {0.0, 0.0, 0.0};
+            T data_bFU[] = {0.0, 0.0, 0.0};
+            T data_bPR[] = {0.0, 0.0, 0.0};
+            T data_bVFU[] = {0.0, 0.0, 0.0};
+            T data_bVPR[] = {0.0, 0.0, 0.0};
 
             for ( uint64_t f = 0; f < mesh->faces_per_cell; f++ )
             {
@@ -884,150 +996,76 @@ namespace minicombust::flow
 					dVPR = phi.VARP[mesh->local_mesh_size + nhalos + boundary_cell] - phi.VARP[block_cell0];
 
                     dX = face_centers[face] - mesh->cell_centers[shmem_cell0];
-					//NOTE: This is required to prevent really small dX due to machine precision.
-					if(abs(dX.x) < 0.0000000000000003)
-					{
-						dX.x = 0.0;
-					}
-					if(abs(dX.y) < 0.0000000000000003)
-                    {
-                        dX.y = 0.0;
-                    }
-					if(abs(dX.z) < 0.0000000000000003)
-                    {
-                        dX.z = 0.0;
-                    }	
                 }
-				
-				MatSetValue(grad_A, 0, 0, (dX.x * dX.x), ADD_VALUES);
-                MatSetValue(grad_A, 1, 0, (dX.x * dX.y), ADD_VALUES);
-                MatSetValue(grad_A, 2, 0, (dX.x * dX.z), ADD_VALUES);
+				data_A[0][0] += (dX.x * dX.x);
+                data_A[1][0] += (dX.x * dX.y);
+                data_A[2][0] += (dX.x * dX.z);
 
-                MatSetValue(grad_A, 0, 1, (dX.y * dX.x), ADD_VALUES);
-                MatSetValue(grad_A, 1, 1, (dX.y * dX.y), ADD_VALUES);
-                MatSetValue(grad_A, 2, 1, (dX.y * dX.z) ,ADD_VALUES);
+                data_A[0][1] += (dX.y * dX.x);
+                data_A[1][1] += (dX.y * dX.y);
+                data_A[2][1] += (dX.y * dX.z);
 
-                MatSetValue(grad_A, 0, 2, (dX.z * dX.x), ADD_VALUES);
-                MatSetValue(grad_A, 1, 2, (dX.z * dX.y), ADD_VALUES);
-                MatSetValue(grad_A, 2, 2, (dX.z * dX.z), ADD_VALUES);	
+                data_A[0][2] += (dX.z * dX.x);
+                data_A[1][2] += (dX.z * dX.y);
+                data_A[2][2] += (dX.z * dX.z);
+        
+    		    data_bU[0] += (dX.x * dU);
+                data_bU[1] += (dX.y * dU);
+                data_bU[2] += (dX.z * dU);
 
-                VecSetValue(grad_bU, 0, (dX.x * dU), ADD_VALUES);
-                VecSetValue(grad_bU, 1, (dX.y * dU), ADD_VALUES);
-                VecSetValue(grad_bU, 2, (dX.z * dU), ADD_VALUES);
+		        data_bV[0] += (dX.x * dV);
+                data_bV[1] += (dX.y * dV);
+                data_bV[2] += (dX.z * dV);
 
-				VecSetValue(grad_bV, 0, (dX.x * dV), ADD_VALUES);
-                VecSetValue(grad_bV, 1, (dX.y * dV), ADD_VALUES);
-                VecSetValue(grad_bV, 2, (dX.z * dV), ADD_VALUES);
-		
-				VecSetValue(grad_bW, 0, (dX.x * dW), ADD_VALUES);
-                VecSetValue(grad_bW, 1, (dX.y * dW), ADD_VALUES);
-                VecSetValue(grad_bW, 2, (dX.z * dW), ADD_VALUES);
+                data_bW[0] += (dX.x * dW);
+                data_bW[1] += (dX.y * dW);
+                data_bW[2] += (dX.z * dW);
 
-				VecSetValue(grad_bP, 0, (dX.x * dP), ADD_VALUES);
-                VecSetValue(grad_bP, 1, (dX.y * dP), ADD_VALUES);
-                VecSetValue(grad_bP, 2, (dX.z * dP), ADD_VALUES);
+                data_bP[0] += (dX.x * dP);
+                data_bP[1] += (dX.y * dP);
+                data_bP[2] += (dX.z * dP);
 
-				VecSetValue(grad_bTE, 0, (dX.x * dTE), ADD_VALUES);
-                VecSetValue(grad_bTE, 1, (dX.y * dTE), ADD_VALUES);
-                VecSetValue(grad_bTE, 2, (dX.z * dTE), ADD_VALUES);
+                data_bTE[0] += (dX.x * dTE);
+                data_bTE[1] += (dX.y * dTE);
+                data_bTE[2] += (dX.z * dTE);
 
-				VecSetValue(grad_bED, 0, (dX.x * dED), ADD_VALUES);
-                VecSetValue(grad_bED, 1, (dX.y * dED), ADD_VALUES);
-                VecSetValue(grad_bED, 2, (dX.z * dED), ADD_VALUES);
+		        data_bED[0] += (dX.x * dED);
+                data_bED[1] += (dX.y * dED);
+                data_bED[2] += (dX.z * dED);
 
-				VecSetValue(grad_bT, 0, (dX.x * dT), ADD_VALUES);
-                VecSetValue(grad_bT, 1, (dX.y * dT), ADD_VALUES);
-                VecSetValue(grad_bT, 2, (dX.z * dT), ADD_VALUES);
+                data_bT[0] += (dX.x * dT);
+                data_bT[1] += (dX.y * dT);
+                data_bT[2] += (dX.z * dT);
 
-				VecSetValue(grad_bFU, 0, (dX.x * dFU), ADD_VALUES);
-                VecSetValue(grad_bFU, 1, (dX.y * dFU), ADD_VALUES);
-                VecSetValue(grad_bFU, 2, (dX.z * dFU), ADD_VALUES);
+                data_bFU[0] += (dX.x * dFU);
+                data_bFU[1] += (dX.y * dFU);
+                data_bFU[2] += (dX.z * dFU);
 
-				VecSetValue(grad_bPR, 0, (dX.x * dPR), ADD_VALUES);
-                VecSetValue(grad_bPR, 1, (dX.y * dPR), ADD_VALUES);
-                VecSetValue(grad_bPR, 2, (dX.z * dPR), ADD_VALUES);
+                data_bPR[0] += (dX.x * dPR);
+                data_bPR[1] += (dX.y * dPR);
+                data_bPR[2] += (dX.z * dPR);
 
-				VecSetValue(grad_bVFU, 0, (dX.x * dVFU), ADD_VALUES);
-                VecSetValue(grad_bVFU, 1, (dX.y * dVFU), ADD_VALUES);
-                VecSetValue(grad_bVFU, 2, (dX.z * dVFU), ADD_VALUES);
+                data_bVFU[0] += (dX.x * dVFU);
+                data_bVFU[1] += (dX.y * dVFU);
+                data_bVFU[2] += (dX.z * dVFU);
 
-				VecSetValue(grad_bVPR, 0, (dX.x * dVPR), ADD_VALUES);
-                VecSetValue(grad_bVPR, 1, (dX.y * dVPR), ADD_VALUES);
-                VecSetValue(grad_bVPR, 2, (dX.z * dVPR), ADD_VALUES);
+                data_bVPR[0] += (dX.x * dVPR);
+                data_bVPR[1] += (dX.y * dVPR);
+                data_bVPR[2] += (dX.z * dVPR);
             }
-
-
-			MatAssemblyBegin(grad_A, MAT_FINAL_ASSEMBLY);
-            MatAssemblyEnd(grad_A, MAT_FINAL_ASSEMBLY);
-
-			VecAssemblyBegin(grad_bU);
-            VecAssemblyEnd(grad_bU);
-		
-			VecAssemblyBegin(grad_bV);
-            VecAssemblyEnd(grad_bV);
-
-			VecAssemblyBegin(grad_bW);
-            VecAssemblyEnd(grad_bW);
-
-			VecAssemblyBegin(grad_bP);
-            VecAssemblyEnd(grad_bP);
-
-			VecAssemblyBegin(grad_bTE);
-            VecAssemblyEnd(grad_bTE);
-
-			VecAssemblyBegin(grad_bED);
-            VecAssemblyEnd(grad_bED);
-
-			VecAssemblyBegin(grad_bT);
-            VecAssemblyEnd(grad_bT);
-
-			VecAssemblyBegin(grad_bFU);
-            VecAssemblyEnd(grad_bFU);
-
-			VecAssemblyBegin(grad_bPR);
-            VecAssemblyEnd(grad_bPR);
-
-			VecAssemblyBegin(grad_bVFU);
-            VecAssemblyEnd(grad_bVFU);
-
-			VecAssemblyBegin(grad_bVPR);
-            VecAssemblyEnd(grad_bVPR);
-
-			PetscInt indx[3] = {0, 1, 2};
-
-			KSPSolve(grad_ksp, grad_bU, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.U[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bV, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.V[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bW, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.W[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bP, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.P[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bTE, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.TE[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bED, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.ED[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bT, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.TEM[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bFU, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.FUL[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bPR, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.PRO[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bVFU, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.VARF[block_cell].x);
-
-			KSPSolve(grad_ksp, grad_bVPR, grad_u);
-            VecGetValues(grad_u, 3, indx, &phi_grad.VARP[block_cell].x);
+            solve(data_A, data_bU, &phi_grad.U[block_cell].x);
+	        solve(data_A, data_bV, &phi_grad.V[block_cell].x);
+	        solve(data_A, data_bW, &phi_grad.W[block_cell].x);
+	        solve(data_A, data_bP, &phi_grad.P[block_cell].x);
+	        solve(data_A, data_bTE, &phi_grad.TE[block_cell].x);
+	        solve(data_A, data_bED, &phi_grad.ED[block_cell].x);
+	        solve(data_A, data_bT, &phi_grad.TEM[block_cell].x);
+	        solve(data_A, data_bFU, &phi_grad.FUL[block_cell].x);
+	        solve(data_A, data_bPR, &phi_grad.PRO[block_cell].x);
+	        solve(data_A, data_bVFU, &phi_grad.VARF[block_cell].x);
+	        solve(data_A, data_bVPR, &phi_grad.VARP[block_cell].x);
         }
+        performance_logger.my_papi_stop(performance_logger.get_flow_gradients_event_counts, &performance_logger.get_flow_gradients_time);
     }
 
 	template<typename T> void FlowSolver<T>::precomp_mass_flux()
@@ -1238,19 +1276,20 @@ namespace minicombust::flow
           this would be the source term in the progress variable
           calculation*/
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function FGM_look_up.\n", mpi_config->rank);
+        performance_logger.my_papi_start();
 		#pragma ivdep
 		for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 		{
 			//find location in table based on variables
 			//simulate finding the closest two points in the database
-			int progress_1 = min(100, (int) floor(phi.PRO[i]*100));
-			int progress_2 = min(100, (int) ceil(phi.PRO[i]*100));
-			int var_progress_1 = min(100, (int) floor(phi.VARP[i]*100));
-			int var_progress_2 = min(100, (int) ceil(phi.VARP[i]*100));
-			int fuel_1 = min(100, (int) floor(phi.FUL[i]*100));
-			int fuel_2 = min(100, (int) ceil(phi.FUL[i]*100));
-			int var_fuel_1 = min(100, (int) floor(phi.VARF[i]*100));
-			int var_fuel_2 = min(100, (int) ceil(phi.VARF[i]*100));	
+			int progress_1 = max(0, min(99, (int) floor(phi.PRO[i]*100)));
+			int progress_2 = max(0, min(99, (int) ceil(phi.PRO[i]*100)));
+			int var_progress_1 = max(0, min(99, (int) floor(phi.VARP[i]*100)));
+			int var_progress_2 = max(0, min(99, (int) ceil(phi.VARP[i]*100)));
+			int fuel_1 = max(0, min(99, (int) floor(phi.FUL[i]*100)));
+			int fuel_2 = max(0, min(99, (int) ceil(phi.FUL[i]*100)));
+			int var_fuel_1 = max(0, min(99, (int) floor(phi.VARF[i]*100)));
+			int var_fuel_2 = max(0, min(99, (int) ceil(phi.VARF[i]*100)));	
 			
 			//interpolate table values to find given value
 			//simulate using the average of the 16
@@ -1276,13 +1315,13 @@ namespace minicombust::flow
 			sum /= 16;
 			S_phi.U[i] = sum;
 		}
+        performance_logger.my_papi_stop(performance_logger.FGM_lookup_event_counts, &performance_logger.FGM_lookup_time);
 	}	
 
     template<typename T> void FlowSolver<T>::setup_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component )
     {
 		/*Set up A matrix and b vector using PETSc for a sparse linear solve*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_sparse_matrix.\n", mpi_config->rank);
-
         T RURF = 1. / URFactor;
 
 		MatZeroEntries(A);
@@ -1369,12 +1408,21 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::solve_sparse_matrix ( T *phi_component)
     {
+        flow_timings[23] -= MPI_Wtime();
 		/*Solve the linear system Au=b using PETSc*/
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_sparse_matrix.\n", mpi_config->rank);
+
+        performance_logger.my_papi_start();
+
         VecZeroEntries(u);
-
-		KSPSolve(ksp, b, u);
-
+        KSPConvergedReason reason;
+        KSPSolve(ksp, b, u);
+        KSPGetConvergedReason(ksp, &reason);
+        if(reason < 0)
+        {
+            printf("ERROR: linear solve failed to converge\n");
+        }
+		
 		PetscInt indx[mesh->local_mesh_size];
 		
 		for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
@@ -1382,6 +1430,9 @@ namespace minicombust::flow
 			indx[i] = i+mesh->local_cells_disp;
 		}
 		VecGetValues(u, mesh->local_mesh_size, indx, phi_component);
+
+        performance_logger.my_papi_stop(performance_logger.standard_solve_event_count, &performance_logger.standard_solve_time);
+        flow_timings[23] += MPI_Wtime();
     }
 
     template<typename T> void FlowSolver<T>::calculate_flux_UVW()
@@ -1389,6 +1440,7 @@ namespace minicombust::flow
 		/*Calculate the face based Velocity flux values for UVW*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_flux_UVW.\n", mpi_config->rank);
 
+        performance_logger.my_papi_start();
         T pe0 =  9999.;
         T pe1 = -9999.;
 
@@ -1619,7 +1671,7 @@ namespace minicombust::flow
                     Up.z = phi.W[block_cell0] - WFace;
 
                     const T dp = dot_product( Up , normalise(face_normals[face]));
-                    vec<T> Ut  = Up - dp * normalise(face_normals[face]);
+                    vec<T> Ut  = Up - (dp * normalise(face_normals[face]));
 
                     const T Uvel = abs(Ut.x) + abs(Ut.y) + abs(Ut.z);
                     
@@ -1657,6 +1709,7 @@ namespace minicombust::flow
                 }
             }   
         }
+        performance_logger.my_papi_stop(performance_logger.FLUX_event_counts, &performance_logger.FLUX_time);
     }
 
     template<typename T> void FlowSolver<T>::calculate_UVW()
@@ -1668,7 +1721,7 @@ namespace minicombust::flow
 		  4. Account transent forces
 		  5. Solve each velocity component*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_UVW.\n", mpi_config->rank);
-		
+
         vel_total_time -= MPI_Wtime(); 
 
         // Initialise A_phi and S_phi vectors to 0.
@@ -1692,7 +1745,7 @@ namespace minicombust::flow
         // Gravity force (enthalpy)
 		for ( uint64_t i = 0 ; i < mesh->local_mesh_size; i++)
 		{
-			T BodyForce = -0.001*cell_densities[i]*cell_volumes[i]*(phi.TEM[i] - 273);
+			T BodyForce = -0.001*cell_densities[i]*cell_volumes[i]*(phi.TEM[i] - mesh->dummy_gas_tem);
 			T gravity[3] = {0.0, -9.81, 0.0};
 			
 			S_phi.U[i] += gravity[0]*BodyForce;
@@ -1727,9 +1780,9 @@ namespace minicombust::flow
 		//RHS from particle code
 		for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 		{
-			S_phi.U[i] += mesh->particle_terms[i].momentum.x;
-			S_phi.V[i] += mesh->particle_terms[i].momentum.y;
-			S_phi.W[i] += mesh->particle_terms[i].momentum.z;
+			//S_phi.U[i] += mesh->particle_terms[i].momentum.x;
+			//S_phi.V[i] += mesh->particle_terms[i].momentum.y;
+			//S_phi.W[i] += mesh->particle_terms[i].momentum.z;
 		}
 
 		const double UVW_URFactor = 0.5;
@@ -1807,9 +1860,6 @@ namespace minicombust::flow
 		/*Update the mass flux for the internal faces. Used for the incremental
         update of the velocity and pressure fields*/
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function update_mass_flux.\n", mpi_config->rank);
-		
-		//exchange_phi_halos();
-		//MPI_Barrier(mpi_config->particle_flow_world);
 
 		for ( uint64_t face = 0; face < mesh->faces_size; face++ )
 		{
@@ -1892,8 +1942,8 @@ namespace minicombust::flow
 				uint64_t phi_index0 = ( block_cell0 >= mesh->local_mesh_size ) ? boundary_map[mesh->faces[face].cell0] : block_cell0;
                 uint64_t phi_index1 = ( block_cell1 >= mesh->local_mesh_size ) ? boundary_map[mesh->faces[face].cell1] : block_cell1;
 
-				//TODO:fix this.
-                const T lambda0 = 0.5;//face_lambdas[face];
+				
+                const T lambda0 = face_lambdas[face];
                 const T lambda1 = 1.0 - lambda0;
                 
 				const vec<T> dUdXac  =   phi_grad.U[phi_index0] * lambda0 + phi_grad.U[phi_index1] * lambda1;
@@ -2011,8 +2061,11 @@ namespace minicombust::flow
 				areaout += face_areas[face];
 			}
 		}
-		MPI_Allreduce(MPI_IN_PLACE, &FlowIn, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
+
+        MPI_Allreduce(MPI_IN_PLACE, &FlowIn, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
 		MPI_Allreduce(MPI_IN_PLACE, &FlowOut, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
+		MPI_Allreduce(MPI_IN_PLACE, &areaout, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
+
 		T FlowFact[count_out];
 		int step = 0;
 		for(int i = 0; i < count_out; i++){
@@ -2043,9 +2096,9 @@ namespace minicombust::flow
 					face_mass_fluxes[face] = ratearea*face_areas[face];
 					T FaceFlux = face_mass_fluxes[face]/cell_densities[0]/face_areas[face];
 					
-					phi.U[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).x;
-					phi.V[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).y;
-					phi.W[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).z;
+					phi.U[mesh->local_mesh_size + nhalos + boundary_cell] = mesh->dummy_gas_vel.x;//FaceFlux*normalise(face_normals[face]).x;
+					phi.V[mesh->local_mesh_size + nhalos + boundary_cell] = mesh->dummy_gas_vel.y;//FaceFlux*normalise(face_normals[face]).y;
+					phi.W[mesh->local_mesh_size + nhalos + boundary_cell] = mesh->dummy_gas_vel.z;//FaceFlux*normalise(face_normals[face]).z;
 
 					FlowOut += face_mass_fluxes[face];
 				}
@@ -2064,10 +2117,11 @@ namespace minicombust::flow
 				face_mass_fluxes[face] *= FlowFact[step];
 				step ++;
 				 	
-				phi.U[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
-				phi.V[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
-				phi.W[mesh->local_mesh_size + nhalos + boundary_cell] *= fact; 
+				//phi.U[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
+				//phi.V[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
+				//phi.W[mesh->local_mesh_size + nhalos + boundary_cell] *= fact; 
 
+			
 				const uint64_t block_cell0 = mesh->faces[face].cell0 - mesh->local_cells_disp;
 				S_phi.U[block_cell0] -= face_mass_fluxes[face];
 			}
@@ -2076,6 +2130,7 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::setup_pressure_matrix()
     {
+        performance_logger.my_papi_start();
 		/*Set up a sparse A matrix using PETSc for the pressure solve*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_pressure_matrix.\n", mpi_config->rank);
 
@@ -2111,46 +2166,44 @@ namespace minicombust::flow
 
 		MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
         MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+        performance_logger.my_papi_stop(performance_logger.pressure_setup_event_count, &performance_logger.pressure_setup_time);
     }
 
     template<typename T> void FlowSolver<T>::solve_pressure_matrix()
     {
-		/*Set up b vectory and solve linear system Au=b using PETSc*/
+		/*Set up b vector and solve linear system Au=b using PETSc*/
         if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_pressure_matrix.\n", mpi_config->rank);
+        flow_timings[22] -= MPI_Wtime();
+        performance_logger.my_papi_start();
 
 		VecZeroEntries(b);
 		VecZeroEntries(u);
-		int flag = 1;
-		//NOTE: We do this since the solution falls apart with RHS vector close to zero.
-		//TODO: Compare zero with RHS using confidence if that is acceptable use that.
+
         for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 		{
-			if(abs(S_phi.U[i]) > 0.0000000001)
-			{
-				flag = 0;
-			}
 			VecSetValue(b, i+mesh->local_cells_disp, S_phi.U[i], INSERT_VALUES);
-		}
-
-		if(flag == 1)
-		{
-			for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
-			{
-				VecSetValue(b, i+mesh->local_cells_disp, 0.0, INSERT_VALUES);
-			}
 		}
 		
 		VecAssemblyBegin(b);
         VecAssemblyEnd(b);
-	
-		KSPSolve(ksp, b, u);
-		
+
+        KSPConvergedReason reason;
+		KSPSolve(pressure_ksp, b, u);
+        KSPGetConvergedReason(pressure_ksp, &reason);
+        if(reason < 0)
+        {
+            printf("ERROR: pressure failed to converge\n");
+        }
+
 		PetscInt indx[mesh->local_mesh_size];
         for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
         {
             indx[i] = i+mesh->local_cells_disp;
         }
         VecGetValues(u, mesh->local_mesh_size, indx, phi.PP);
+
+        performance_logger.my_papi_stop(performance_logger.pressure_solve_event_count, &performance_logger.pressure_solve_time);
+        flow_timings[22] += MPI_Wtime();
     }
 
 	template<typename T> void FlowSolver<T>::Update_P_at_boundaries(T *phi_component)
@@ -2205,7 +2258,7 @@ namespace minicombust::flow
             5. Correct the cell velocities
         */
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
-		pres_total_time -= MPI_Wtime();
+        pres_total_time -= MPI_Wtime();
 		int Loop_num = 0;
 		bool Loop_continue = true;
 		T Pressure_correction_max = 0;
@@ -2234,7 +2287,7 @@ namespace minicombust::flow
 		pres_flux_time -= MPI_Wtime();
 		calculate_mass_flux();  //Compute the uncorrected mass fluxes at every faces
 		pres_flux_time += MPI_Wtime();
-
+		
 		pres_setup_time -= MPI_Wtime();
 		setup_pressure_matrix(); //Set up Sp and Ap for the initial pressure solve.
 		pres_setup_time += MPI_Wtime();
@@ -2298,11 +2351,14 @@ namespace minicombust::flow
 				T Ar = (A_phi.U[cell] != 0.0) ? 1.0 / A_phi.U[cell] : 0.0;
 				T fact = cell_volumes[cell] * Ar;
 
-				phi.P[cell] += 0.2*phi.PP[cell];
+                // if(timestep_count == 0)
+                // {
+                //     phi.P[cell] += 0.2*phi.PP[cell];
 
-				phi.U[cell] -= phi_grad.PP[cell].x * fact;
-				phi.V[cell] -= phi_grad.PP[cell].y * fact; 
-				phi.W[cell] -= phi_grad.PP[cell].z * fact;
+                //     phi.U[cell] -= phi_grad.PP[cell].x * fact;
+                //     phi.V[cell] -= phi_grad.PP[cell].y * fact; 
+                //     phi.W[cell] -= phi_grad.PP[cell].z * fact;
+                // // }
 			}
 			
 			//Reset Su for the next partial solve.
@@ -2793,7 +2849,7 @@ namespace minicombust::flow
 		{
 			for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 			{
-				S_phi.U[i] += mesh->particle_terms[i].energy;
+				//S_phi.U[i] += mesh->particle_terms[i].energy;
 			}
 		}
 
@@ -2837,7 +2893,8 @@ namespace minicombust::flow
 				{
 					for( uint64_t j = 0; j < 6; j++)
 					{
-						uint64_t neighbour = mesh->cell_neighbours[(i - mesh->shmem_cell_disp) * mesh->faces_per_cell + j];
+                        uint64_t cell = i + mesh->local_cells_disp;
+						uint64_t neighbour = mesh->cell_neighbours[(cell - mesh->shmem_cell_disp) * mesh->faces_per_cell + j];
 						if(neighbour < mesh->mesh_size) 
 						{
 							//if internal
@@ -3003,17 +3060,10 @@ namespace minicombust::flow
 
             
             MPI_Barrier (mpi_config->particle_flow_world);
-
-            // printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(loggers[mpi_config->particle_flow_rank].recieved_cells / timesteps), round(loggers[mpi_config->particle_flow_rank].sent_nodes / timesteps));
-
-            // MPI_Barrier (mpi_config->particle_flow_world);
-            cout << endl;
         }
         else
         {
             MPI_Barrier (mpi_config->particle_flow_world);
-            // printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(logger.recieved_cells / timesteps), round(logger.sent_nodes / timesteps));
-            // MPI_Barrier (mpi_config->particle_flow_world);
         }
 
         MPI_Barrier(mpi_config->world);
@@ -3065,15 +3115,20 @@ namespace minicombust::flow
         
 		// Note: After pointer swap, last iterations phi is now in phi.
 		//TODO: Should we be doing this?
+
 		compute_time -= MPI_Wtime();
 		exchange_phi_halos();
 
+        flow_timings[0] -= MPI_Wtime();
 		get_phi_gradients();
+        flow_timings[0] += MPI_Wtime();
 
 		if(FLOW_SOLVER_LIMIT_GRAD)
 			limit_phi_gradients();
 
+        flow_timings[11] -= MPI_Wtime();
 		exchange_grad_halos();
+        flow_timings[11] += MPI_Wtime();
 	
 		if(timestep_count == 0)
 		{
@@ -3082,36 +3137,56 @@ namespace minicombust::flow
 		}
 	
 		compute_time += MPI_Wtime();
-        
+        flow_timings[1] -= MPI_Wtime();
 		if ((timestep_count % comms_timestep) == 0)  
             update_flow_field();
-
+        flow_timings[1] += MPI_Wtime();
 		compute_time -= MPI_Wtime();
 		
+        flow_timings[2] -= MPI_Wtime();
 		calculate_UVW();
+        flow_timings[2] += MPI_Wtime();
 
+        flow_timings[11] -= MPI_Wtime();
 		exchange_phi_halos(); //exchange new UVW values.
+        flow_timings[11] += MPI_Wtime();
 
+        flow_timings[3] -= MPI_Wtime();	
         calculate_pressure();
-		
+		flow_timings[3] += MPI_Wtime();
+
+        flow_timings[4] -= MPI_Wtime();
 		//Turbulence solve
 		Scalar_solve(TERBTE, phi.TE, phi_grad.TE);
+        flow_timings[4] += MPI_Wtime();
+        flow_timings[5] -= MPI_Wtime();
 		Scalar_solve(TERBED, phi.ED, phi_grad.ED);
-		
+        flow_timings[5] += MPI_Wtime();
+
+        flow_timings[6] -= MPI_Wtime();
 		//temperature solve
 		Scalar_solve(TEMP, phi.TEM, phi_grad.TEM);
+        flow_timings[6] += MPI_Wtime();
 
+        flow_timings[7] -= MPI_Wtime();
 		//fuel mixture fraction solve
 		Scalar_solve(FUEL, phi.FUL, phi_grad.FUL);
+        flow_timings[7] += MPI_Wtime();
 
+        flow_timings[8] -= MPI_Wtime();
 		//rection progression solve
 		Scalar_solve(PROG, phi.PRO, phi_grad.PRO);
+        flow_timings[8] += MPI_Wtime();
 	
+        flow_timings[9] -= MPI_Wtime();
 		//Solve Variance of mixture fraction as transport equ
 		Scalar_solve(VARFU, phi.VARF, phi_grad.VARF);
+        flow_timings[9] += MPI_Wtime();
 
+        flow_timings[10] -= MPI_Wtime();
 		//Solve Variance of progression as trasnport equ
 		Scalar_solve(VARPR, phi.VARP, phi_grad.VARP);
+        flow_timings[10] += MPI_Wtime();
 
 		fgm_lookup_time -= MPI_Wtime();
 		//Look up results from the FGM look-up table
@@ -3184,6 +3259,25 @@ namespace minicombust::flow
 				sca_total_time[i] = 0.0;
 			}
         }
+
+        if((timestep_count + 1) % 10 == 0)
+		{
+			if(mpi_config->particle_flow_rank == 0)
+			{
+				MPI_Reduce(MPI_IN_PLACE, flow_timings, 24, MPI_DOUBLE, MPI_SUM,
+						   0, mpi_config->particle_flow_world);
+				for(int i = 0; i < 24; i++)
+				{
+					flow_timings[i] /= mpi_config->particle_flow_world_size;
+				}
+				printf("\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\nCommunication time: %f\nSetup: %f\nFirst loop: %f\ninterp: %f\nsmall loop: %f\nResize send buff: %f\nResize cell part: %f\nSecond loop: %f\nthrid loop: %f\nresize node array: %f\nGet Neighbours %f\nPressure solve: %f\nNormal solve: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10],flow_timings[11],flow_timings[19],flow_timings[12],flow_timings[13],flow_timings[14],flow_timings[15],flow_timings[16],flow_timings[17],flow_timings[18],flow_timings[20],flow_timings[21],flow_timings[22],flow_timings[23]);
+			}
+			else
+			{
+				MPI_Reduce(flow_timings, nullptr, 24, MPI_DOUBLE, MPI_SUM,
+						   0, mpi_config->particle_flow_world);
+			}
+		}
         
 		if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
         timestep_count++;

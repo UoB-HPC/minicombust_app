@@ -208,12 +208,12 @@ namespace minicombust::particles
                 {
                     vec<T> cyclindrical_velocity_lower = cyclindrical_velocity_mean - 0.05 * cyclindrical_velocity_mean;
                     vec<T> cyclindrical_velocity_upper = cyclindrical_velocity_mean + 0.05 * cyclindrical_velocity_mean;
-                    cyclindrical_velocity_lower.y = 0;
-                    cyclindrical_velocity_upper.y = 2 * M_PI;
+                    //cyclindrical_velocity_lower.y = 0;
+                    //cyclindrical_velocity_upper.y = 2 * M_PI;
 
 
-                    // cyclindrical_velocity_lower.y = (mpi_config->particle_flow_rank + 0) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
-                    // cyclindrical_velocity_upper.y = (mpi_config->particle_flow_rank + 1) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
+                    cyclindrical_velocity_lower.y = (mpi_config->particle_flow_rank + 0) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
+                    cyclindrical_velocity_upper.y = (mpi_config->particle_flow_rank + 1) * (2 * M_PI / (mpi_config->particle_flow_world_size + 1));
 
 
                     vec<T> cyclindrical_position_lower = { inner_injector_radius,      0.0, -0.0001 }; 
@@ -275,7 +275,7 @@ namespace minicombust::particles
                 logger->emitted_particles  += wave_particles_per_timestep ;
             }
 
-            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map, unordered_map<uint64_t, flow_aos<T> *>& node_to_field_address_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, function<void(uint64_t*, uint64_t ***, particle_aos<T> ***)> resize_fn, Particle_Logger *logger)
+            inline void emit_particles_evenly(vector<Particle<T>>& particles, vector<unordered_map<uint64_t, uint64_t>>& cell_particle_field_map, unordered_map<uint64_t, flow_aos<T> *>& node_to_field_address_map,  uint64_t **indexes, particle_aos<T> **indexed_fields, function<void(uint64_t*, uint64_t, uint64_t ***, particle_aos<T> ***)> resize_fn, Particle_Logger *logger)
             {
                 particle_aos<T> zero_field = (particle_aos<T>){(vec<T>){0.0, 0.0, 0.0}, 0.0, 0.0};
                 uint64_t start_cell = mesh->mesh_size * 0.49;
@@ -325,7 +325,7 @@ namespace minicombust::particles
                         elements[block_id]   = cell_particle_field_map[block_id].size() + 1;
                         const uint64_t index = cell_particle_field_map[block_id].size();
 
-                        resize_fn(elements, &indexes, &indexed_fields);
+                        resize_fn(elements, block_id, &indexes, &indexed_fields);
                         
                         // printf("Rank %d block %lu particle is in cell %lu\n", mpi_config->rank, block_id, particle.cell);
                         
