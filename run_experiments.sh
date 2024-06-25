@@ -1,24 +1,31 @@
 #!/bin/bash
 
-export LD_LIBRARY_PATH=/lustre/fsw/coreai_devtech_all/hwaugh/repos/AMGX/install/lib/:$LD_LIBRARY_PATH
+# export LD_LIBRARY_PATH=/lustre/fsw/coreai_devtech_all/hwaugh/repos/AMGX/install/lib/:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/lustre/fsw/coreai_devtech_all/hwaugh/repos/AMGX_vector_upload/install/lib/:$LD_LIBRARY_PATH
 
 kill $(pidof nsys)
 kill $(pidof gpu_minicombust)
 
 # for x in {8,}
+# for x in {2,1}
+# for x in {8,4,2,1}
+# for x in {100,126,159,200,252,318,401,505}
 # for x in {1,}
-# for x in {2,}
 for x in {8,}
 do
 	echo "RUNNING EXPERIMENT with $x GPUS"
 	export MINICOMBUST_GPUS=$x
 	export MINICOMBUST_NODES=1
 
-	export MINICOMBUST_RANKS=$(( x*14 ))
+	export MINICOMBUST_RANKS=$(( MINICOMBUST_GPUS*14 ))
 	export MINICOMBUST_PRANKS=$(( MINICOMBUST_RANKS - MINICOMBUST_GPUS ))
-	export MINICOMBUST_CELLS=304
-	export MINICOMBUST_PARTICLES=140000
-	export MINICOMBUST_ITERS=200
+	# export MINICOMBUST_CELLS=484
+	# export MINICOMBUST_CELLS=383
+	# export MINICOMBUST_CELLS=241
+	# export MINICOMBUST_PARTICLES=280000
+	export MINICOMBUST_CELLS=484
+	export MINICOMBUST_PARTICLES=1040000
+	export MINICOMBUST_ITERS=100
 
 	echo ""	
   	echo "MINICOMBUST_GPUS      $MINICOMBUST_GPUS "

@@ -716,9 +716,11 @@ __global__ void kernel_calculate_mass_flux(uint64_t faces_size, gpu_Face<uint64_
 		}
 		else if(boundary_type == OUTLET)
 		{
-			const vec<double> vel_outward = { phi.U[block_cell0],
-											  phi.V[block_cell0],
-                                              phi.W[block_cell0] };
+			// const vec<double> vel_outward = { phi.U[block_cell0],
+			// 								  phi.V[block_cell0],
+            //                                   phi.W[block_cell0] };
+
+			const vec<double> vel_outward = dummy_gas_vel;
             const double Din = 1.2;
 
             face_mass_fluxes[face] = Din * dot_product(vel_outward, face_normals[face]);
@@ -819,7 +821,7 @@ __global__ void kernel_correct_flow2(int *count_out, double *FlowOut, double *Fl
 		const uint64_t boundary_type = boundary_types[boundary_cell];
 		if(boundary_type == OUTLET)
 		{
-			face_mass_fluxes[face] *= *FlowFact;
+			// face_mass_fluxes[face] *= *FlowFact;
 	
 			// phi.U[local_mesh_size + nhalos + boundary_cell] *= fact;
 			// phi.V[local_mesh_size + nhalos + boundary_cell] *= fact;
@@ -1591,11 +1593,11 @@ __global__ void kernel_update_vel_and_flux(uint64_t faces_size, gpu_Face<uint64_
 		
         if (timestep_count == 0)
         {
-                phi.P[face] += 0.2*phi.PP[face];
+			phi.P[face] += 0.2*phi.PP[face];
 	
-		phi.U[face] -= phi_grad.PP[face].x * fact;
-		phi.V[face] -= phi_grad.PP[face].y * fact;
-		phi.W[face] -= phi_grad.PP[face].z * fact;
+			phi.U[face] -= phi_grad.PP[face].x * fact;
+			phi.V[face] -= phi_grad.PP[face].y * fact;
+			phi.W[face] -= phi_grad.PP[face].z * fact;
         }
 }
 

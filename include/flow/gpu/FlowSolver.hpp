@@ -319,6 +319,9 @@ namespace minicombust::flow
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh, double delta) : mesh(mesh), delta(delta), mpi_config(mpi_config)
             {
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Entered FlowSolver constructor.\n", mpi_config->particle_flow_rank);
+
+                size_t free_sz, total;
+
                
                 mtracker = new MemoryTracker(mpi_config);
 
@@ -374,11 +377,11 @@ namespace minicombust::flow
                 send_buffers_node_index_array_size      = max_storage * sizeof(uint64_t);
                 send_buffers_node_flow_array_size       = max_storage * sizeof(flow_aos<T>);
 
-                gpu_send_buffer_elements = (100 * 80000 / 1) * 8; // (niters * particles_per_iter / particles_per_cell) * 8 nodes_per_cell. 
+                gpu_send_buffer_elements = (100 * 80000 * 4) * 8; // (niters * particles_per_iter / particles_per_cell) * 8 nodes_per_cell. 
                 gpu_send_buffers_node_index_array_size  = gpu_send_buffer_elements * sizeof(uint64_t);
                 gpu_send_buffers_node_flow_array_size   = gpu_send_buffer_elements * sizeof(flow_aos<T>);
 
-                gpu_recv_buffer_elements = (100 * 80000 / 1) ; // (niters * particles_per_iter / particles_per_cell)
+                gpu_recv_buffer_elements = (100 * 80000 * 8) ; // (niters * particles_per_iter / particles_per_cell)
                 gpu_recv_buffers_cell_index_array_size      = gpu_recv_buffer_elements * sizeof(uint64_t);
                 gpu_recv_buffers_cell_particle_array_size   = gpu_recv_buffer_elements * sizeof(particle_aos<T>);
 
@@ -605,18 +608,24 @@ namespace minicombust::flow
                     const uint64_t *cell_nodes = &mesh->cells[shmem_cell * mesh->cell_size];
 
                     // const T gradient_val = mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x;
-                    const T gradient_val = (mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x) / mesh->mesh_dim.x;
+                    // const T gradient_val = (mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x) / mesh->mesh_dim.x;
 
                 
 
-                    A_phi.U[block_cell]   = 0.0;//gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
-                    A_phi.V[block_cell]   = 0.0;//mesh->dummy_gas_vel.y;
-                    A_phi.W[block_cell]   = 0.0;//mesh->dummy_gas_vel.z;
+                    // A_phi.U[block_cell]   = 0.0;//gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
+                    // A_phi.V[block_cell]   = 0.0;//mesh->dummy_gas_vel.y;
+                    // A_phi.W[block_cell]   = 0.0;//mesh->dummy_gas_vel.z;
+
+                    A_phi.U[block_cell]   = mesh->dummy_gas_vel.x;//gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
+                    A_phi.V[block_cell]   = mesh->dummy_gas_vel.y;//mesh->dummy_gas_vel.y;
+                    A_phi.W[block_cell]   = mesh->dummy_gas_vel.z;//mesh->dummy_gas_vel.z;s
 				
-                    phi.U[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
+                    // phi.U[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
+                    phi.U[block_cell]     = mesh->dummy_gas_vel.x;
                     phi.V[block_cell]     = mesh->dummy_gas_vel.y;
                     phi.W[block_cell]     = mesh->dummy_gas_vel.z;
-                    phi.P[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_pre + (1.-gradient_percent) * mesh->dummy_gas_pre;;
+                    // phi.P[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_pre + (1.-gradient_percent) * mesh->dummy_gas_pre;;
+                    phi.P[block_cell]     = mesh->dummy_gas_pre;;
 					phi.PP[block_cell]    = 0.0;
 					phi.TE[block_cell]    = mesh->dummy_gas_turbTE;
 					phi.ED[block_cell]    = mesh->dummy_gas_turbED;
@@ -1099,7 +1108,7 @@ namespace minicombust::flow
 				//Create config for AMGX
 				AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 				AMGX_SAFE_CALL(AMGX_install_signal_handler());
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/AMGX_Solvers/PCGF_CLASSICAL_V_JACOBI.json"));
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/AMGX_Solvers/FGMRES_AGGREGATION_JACOBI.json"));
 				AMGX_SAFE_CALL(AMGX_config_add_parameters(&pressure_cfg, "exception_handling=1"));
 				
 				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "//lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/AMGX_Solvers/PBICGSTAB_NOPREC.json"));
@@ -1109,15 +1118,38 @@ namespace minicombust::flow
 									  &mpi_config->particle_flow_world, 1, &lrank));
 				AMGX_SAFE_CALL(AMGX_resources_create(&pressure_rsrc, pressure_cfg,
                                       &mpi_config->particle_flow_world, 1, &lrank));	
+
+	            cudaMemGetInfo( &free_sz, &total );
+
+                if (mpi_config->particle_flow_rank == 0)
+                {
+                    printf("GPU memory %lu free of %lu before matrix +vector 1\n", free_sz, total);
+                }
 				
 				//Create matrix and vectors for AMGX
 				AMGX_SAFE_CALL(AMGX_matrix_create(&A, main_rsrc, mode));
 				AMGX_SAFE_CALL(AMGX_vector_create(&u, main_rsrc, mode));
 				AMGX_SAFE_CALL(AMGX_vector_create(&b, main_rsrc, mode));
 
+                 cudaMemGetInfo( &free_sz, &total );
+
+                if (mpi_config->particle_flow_rank == 0)
+                {
+                    printf("GPU memory %lu free of %lu before matrix +vector 2\n", free_sz, total);
+                }
+				
+
 				AMGX_SAFE_CALL(AMGX_matrix_create(&pressure_A, pressure_rsrc, mode));
                 AMGX_SAFE_CALL(AMGX_vector_create(&pressure_u, pressure_rsrc, mode));
                 AMGX_SAFE_CALL(AMGX_vector_create(&pressure_b, pressure_rsrc, mode));
+
+                 cudaMemGetInfo( &free_sz, &total );
+
+                if (mpi_config->particle_flow_rank == 0)
+                {
+                    printf("GPU memory %lu free of %lu before solver create\n", free_sz, total);
+                }
+				
 				
 				//Create solvers for AMGX
 				AMGX_SAFE_CALL(AMGX_solver_create(&solver, main_rsrc, mode, cfg));
@@ -1169,12 +1201,11 @@ namespace minicombust::flow
                 performance_logger.init_papi();
                 performance_logger.load_papi_events(mpi_config->rank);
 
-                size_t free, total;
-	            cudaMemGetInfo( &free, &total );
+	            cudaMemGetInfo( &free_sz, &total );
 
                 if (mpi_config->particle_flow_rank == 0)
                 {
-                    printf("GPU memory %lu free of %lu", free, total);
+                    printf("GPU memory %lu free of %lu\n", free_sz, total);
                 }
             }
 
@@ -1548,7 +1579,7 @@ namespace minicombust::flow
             void calculate_mass_flux ();
             void setup_pressure_matrix  ( );
             void solve_pressure_matrix  ( );
-            void calculate_pressure ();
+            void calculate_pressure (int global_timestep);
 			void Update_P_at_boundaries(T *phi_component);
 			void update_mass_flux();
 			void update_P(T *phi_component, vec<T> *phi_grad_component);            

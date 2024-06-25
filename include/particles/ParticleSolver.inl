@@ -152,7 +152,7 @@ namespace minicombust::particles
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_flow_field.\n", mpi_config->rank);
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Sending index sizes.\n", mpi_config->rank);
 
-		MPI_Barrier(mpi_config->world);
+		// MPI_Barrier(mpi_config->world);
 
         uint64_t count = 0;
         for (uint64_t b : active_blocks)
@@ -383,7 +383,7 @@ namespace minicombust::particles
                 total_vector_weight   += weight;
                 total_scalar_weight   += weight_magnitude;
 
-				if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Node value", node_to_field_address_map[node], &mesh->dummy_flow_field, node );
+				// if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Node value", node_to_field_address_map[node], &mesh->dummy_flow_field, node );
                 interp_gas_vel        += weight           * node_to_field_address_map[node]->vel;
                 interp_gas_pre        += weight_magnitude * node_to_field_address_map[node]->pressure;
                 interp_gas_tem        += weight_magnitude * node_to_field_address_map[node]->temp;
@@ -393,7 +393,7 @@ namespace minicombust::particles
             particles[p].local_flow_value.pressure      = interp_gas_pre / total_scalar_weight;
             particles[p].local_flow_value.temp          = interp_gas_tem / total_scalar_weight;
 
-			if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Interpolated particle value ", &particles[p].local_flow_value, &mesh->dummy_flow_field, p );
+			// if (PARTICLE_SOLVER_DEBUG) check_flow_field_exit ( "SOLVE SPRAY: Interpolated particle value ", &particles[p].local_flow_value, &mesh->dummy_flow_field, p );
         }
 
         if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Finished interpolation. Starting spray computation.\n", mpi_config->rank);

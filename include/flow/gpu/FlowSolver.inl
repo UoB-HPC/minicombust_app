@@ -544,7 +544,7 @@ namespace minicombust::flow
 		// for (uint64_t rank_slot = 0; rank_slot < 13; rank_slot++)
 		// 	node_starts[rank_slot] = -1;
 
-		MPI_Barrier(mpi_config->world);
+		// MPI_Barrier(mpi_config->world);
 
         while(!all_processed)
         {
@@ -778,7 +778,9 @@ namespace minicombust::flow
         // }
 
 
-        // MPI_Barrier(mpi_config->particle_flow_world);
+        MPI_Barrier(mpi_config->particle_flow_world);
+		// MPI_Barrier(mpi_config->world);
+
 
 		nvtxRangePop();
         recv_time3 += MPI_Wtime();
@@ -1081,7 +1083,7 @@ namespace minicombust::flow
 		gpuErrchk( cudaPeekAtLastError() );
 	}
 
-	template<typename T> void FlowSolver<T>::calculate_pressure()
+	template<typename T> void FlowSolver<T>::calculate_pressure(int global_timestep)
 	{
 		int Loop_num = 0;
 		bool Loop_continue = true;
@@ -1475,395 +1477,401 @@ namespace minicombust::flow
 		/*High level function to advance the flow solver one timestep.*/
         if (FLOW_SOLVER_DEBUG)  printf("\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
 
-        int comms_timestep = 1;
+        int comms_timestep = 3;
 		if ( mpi_config->particle_flow_rank == 0 )
 			printf("timestep %lu\n",timestep_count + 1);
 
-		
-		// mtracker->print_usage();
 
-		size_t free_mem, total;
-		cudaMemGetInfo( &free_mem, &total );
-
-		if (mpi_config->particle_flow_rank == 0)
+		for (int subiter = 0; subiter < 3; subiter++)
 		{
-			printf("GPU memory %lu free of %lu\n", free_mem, total);
-		}
-		
-        if (((timestep_count + 1) % 100) == 0)
-        {
-            double arr_usage  = ((double)get_array_memory_usage()) / 1.e9;
-            double stl_usage  = ((double)get_stl_memory_usage())   / 1.e9 ;
-            double mesh_usage = ((double)mesh->get_memory_usage()) / 1.e9 ;
-            double arr_usage_total, stl_usage_total, mesh_usage_total;
+			// mtracker->print_usage();
 
-            MPI_Reduce(&arr_usage,  &arr_usage_total,  1, MPI_DOUBLE, 
-						MPI_SUM, 0, mpi_config->particle_flow_world);
-            MPI_Reduce(&stl_usage,  &stl_usage_total,  1, MPI_DOUBLE, 
-						MPI_SUM, 0, mpi_config->particle_flow_world);
-            MPI_Reduce(&mesh_usage, &mesh_usage_total, 1, MPI_DOUBLE, 
-						MPI_SUM, 0, mpi_config->particle_flow_world);
+			size_t free_mem, total;
+			cudaMemGetInfo( &free_mem, &total );
 
-            if ( mpi_config->particle_flow_rank == 0 )
-            {
-                printf("Timestep %6lu Flow     mem (TOTAL %8.3f GB)" 
-						"(AVG %8.3f GB) \n", timestep_count + 1, 
-						(arr_usage_total + stl_usage_total + mesh_usage_total), 
-						(arr_usage_total + stl_usage_total + mesh_usage_total) / 
-						mpi_config->particle_flow_world_size);
-
-            }
-        }
-		
-
-		//NOTE: comparing the parallel and serial version 
-		//We get idential A and b with UVW but not idential results
-		//This is probably due to parallel solvers??
-		//We can track through all the differences in the pressure
-		//Solve to these differences.
-        
-		// Note: After pointer swap, last iterations phi is now in phi.
-		//TODO: Should we be doing this?
-
-		nvtxRangePush("exchange_phi_halos");
-
-		compute_time -= MPI_Wtime();
-		exchange_phi_halos();
-		nvtxRangePop();
-
-
-		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("exchange_A_halos\n");
-		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
-		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
-
-		nvtxRangePush("get_phi_gradients");
-
-		flow_timings[0] -= MPI_Wtime();
-		get_phi_gradients();
-		flow_timings[0] += MPI_Wtime();
-		nvtxRangePop();
-
-
-		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("get_phi_gradients\n");
-		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
-		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
-
-		//C_kernel_vec_print(gpu_phi_grad.U, mesh->local_mesh_size);
-
-//		if(FLOW_SOLVER_LIMIT_GRAD)
-//			limit_phi_gradients();
-		nvtxRangePush("exchange_grad_halos");
-
-		exchange_grad_halos();
-		nvtxRangePop();
-
-	
-		nvtxRangePush("set_up_field");
-
-		if(timestep_count == 0)
-		{
-			set_up_field();
-			set_up_fgm_table();
-		}
-		nvtxRangePop();
-
-		compute_time += MPI_Wtime();
-      
-		flow_timings[1] -= MPI_Wtime();
-
-		if ((timestep_count % comms_timestep) == 0)
-		{
-
-			int thread_count = min((uint64_t) 32, (mesh->local_mesh_size + nhalos));
-			int block_count = max(1,(int) ceil((double) (mesh->local_mesh_size + nhalos)/(double) thread_count));
-			// int thread_count = min((uint64_t) 32, (mesh->local_mesh_size));
-			// int block_count = max(1,(int) ceil((double) (mesh->local_mesh_size)/(double) thread_count));
-
-  			// C_kernel_interpolate_init_boundaries(block_count1, thread_count1, gpu_phi_nodes, gpu_cells_per_point, global_node_to_local_node_map.size());
-			// gpuErrchk( cudaPeekAtLastError() );
-
-			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_interpolate_phi_to_nodes mesh_size + halos %lu mesh_size %lu halos %lu\n", mesh->local_mesh_size + nhalos, mesh->local_mesh_size , nhalos);
-
-			C_kernel_interpolate_phi_to_nodes(block_count, thread_count, gpu_phi, gpu_phi_grad, gpu_phi_nodes, gpu_local_nodes, gpu_node_hash_map, gpu_boundary_hash_map, gpu_cells_per_point, gpu_local_cells, gpu_cell_centers, mesh->local_mesh_size, mesh->local_cells_disp, global_node_to_local_node_map.size(), nhalos);
-			gpuErrchk( cudaPeekAtLastError() );
-
-
-
-		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_interpolate_phi_to_nodes\n");
-		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
-		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
-
-			// gpuErrchk(cudaMemcpyAsync(phi.U, gpu_phi.U,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0)); // Asynchronous memcpy to default stream
-            // gpuErrchk(cudaMemcpyAsync(phi.V, gpu_phi.V,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi.W, gpu_phi.W,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi.P, gpu_phi.P,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi.TEM, gpu_phi.TEM, phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));  
-			// gpuErrchk( cudaPeekAtLastError() );
-
-
-			// gpuErrchk(cudaMemcpyAsync(phi_nodes.U,   gpu_phi_nodes.U,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0)); // Asynchronous memcpy to default stream
-            // gpuErrchk(cudaMemcpyAsync(phi_nodes.V,   gpu_phi_nodes.V,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi_nodes.W,   gpu_phi_nodes.W,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi_nodes.P,   gpu_phi_nodes.P,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-            // gpuErrchk(cudaMemcpyAsync(phi_nodes.TEM, gpu_phi_nodes.TEM, phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));  
-            update_flow_field();
-
-			
-			
-		}
-
-		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("update_flow_field\n");
-		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
-		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
-
-		flow_timings[1] += MPI_Wtime();
-		compute_time -= MPI_Wtime();
-
-		flow_timings[2] -= MPI_Wtime();
-		nvtxRangePush("calculate_UVW");
-
-		calculate_UVW();
-		nvtxRangePop();
-		flow_timings[2] += MPI_Wtime();
-
-		nvtxRangePush("exchange_phi_halos");
-
-
-		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("calculate_UVW\n");
-		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
-		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
-
-		exchange_phi_halos(); //exchange new UVW values.
-		nvtxRangePop();
-
-	
-		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("exchange_phi_halos\n");
-		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
-		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
-
-		//printf("We finish pressure\n");
-/*
-		if(((timestep_count + 1) % 1) == 0)
-        {
-            gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.TE, gpu_phi.TE, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.ED, gpu_phi.ED, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.FUL, gpu_phi.FUL, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.PRO, gpu_phi.PRO, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.VARF, gpu_phi.VARF, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.VARP, gpu_phi.VARP, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            if(mpi_config->particle_flow_rank == 0)
-            {
-                printf("Result is:\n");
-            }
-            for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
-            {
-                if(i == mpi_config->particle_flow_rank)
-                {
-                    for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
-                    {
-                        const uint64_t cell = block_cell + mesh->local_cells_disp;
-                        printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
-                        printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
-                    }
-                }
-                MPI_Barrier(mpi_config->particle_flow_world);
-            }
-        }
-*/
-
-		nvtxRangePush("calculate_pressure");
-
-		flow_timings[3] -= MPI_Wtime();
-		calculate_pressure(); 
-		flow_timings[3] += MPI_Wtime();
-
-		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("calculate_pressure\n");
-		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
-		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
-
-
-		nvtxRangePop();
-
-		nvtxRangePush("Scalar_solve");
-
-		flow_timings[4] -= MPI_Wtime();
-		//Turbulence solve
-		Scalar_solve(TERBTE, gpu_phi.TE, gpu_phi_grad.TE);
-		flow_timings[4] += MPI_Wtime();
-        flow_timings[5] -= MPI_Wtime();
-		Scalar_solve(TERBED, gpu_phi.ED, gpu_phi_grad.ED);
-		flow_timings[5] += MPI_Wtime();		
-
-		flow_timings[6] -= MPI_Wtime();
-		//temperature solve
-		Scalar_solve(TEMP, gpu_phi.TEM, gpu_phi_grad.TEM);
-		flow_timings[6] += MPI_Wtime();
-
-		flow_timings[7] -= MPI_Wtime();
-		//fuel mixture fraction solve
-		Scalar_solve(FUEL, gpu_phi.FUL, gpu_phi_grad.FUL);
-		flow_timings[7] += MPI_Wtime();		
-
-		flow_timings[8] -= MPI_Wtime();
-		//rection progression solve
-		Scalar_solve(PROG, gpu_phi.PRO, gpu_phi_grad.PRO);
-		flow_timings[8] += MPI_Wtime();
-
-		flow_timings[9] -= MPI_Wtime();
-		//Solve Variance of mixture fraction as transport equ
-		Scalar_solve(VARFU, gpu_phi.VARF, gpu_phi_grad.VARF);
-		flow_timings[9] += MPI_Wtime();
-
-		flow_timings[10] -= MPI_Wtime();
-		//Solve Variance of progression as trasnport equ
-		Scalar_solve(VARPR, gpu_phi.VARP, gpu_phi_grad.VARP);
-		flow_timings[10] += MPI_Wtime();		
-
-		nvtxRangePop();
-
-		nvtxRangePush("FGM_look_up");
-
-		fgm_lookup_time -= MPI_Wtime();
-		//Look up results from the FGM look-up table
-		FGM_look_up();
-		fgm_lookup_time += MPI_Wtime();
-		compute_time += MPI_Wtime();
-
-		nvtxRangePop();
-
-
-
-	/*	if(((timestep_count + 1) % 1) == 0)
-		{
-			gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			gpuErrchk(cudaMemcpy(phi.TE, gpu_phi.TE, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			gpuErrchk(cudaMemcpy(phi.ED, gpu_phi.ED, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			gpuErrchk(cudaMemcpy(phi.FUL, gpu_phi.FUL, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			gpuErrchk(cudaMemcpy(phi.PRO, gpu_phi.PRO, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			gpuErrchk(cudaMemcpy(phi.VARF, gpu_phi.VARF, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			gpuErrchk(cudaMemcpy(phi.VARP, gpu_phi.VARP, phi_array_size,
-                       cudaMemcpyDeviceToHost));
-			if(mpi_config->particle_flow_rank == 0)
+			if (mpi_config->particle_flow_rank == 0)
 			{
-				printf("Result is:\n");
+				printf("GPU memory %lu free of %lu\n", free_mem, total);
 			}
-			for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
+			
+			if (((timestep_count + 1) % 100) == 0)
 			{
-				if(i == mpi_config->particle_flow_rank)
-				{
-					for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
-					{
-						const uint64_t cell = block_cell + mesh->local_cells_disp;
-						printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
-						printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
-					}
-				}
-				MPI_Barrier(mpi_config->particle_flow_world);
-			}
-		}
-*/
-		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
-        {
-            if(mpi_config->particle_flow_rank == 0)
-            {
-				MPI_Reduce(MPI_IN_PLACE, &fgm_lookup_time, 1, MPI_DOUBLE,
+				double arr_usage  = ((double)get_array_memory_usage()) / 1.e9;
+				double stl_usage  = ((double)get_stl_memory_usage())   / 1.e9 ;
+				double mesh_usage = ((double)mesh->get_memory_usage()) / 1.e9 ;
+				double arr_usage_total, stl_usage_total, mesh_usage_total;
+
+				MPI_Reduce(&arr_usage,  &arr_usage_total,  1, MPI_DOUBLE, 
 							MPI_SUM, 0, mpi_config->particle_flow_world);
-				double total_time = vel_total_time + pres_total_time + 
-									fgm_lookup_time;
-				double scalar_time = 0.0;
+				MPI_Reduce(&stl_usage,  &stl_usage_total,  1, MPI_DOUBLE, 
+							MPI_SUM, 0, mpi_config->particle_flow_world);
+				MPI_Reduce(&mesh_usage, &mesh_usage_total, 1, MPI_DOUBLE, 
+							MPI_SUM, 0, mpi_config->particle_flow_world);
+
+				if ( mpi_config->particle_flow_rank == 0 )
+				{
+					printf("Timestep %6lu Flow     mem (TOTAL %8.3f GB)" 
+							"(AVG %8.3f GB) \n", timestep_count + 1, 
+							(arr_usage_total + stl_usage_total + mesh_usage_total), 
+							(arr_usage_total + stl_usage_total + mesh_usage_total) / 
+							mpi_config->particle_flow_world_size);
+
+				}
+			}
+			
+
+			//NOTE: comparing the parallel and serial version 
+			//We get idential A and b with UVW but not idential results
+			//This is probably due to parallel solvers??
+			//We can track through all the differences in the pressure
+			//Solve to these differences.
+			
+			// Note: After pointer swap, last iterations phi is now in phi.
+			//TODO: Should we be doing this?
+
+			nvtxRangePush("exchange_phi_halos");
+
+			compute_time -= MPI_Wtime();
+			exchange_phi_halos();
+			nvtxRangePop();
+
+
+			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("exchange_A_halos\n");
+			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
+			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
+
+			nvtxRangePush("get_phi_gradients");
+
+			flow_timings[0] -= MPI_Wtime();
+			get_phi_gradients();
+			flow_timings[0] += MPI_Wtime();
+			nvtxRangePop();
+
+
+			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("get_phi_gradients\n");
+			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
+			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
+
+			//C_kernel_vec_print(gpu_phi_grad.U, mesh->local_mesh_size);
+
+	//		if(FLOW_SOLVER_LIMIT_GRAD)
+	//			limit_phi_gradients();
+			nvtxRangePush("exchange_grad_halos");
+
+			exchange_grad_halos();
+			nvtxRangePop();
+
+		
+			nvtxRangePush("set_up_field");
+
+			if(timestep_count == 0)
+			{
+				set_up_field();
+				set_up_fgm_table();
+			}
+			nvtxRangePop();
+
+			compute_time += MPI_Wtime();
+		
+			flow_timings[1] -= MPI_Wtime();
+
+			if (((timestep_count+subiter) % comms_timestep) == 0)
+			{
+
+				int thread_count = min((uint64_t) 32, (mesh->local_mesh_size + nhalos));
+				int block_count = max(1,(int) ceil((double) (mesh->local_mesh_size + nhalos)/(double) thread_count));
+				// int thread_count = min((uint64_t) 32, (mesh->local_mesh_size));
+				// int block_count = max(1,(int) ceil((double) (mesh->local_mesh_size)/(double) thread_count));
+
+				// C_kernel_interpolate_init_boundaries(block_count1, thread_count1, gpu_phi_nodes, gpu_cells_per_point, global_node_to_local_node_map.size());
+				// gpuErrchk( cudaPeekAtLastError() );
+
+				if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_interpolate_phi_to_nodes mesh_size + halos %lu mesh_size %lu halos %lu\n", mesh->local_mesh_size + nhalos, mesh->local_mesh_size , nhalos);
+
+				C_kernel_interpolate_phi_to_nodes(block_count, thread_count, gpu_phi, gpu_phi_grad, gpu_phi_nodes, gpu_local_nodes, gpu_node_hash_map, gpu_boundary_hash_map, gpu_cells_per_point, gpu_local_cells, gpu_cell_centers, mesh->local_mesh_size, mesh->local_cells_disp, global_node_to_local_node_map.size(), nhalos);
+				gpuErrchk( cudaPeekAtLastError() );
+
+
+
+			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_interpolate_phi_to_nodes\n");
+			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
+			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
+
+				// gpuErrchk(cudaMemcpyAsync(phi.U, gpu_phi.U,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0)); // Asynchronous memcpy to default stream
+				// gpuErrchk(cudaMemcpyAsync(phi.V, gpu_phi.V,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+				// gpuErrchk(cudaMemcpyAsync(phi.W, gpu_phi.W,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+				// gpuErrchk(cudaMemcpyAsync(phi.P, gpu_phi.P,     phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+				// gpuErrchk(cudaMemcpyAsync(phi.TEM, gpu_phi.TEM, phi_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));  
+				// gpuErrchk( cudaPeekAtLastError() );
+
+
+				// gpuErrchk(cudaMemcpyAsync(phi_nodes.U,   gpu_phi_nodes.U,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0)); // Asynchronous memcpy to default stream
+				// gpuErrchk(cudaMemcpyAsync(phi_nodes.V,   gpu_phi_nodes.V,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+				// gpuErrchk(cudaMemcpyAsync(phi_nodes.W,   gpu_phi_nodes.W,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+				// gpuErrchk(cudaMemcpyAsync(phi_nodes.P,   gpu_phi_nodes.P,   phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));
+				// gpuErrchk(cudaMemcpyAsync(phi_nodes.TEM, gpu_phi_nodes.TEM, phi_nodes_array_size, cudaMemcpyDeviceToHost, (cudaStream_t) 0));  
+				update_flow_field();
+
+				
+				
+			}
+
+			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("update_flow_field\n");
+			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
+			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
+
+			flow_timings[1] += MPI_Wtime();
+			compute_time -= MPI_Wtime();
+
+			flow_timings[2] -= MPI_Wtime();
+			nvtxRangePush("calculate_UVW");
+
+			calculate_UVW();
+			nvtxRangePop();
+			flow_timings[2] += MPI_Wtime();
+
+			nvtxRangePush("exchange_phi_halos");
+
+
+			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("calculate_UVW\n");
+			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
+			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
+
+			exchange_phi_halos(); //exchange new UVW values.
+			nvtxRangePop();
+
+		
+			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("exchange_phi_halos\n");
+			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
+			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
+
+			//printf("We finish pressure\n");
+	/*
+			if(((timestep_count + 1) % 1) == 0)
+			{
+				gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.TE, gpu_phi.TE, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.ED, gpu_phi.ED, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.FUL, gpu_phi.FUL, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.PRO, gpu_phi.PRO, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.VARF, gpu_phi.VARF, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.VARP, gpu_phi.VARP, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				if(mpi_config->particle_flow_rank == 0)
+				{
+					printf("Result is:\n");
+				}
+				for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
+				{
+					if(i == mpi_config->particle_flow_rank)
+					{
+						for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
+						{
+							const uint64_t cell = block_cell + mesh->local_cells_disp;
+							printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
+							printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
+						}
+					}
+					MPI_Barrier(mpi_config->particle_flow_world);
+				}
+			}
+	*/
+
+			nvtxRangePush("calculate_pressure");
+
+			flow_timings[3] -= MPI_Wtime();
+			calculate_pressure(timestep_count + subiter); 
+			flow_timings[3] += MPI_Wtime();
+
+			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("calculate_pressure\n");
+			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
+			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
+
+
+			nvtxRangePop();
+
+			nvtxRangePush("Scalar_solve");
+
+			flow_timings[4] -= MPI_Wtime();
+			//Turbulence solve
+			Scalar_solve(TERBTE, gpu_phi.TE, gpu_phi_grad.TE);
+			flow_timings[4] += MPI_Wtime();
+			flow_timings[5] -= MPI_Wtime();
+			Scalar_solve(TERBED, gpu_phi.ED, gpu_phi_grad.ED);
+			flow_timings[5] += MPI_Wtime();		
+
+			flow_timings[6] -= MPI_Wtime();
+			//temperature solve
+			Scalar_solve(TEMP, gpu_phi.TEM, gpu_phi_grad.TEM);
+			flow_timings[6] += MPI_Wtime();
+
+			flow_timings[7] -= MPI_Wtime();
+			//fuel mixture fraction solve
+			Scalar_solve(FUEL, gpu_phi.FUL, gpu_phi_grad.FUL);
+			flow_timings[7] += MPI_Wtime();		
+
+			flow_timings[8] -= MPI_Wtime();
+			//rection progression solve
+			Scalar_solve(PROG, gpu_phi.PRO, gpu_phi_grad.PRO);
+			flow_timings[8] += MPI_Wtime();
+
+			flow_timings[9] -= MPI_Wtime();
+			//Solve Variance of mixture fraction as transport equ
+			Scalar_solve(VARFU, gpu_phi.VARF, gpu_phi_grad.VARF);
+			flow_timings[9] += MPI_Wtime();
+
+			flow_timings[10] -= MPI_Wtime();
+			//Solve Variance of progression as trasnport equ
+			Scalar_solve(VARPR, gpu_phi.VARP, gpu_phi_grad.VARP);
+			flow_timings[10] += MPI_Wtime();		
+
+			nvtxRangePop();
+
+			nvtxRangePush("FGM_look_up");
+
+			fgm_lookup_time -= MPI_Wtime();
+			//Look up results from the FGM look-up table
+			FGM_look_up();
+			fgm_lookup_time += MPI_Wtime();
+			compute_time += MPI_Wtime();
+
+			nvtxRangePop();
+
+
+
+		/*	if(((timestep_count + 1) % 1) == 0)
+			{
+				gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.TE, gpu_phi.TE, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.ED, gpu_phi.ED, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.FUL, gpu_phi.FUL, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.PRO, gpu_phi.PRO, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.VARF, gpu_phi.VARF, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				gpuErrchk(cudaMemcpy(phi.VARP, gpu_phi.VARP, phi_array_size,
+						cudaMemcpyDeviceToHost));
+				if(mpi_config->particle_flow_rank == 0)
+				{
+					printf("Result is:\n");
+				}
+				for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
+				{
+					if(i == mpi_config->particle_flow_rank)
+					{
+						for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
+						{
+							const uint64_t cell = block_cell + mesh->local_cells_disp;
+							printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
+							printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
+						}
+					}
+					MPI_Barrier(mpi_config->particle_flow_world);
+				}
+			}
+	*/
+			if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
+			{
+				if(mpi_config->particle_flow_rank == 0)
+				{
+					MPI_Reduce(MPI_IN_PLACE, &fgm_lookup_time, 1, MPI_DOUBLE,
+								MPI_SUM, 0, mpi_config->particle_flow_world);
+					double total_time = vel_total_time + pres_total_time + 
+										fgm_lookup_time;
+					double scalar_time = 0.0;
+					for(int i = 0; i < 8; i++)
+					{
+						total_time += sca_total_time[i];
+						scalar_time += sca_total_time[i];
+					} 
+
+					printf("\nTotal Flow Solver Timings:\n");
+					printf("Compute Velocity time: %.3f (%.2f %%)\n",
+							vel_total_time / mpi_config->particle_flow_world_size,
+							100 * vel_total_time / total_time);
+					printf("Compute Pressure time: %.3f (%.2f %%)\n",
+							pres_total_time / mpi_config->particle_flow_world_size,
+							100 * pres_total_time / total_time);
+					printf("Compute 8 Scalars time %.3f (%.2f %%)\n",
+							scalar_time / mpi_config->particle_flow_world_size,
+							100 * scalar_time / total_time);
+					printf("FGM Table Lookup time %.3f (%.2f %%)\n",
+							fgm_lookup_time / mpi_config->particle_flow_world_size,
+							100 * fgm_lookup_time / total_time);
+					printf("Total time: %f\n\n", 
+							total_time / mpi_config->particle_flow_world_size);
+				}
+				else
+				{
+					MPI_Reduce(&fgm_lookup_time, nullptr, 1, MPI_DOUBLE, MPI_SUM,
+								0, mpi_config->particle_flow_world);
+				}
+				vel_total_time = 0.0;
+				pres_total_time = 0.0;
+				fgm_lookup_time = 0.0;
 				for(int i = 0; i < 8; i++)
 				{
-					total_time += sca_total_time[i];
-					scalar_time += sca_total_time[i];
-				} 
+					sca_total_time[i] = 0.0;
+				}
+			}
 
-                printf("\nTotal Flow Solver Timings:\n");
-                printf("Compute Velocity time: %.3f (%.2f %%)\n",
-                        vel_total_time / mpi_config->particle_flow_world_size,
-                        100 * vel_total_time / total_time);
-                printf("Compute Pressure time: %.3f (%.2f %%)\n",
-                        pres_total_time / mpi_config->particle_flow_world_size,
-                        100 * pres_total_time / total_time);
-				printf("Compute 8 Scalars time %.3f (%.2f %%)\n",
-						scalar_time / mpi_config->particle_flow_world_size,
-						100 * scalar_time / total_time);
-				printf("FGM Table Lookup time %.3f (%.2f %%)\n",
-						fgm_lookup_time / mpi_config->particle_flow_world_size,
-						100 * fgm_lookup_time / total_time);
-                printf("Total time: %f\n\n", 
-						total_time / mpi_config->particle_flow_world_size);
-            }
-			else
+			if(timestep_count + 1 == 5)
 			{
-				MPI_Reduce(&fgm_lookup_time, nullptr, 1, MPI_DOUBLE, MPI_SUM,
+				if(mpi_config->particle_flow_rank == 0)
+				{
+					MPI_Reduce(MPI_IN_PLACE, flow_timings, 11, MPI_DOUBLE, MPI_SUM,
 							0, mpi_config->particle_flow_world);
-			}
-            vel_total_time = 0.0;
-            pres_total_time = 0.0;
-			fgm_lookup_time = 0.0;
-			for(int i = 0; i < 8; i++)
-			{
-				sca_total_time[i] = 0.0;
-			}
-        }
+					for(int i = 0; i < 11; i++)
+					{
+						flow_timings[i] /= mpi_config->particle_flow_world_size;
+					}
+					printf("\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10]);
+				}
+				else
+				{
+					MPI_Reduce(flow_timings, nullptr, 11, MPI_DOUBLE, MPI_SUM,
+							0, mpi_config->particle_flow_world);
+				}
+			}		
+			
+			if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
 
-		if(timestep_count + 1 == 5)
-        {
-            if(mpi_config->particle_flow_rank == 0)
-            {
-                MPI_Reduce(MPI_IN_PLACE, flow_timings, 11, MPI_DOUBLE, MPI_SUM,
-                           0, mpi_config->particle_flow_world);
-                for(int i = 0; i < 11; i++)
-                {
-                    flow_timings[i] /= mpi_config->particle_flow_world_size;
-                }
-                printf("\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10]);
-            }
-            else
-            {
-                MPI_Reduce(flow_timings, nullptr, 11, MPI_DOUBLE, MPI_SUM,
-                           0, mpi_config->particle_flow_world);
-            }
-        }		
-        
-		if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
+		}
+
+
         timestep_count++;
 
 		nvtxRangePop();

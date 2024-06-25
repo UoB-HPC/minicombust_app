@@ -2,12 +2,11 @@
 #SBATCH -A coreai_devtech_all   #account
 #SBATCH -p batch                #partition
 #SBATCH -t 00:10:00             #wall time limit, hr:min:sec
-#SBATCH -N4                     #number of nodes
+#SBATCH -N4                  #number of nodes
 #SBATCH --ntasks-per-node=112
 #SBATCH -J coreai_devtech_all-hpc-hemelb: #job name
   
 CONT='/lustre/fsw/coreai_devtech_all/hwaugh/containers/devtech.sqsh'
-IMG="gitlab-master.nvidia.com/dtcomp-nv-internal/imgs-released/x86_64-ubuntu22.04-gcc-cuda12.4.1:20240429"
 echo "Running on hosts: $(echo $(scontrol show hostname))"
 
 echo "RUNNING EXPERIMENT with $x GPUS"
@@ -15,9 +14,13 @@ export MINICOMBUST_NODES=4
 export MINICOMBUST_GPUS=8
 export MINICOMBUST_RANKS=$(( 14*MINICOMBUST_GPUS*MINICOMBUST_NODES ))
 export MINICOMBUST_PRANKS=$(( MINICOMBUST_RANKS - MINICOMBUST_GPUS*MINICOMBUST_NODES ))
-export MINICOMBUST_CELLS=304
-export MINICOMBUST_PARTICLES=140000
-export MINICOMBUST_ITERS=200
+# export MINICOMBUST_CELLS=241
+# export MINICOMBUST_PARTICLES=280000
+export MINICOMBUST_CELLS=484
+export MINICOMBUST_PARTICLES=1040000
+export MINICOMBUST_ITERS=100
+
+source /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/unset.sh
 
 echo ""	
 echo "MINICOMBUST_GPUS      $MINICOMBUST_GPUS"
@@ -28,15 +31,13 @@ echo "MINICOMBUST_PARTICLES $MINICOMBUST_PARTICLES "
 echo "MINICOMBUST_ITERS     $MINICOMBUST_ITERS "	
 echo "MINICOMBUST_ITERS     $MINICOMBUST_ITERS "	
 echo ""	
-
-
   
 cmd="./bin/gpu_minicombust $MINICOMBUST_PRANKS $MINICOMBUST_PARTICLES $MINICOMBUST_CELLS -1 $MINICOMBUST_ITERS"
 filename="STRONG-RANKS$MINICOMBUST_RANKS-GPUS$MINICOMBUST_GPUS-CELLS$MINICOMBUST_CELLS-PARTICLES-$MINICOMBUST_PARTICLES-ITERS$MINICOMBUST_ITERS.log"
 cd /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/
-srun --container-image="${CONT}" \
+srun -n${MINICOMBUST_RANKS}  --container-image="${CONT}" \
      --container-mounts=/lustre/fsw/coreai_devtech_all/hwaugh/:/lustre/fsw/coreai_devtech_all/hwaugh/ \
     --container-workdir /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/ \
      --ntasks-per-node=112 \
      --distribution=cyclic:cyclic \
-     --mpi=pmix bash -c "source slurm_env.sh; ./slurm_wrapper.sh $cmd" 
+     --mpi=pmix bash -c "source slurm_env.sh; ./slurm_wrapper.sh $cmd" | tee ${filename}
