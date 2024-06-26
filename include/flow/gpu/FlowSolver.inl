@@ -1154,8 +1154,6 @@ namespace minicombust::flow
 
 		if(first_press)
 		{
-			first_press = false;
-
 			AMGX_SAFE_CALL(AMGX_matrix_upload_all_global(pressure_A, mesh->mesh_size, mesh->local_mesh_size, cpu_nnz, 1, 1, rows_ptr, col_indices, values, NULL, 1, 1, partition_vector));
 
 
@@ -1167,7 +1165,8 @@ namespace minicombust::flow
 		}
 		else
 		{
-			AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(pressure_A, mesh->local_mesh_size, cpu_nnz, values, NULL));
+			AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(A, mesh->local_mesh_size, cpu_nnz, values, NULL));
+			// AMGX_SAFE_CALL(AMGX_matrix_replace_coefficients(pressure_A, mesh->local_mesh_size, cpu_nnz, values, NULL));
 		}
 		AMGX_SAFE_CALL(AMGX_solver_setup(pressure_solver, pressure_A));
 
@@ -1180,7 +1179,16 @@ namespace minicombust::flow
 			cpu_Pressure_correction_max = 0.0;
 			
 			//Solve first pressure update
-			AMGX_SAFE_CALL(AMGX_vector_upload(pressure_b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
+			if (first_press)
+			{
+				AMGX_SAFE_CALL(AMGX_vector_upload(pressure_b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
+				first_press = false;
+			}
+			else
+			{
+				AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
+			}
+
 			AMGX_SAFE_CALL(AMGX_vector_set_zero(pressure_u, (mesh->local_mesh_size + nhalos), 1));
 		
 			AMGX_SAFE_CALL(AMGX_solver_solve(pressure_solver, pressure_b, pressure_u));
@@ -1214,7 +1222,7 @@ namespace minicombust::flow
 
 			exchange_single_grad_halo(gpu_phi_grad.PP);
 
-			C_kernel_update_vel_and_flux(block_count, thread_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->local_mesh_size, nhalos, (gpu_Face<T> *) gpu_face_fields, mesh->mesh_size, boundary_map.size(), gpu_boundary_hash_map, gpu_boundary_map_values, gpu_face_mass_fluxes, gpu_A_phi, gpu_phi, gpu_cell_volumes, gpu_phi_grad, timestep_count);
+			C_kernel_update_vel_and_flux(block_count, thread_count, mesh->faces_size, (gpu_Face<uint64_t> *) gpu_faces, mesh->local_cells_disp, mesh->local_mesh_size, nhalos, (gpu_Face<T> *) gpu_face_fields, mesh->mesh_size, boundary_map.size(), gpu_boundary_hash_map, gpu_boundary_map_values, gpu_face_mass_fluxes, gpu_A_phi, gpu_phi, gpu_cell_volumes, gpu_phi_grad, global_timestep);
 		gpuErrchk( cudaPeekAtLastError() );
 
 
