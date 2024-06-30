@@ -152,7 +152,20 @@ namespace minicombust::particles
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_flow_field.\n", mpi_config->rank);
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Sending index sizes.\n", mpi_config->rank);
 
-		// MPI_Barrier(mpi_config->world);
+		// MPI_Barrier(mpi_config->particle_flow_world);
+        static int timestep_count = 0;
+
+        int coupling_done = 1;
+        if (timestep_count > 0)
+        {
+            MPI_Request last_coupling_req;
+            coupling_done = 0;
+            // MPI_Ibcast(&coupling_done, 1, MPI_INT, mpi_config->particle_flow_world_size, mpi_config->world, &last_coupling_req); // ROOT = first flow
+            MPI_Bcast(&coupling_done, 1, MPI_INT, mpi_config->particle_flow_world_size, mpi_config->world); // ROOT = first flow
+            // MPI_Wait(&last_coupling_req, MPI_STATUS_IGNORE);
+        }
+
+        timestep_count++;
 
         uint64_t count = 0;
         for (uint64_t b : active_blocks)
@@ -186,13 +199,18 @@ namespace minicombust::particles
 
         // MPI_Waitall(active_blocks.size(), send_requests.data(), MPI_STATUSES_IGNORE);
 
+
+        int sent_bcast = 0;
+        MPI_Request barrier_req;
+
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Wait has returned successfully\n", mpi_config->rank);
-        MPI_Barrier(mpi_config->particle_flow_world);
+        // MPI_Barrier(mpi_config->particle_flow_world);
+        MPI_Ibarrier(mpi_config->particle_flow_world, &barrier_req);
 
         int sends_done = 1;
         if ( PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: All index sizes sent.\n", mpi_config->rank);
         
-        MPI_Ibcast(&sends_done, 1, MPI_INT, 0, mpi_config->world, &bcast_request);
+        // MPI_Ibcast(&sends_done, 1, MPI_INT, 0, mpi_config->world, &bcast_request);
 
         for (uint64_t b : active_blocks)
             cell_particle_field_map[b].clear();
@@ -203,23 +221,40 @@ namespace minicombust::particles
         bool     all_processed      = true;
         bool    *posted_block_recvs = async_locks;
         bool    *processed_block    = async_locks + active_blocks.size();
+
         for ( uint64_t ba = 0; ba < active_blocks.size(); ba++ )  
         {
             posted_block_recvs[ba]  = false;
             processed_block[ba]     = false;
-            all_processed       &= processed_block[ba];
+            all_processed          &= processed_block[ba];
+            recv_requests[ba]                        = MPI_REQUEST_NULL;
+            recv_requests[ba + active_blocks.size()] = MPI_REQUEST_NULL;
         }
         
-        while (!all_processed)
+        while ( !all_processed || !sent_bcast )
         {
             ba = (ba + 1) % active_blocks.size();
             bi = active_blocks[ba];
+
+            if (!sent_bcast)
+            {
+                int hit_barrier = 0;
+                MPI_Test(&barrier_req, &hit_barrier, MPI_STATUS_IGNORE);
+                if (hit_barrier)
+                {
+                    // printf("\tRank %d: Broadcasting. Active blocks %lu\n", mpi_config->rank, active_blocks.size());
+                    MPI_Ibcast(&sends_done, 1, MPI_INT, 0, mpi_config->world, &bcast_request);
+                }
+                sent_bcast = hit_barrier;
+            }
 
             int message_waiting = 0;
             MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[posted_recvs] );
 
             if ( message_waiting && (posted_recvs < active_blocks.size()) )
             {
+                // printf("\tRank %d: Message recieved\n", mpi_config->rank);
+
                 const uint64_t send_rank = statuses[posted_recvs].MPI_SOURCE;
                 const uint64_t block_id  = statuses[posted_recvs].MPI_SOURCE - mpi_config->particle_flow_world_size;
 
@@ -244,41 +279,15 @@ namespace minicombust::particles
             MPI_Test(&recv_requests[ba],                        &recieve_done,     MPI_STATUS_IGNORE);
             MPI_Test(&recv_requests[ba + active_blocks.size()], &recieve_fld_done, MPI_STATUS_IGNORE);
 
-            if ( recieve_done && recieve_fld_done && !processed_block[ba] && posted_block_recvs[ba] )
+            if ( recieve_done && recieve_fld_done && !processed_block[ba] && posted_block_recvs[ba] && sent_bcast )
             {
-                // uint64_t size_before = node_to_field_address_map.size();
-
-                // if ( PARTICLE_SOLVER_DEBUG )  
-                // {
-                //     printf("\tRank %d: Indexes (%p ptr) load finished for flow block %lu (slots %lu ) .\n", mpi_config->rank, all_interp_node_indexes[bi], bi, ba );
-
-                //     if      ( (uint64_t) neighbours_size[bi]  >= (node_flow_array_sizes[bi]   / sizeof(flow_aos<T>)) )
-                //         {printf("ERROR RECV VALS : Rank %d Block %lu will write indexes to unallocated memory required size %d max %lu\n", mpi_config->rank, bi, neighbours_size[bi], node_flow_array_sizes[bi] / sizeof(flow_aos<T>)); exit(1);}
-                //     else if ( (uint64_t) neighbours_size[bi]  >= (node_index_array_sizes[bi]  / sizeof(uint64_t)) )
-                //         {printf("ERROR RECV VALS : Rank %d Block %lu will write fields  to unallocated memory required size %d max %lu\n", mpi_config->rank, bi, neighbours_size[bi], node_index_array_sizes[bi] / sizeof(uint64_t)); exit(1);}
-                // }
+                // printf("\tRank %d: Recv completed from %d\n", mpi_config->rank, statuses[posted_recvs].MPI_SOURCE);
 
                 #pragma ivdep
                 for (int i = 0; i < neighbours_size[bi]; i++)
                 {
                     node_to_field_address_map[all_interp_node_indexes[bi][i]] = &all_interp_node_flow_fields[bi][i];
-                    
-                    
-                    // if (all_interp_node_indexes[bi][i] > mesh->points_size )
-					// {	
-					// 	printf("ERROR RECV VALS : Rank %d Flow block %lu Value %lu out of range at %d\n", 
-					// 			mpi_config->rank, bi, all_interp_node_indexes[bi][i], i); 
-					// 	exit(1);
-					// })
                 }
-
-				/*if (PARTICLE_SOLVER_DEBUG && size_before != node_to_field_address_map.size())
-                {
-					printf("\tRank %d: Recieving wrong amount of data(+%lu). Block %lu Node map size %ld sent size %d.\n", 
-							mpi_config->rank, node_to_field_address_map.size() - size_before, bi, 
-							node_to_field_address_map.size(), neighbours_size[bi] ); 
-					exit(1);
-				}*/
                     
                 processed_block[ba] = true;
             }
@@ -287,10 +296,16 @@ namespace minicombust::particles
             for (uint64_t b = 0; b < active_blocks.size(); b++ )  all_processed &= processed_block[b];
         }
 
+        // printf("\tRank %d: posted_recvs %d .\n", mpi_config->rank, posted_recvs);
+        // printf("\tRank %d: processed_block %d %d %d %d  .\n", mpi_config->rank, posted_recvs, processed_block[0], processed_block[1], processed_block[2], processed_block[3]);
+        
+
         MPI_Waitall( recv_requests.size(), recv_requests.data(), MPI_STATUSES_IGNORE);
 
-        nvtxRangePop();
 
+        // MPI_Barrier(mpi_config->particle_flow_world);
+
+        nvtxRangePop();
 
         logger.useful_nodes_proportion += node_to_field_address_map.size();
         

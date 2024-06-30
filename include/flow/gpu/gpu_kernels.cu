@@ -2213,8 +2213,8 @@ __global__ void kernel_interpolate_init_boundaries(phi_vector<double> phi_nodes,
 	phi_nodes.U[node_id]   = (node_neighbours - cells_per_point[node_id]) * 50.0  / node_neighbours;
 	phi_nodes.V[node_id]   = (node_neighbours - cells_per_point[node_id]) * 0.0   / node_neighbours;
 	phi_nodes.W[node_id]   = (node_neighbours - cells_per_point[node_id]) * 0.0   / node_neighbours;
-	phi_nodes.P[node_id]   = (node_neighbours - cells_per_point[node_id]) * 100.0 / node_neighbours;
-	phi_nodes.TEM[node_id] = (node_neighbours - cells_per_point[node_id]) * 273.0 / node_neighbours;
+	phi_nodes.P[node_id]   = (node_neighbours - cells_per_point[node_id]) * 1000.0 / node_neighbours;
+	phi_nodes.TEM[node_id] = (node_neighbours - cells_per_point[node_id]) * 2000.0 / node_neighbours;
 }
 
 void C_kernel_interpolate_init_boundaries(int block_count, int thread_count, phi_vector<double> phi_nodes, uint8_t *cells_per_point, uint64_t local_points_size)

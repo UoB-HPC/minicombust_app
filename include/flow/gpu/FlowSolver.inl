@@ -529,6 +529,8 @@ namespace minicombust::flow
         static double recv_time1=0., recv_time2=0., recv_time3=0.;
 
         int recvs_complete = 0;
+		if (timestep_count>0) MPI_Wait(&bcast_request, MPI_STATUS_IGNORE);
+
         MPI_Ibcast(&recvs_complete, 1, MPI_INT, 0, mpi_config->world, &bcast_request);       
  
         int message_waiting = 0;
@@ -545,6 +547,8 @@ namespace minicombust::flow
 		// 	node_starts[rank_slot] = -1;
 
 		// MPI_Barrier(mpi_config->world);
+
+		node_starts[0] = 0;
 
         while(!all_processed)
         {
@@ -563,15 +567,12 @@ namespace minicombust::flow
                 uint64_t rank_slot = ranks.size();
                 ranks.push_back(statuses[rank_slot].MPI_SOURCE);
                 MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
-
-                // resize_cell_particle(elements[rank_slot], rank_slot);
-                // if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
+				// printf("FRank %d got count %lu from %d %lu \n", mpi_config->particle_flow_rank, elements[rank_slot], statuses[rank_slot].MPI_SOURCE, rank_slot);
 
                 logger.recieved_cells += elements[rank_slot];
 
 				cell_starts[rank_slot] = cell_element_disp;
 				cell_element_disp += elements[rank_slot];
-
 
 				if (cell_element_disp > gpu_recv_buffer_elements)
 				{
@@ -596,21 +597,6 @@ namespace minicombust::flow
 
                     cell_index_array_size.push_back(max_storage    * sizeof(uint64_t));
                     cell_particle_array_size.push_back(max_storage * sizeof(particle_aos<T>));
-
-					// uint64_t *tmp_ptr;
-					// particle_aos<T> *tmp_ptr0;
-                	// mtracker->allocate_cuda_host("neighbour_indexes", (void**)&tmp_ptr,    cell_index_array_size.back());
-                	// mtracker->allocate_cuda_host("cell_particle_aos", (void**)&tmp_ptr0,   cell_particle_array_size.back());
-
-                    // neighbour_indexes.push_back(tmp_ptr);
-                    // cell_particle_aos.push_back(tmp_ptr0);
-
-					// uint64_t *cuda_pointer_tmp;
-					// particle_aos<T> *cuda_pointer_tmp2;
-					// cudaMalloc(&cuda_pointer_tmp,  cell_index_array_size.back());
-					// cudaMalloc(&cuda_pointer_tmp2, cell_particle_array_size.back());
-					// gpu_neighbour_indexes.push_back(cuda_pointer_tmp);
-					// gpu_cell_particle_aos.push_back(cuda_pointer_tmp2);
 
                     local_particle_node_sets.push_back(unordered_set<uint64_t>());
                 }
@@ -644,13 +630,30 @@ namespace minicombust::flow
 					gpuErrchk( cudaPeekAtLastError() );
 
 					gpuErrchk(cudaMemcpyAsync(&node_elements[rank_slot], gpu_atomic_buffer_index, sizeof(uint32_t), cudaMemcpyDeviceToHost, (cudaStream_t) 0 ));
-					gpuErrchk(cudaMemsetAsync(gpu_seen_node, 0, global_node_to_local_node_map.size() * sizeof(int) , (cudaStream_t) 0 ));
+					// gpuErrchk(cudaMemcpy(&node_elements[rank_slot], gpu_atomic_buffer_index, sizeof(uint32_t), cudaMemcpyDeviceToHost ));
 
-					
+					cudaStreamSynchronize(0);
 
-					// cudaStreamSynchronize(0);
+					gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_indexes[node_starts[rank_slot]],     &gpu_send_buffers_interp_node_indexes[node_starts[rank_slot]],     node_elements[rank_slot]*sizeof(uint64_t),    cudaMemcpyDeviceToHost, (cudaStream_t) 0 ));
+					gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[node_starts[rank_slot]], &gpu_send_buffers_interp_node_flow_fields[node_starts[rank_slot]], node_elements[rank_slot]*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost, (cudaStream_t) 0 ));
+
+					cudaStreamSynchronize(0);
+
+					// MPI_Isend ( &gpu_send_buffers_interp_node_indexes[node_starts[rank_slot]],     node_elements[rank_slot], MPI_UINT64_T,                   ranks[rank_slot], 0, mpi_config->world, &send_requests[rank_slot] );
+           			// MPI_Isend ( &gpu_send_buffers_interp_node_flow_fields[node_starts[rank_slot]], node_elements[rank_slot], mpi_config->MPI_FLOW_STRUCTURE, ranks[rank_slot], 1, mpi_config->world, &send_requests[rank_slot + ranks.size()] );
+
+					if (node_starts[rank_slot] + node_elements[rank_slot] > gpu_send_buffer_elements)
+					{
+						printf("Node array send buffer overflow disp %lu max %d\n", node_starts[rank_slot] + node_elements[rank_slot], gpu_send_buffer_elements);
+						exit(1);
+					}
+
+					MPI_Isend ( &send_buffers_interp_node_indexes[node_starts[rank_slot]],     node_elements[rank_slot], MPI_UINT64_T,                   ranks[rank_slot], 0, mpi_config->world, &send_requests[rank_slot] );
+           			MPI_Isend ( &send_buffers_interp_node_flow_fields[node_starts[rank_slot]], node_elements[rank_slot], mpi_config->MPI_FLOW_STRUCTURE, ranks[rank_slot], 1, mpi_config->world, &send_requests[rank_slot + ranks.size()] );
 					// printf("Rank %d has received %d cells from rank %d (slot %lu). Start position in buffer %d, length %d\n", mpi_config->particle_flow_rank, elements[rank_slot], ranks[rank_slot], rank_slot, node_starts[rank_slot], node_elements[rank_slot]);
 					// printf("Rank %d Node starts 0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d 8:%d 9:%d 10:%d 11:%d 12:%d \n", mpi_config->particle_flow_rank, node_starts[0], node_starts[1], node_starts[2], node_starts[3], node_starts[4], node_starts[5], node_starts[6], node_starts[7], node_starts[8], node_starts[9], node_starts[10], node_starts[11], node_starts[12]);
+
+					gpuErrchk(cudaMemsetAsync(gpu_seen_node, 0, global_node_to_local_node_map.size() * sizeof(int) , (cudaStream_t) 0 ));
 
 					processed_neighbours[rank_slot] = true;
 				}
@@ -658,12 +661,8 @@ namespace minicombust::flow
 				all_processed &= processed_neighbours[rank_slot];
 			}
 
-
-			// nvtxRangePush("update_flow::MPI_Test");
-
             MPI_Test ( &bcast_request, &recvs_complete, MPI_STATUS_IGNORE );
             MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
-			// nvtxRangePop();
 
             if ( FLOW_SOLVER_DEBUG && recvs_complete ) if(recvs_complete) printf("\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
             all_processed &= !message_waiting & recvs_complete;
@@ -679,14 +678,15 @@ namespace minicombust::flow
 
         logger.sent_nodes += neighbour_point_size;
 
-		
-
-		
-
 		nvtxRangePush("update_flow::pack_and_post_buffers");
 		// printf("Rank %d Node starts before 0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d 8:%d 9:%d 10:%d 11:%d 12:%d \n", mpi_config->particle_flow_rank, node_starts[0], node_starts[1], node_starts[2], node_starts[3], node_starts[4], node_starts[5], node_starts[6], node_starts[7], node_starts[8], node_starts[9], node_starts[10], node_starts[11], node_starts[12]);
 
-		cudaStreamSynchronize(0);
+		// cudaStreamSynchronize(0);
+
+		// MPI_Barrier(mpi_config->particle_flow_world);
+		// printf("coupling\n");
+		// gpuErrchk( cudaPeekAtLastError() );
+		// gpuErrchk(cudaDeviceSynchronize());
 		// printf("Rank %d Node starts after 0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d 8:%d 9:%d 10:%d 11:%d 12:%d \n", mpi_config->particle_flow_rank, node_starts[0], node_starts[1], node_starts[2], node_starts[3], node_starts[4], node_starts[5], node_starts[6], node_starts[7], node_starts[8], node_starts[9], node_starts[10], node_starts[11], node_starts[12]);
 
 		uint64_t ptr_disp = 0;
@@ -695,15 +695,21 @@ namespace minicombust::flow
         {
             uint64_t local_disp = 0;
 
+
+			// MPI_Isend ( &send_buffers_interp_node_indexes[node_starts[p]],     node_elements[p], MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
+			// MPI_Isend ( &send_buffers_interp_node_flow_fields[node_starts[p]], node_elements[p], mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
+
 			// printf("Rank %d: Sending elements %d to rank %d\n", mpi_config->particle_flow_rank,  node_elements[p], ranks[p]);
 
-			// printf("Rank %d sending to rank %d (slot %lu). Start position in buffer %d, length %d\n", mpi_config->particle_flow_rank, ranks[p], p, node_starts[p], node_elements[p]);
+			// printf("Rank %d sending to rank %d (slot %lu). Start position in buffer %d, length %d\n", mpi_config->particle_flow_rank, ranks[p], p, ptr_disp, node_elements[p]);
+			// if (p != 0) node_starts[p] = node_starts[p-1] + node_elements[p-1];
 
-			MPI_Isend ( &gpu_send_buffers_interp_node_indexes[node_starts[p]],     node_elements[p], MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
-            MPI_Isend ( &gpu_send_buffers_interp_node_flow_fields[node_starts[p]], node_elements[p], mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
+			// MPI_Isend ( &gpu_send_buffers_interp_node_indexes[node_starts[p]],     node_elements[p], MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
+            // MPI_Isend ( &gpu_send_buffers_interp_node_flow_fields[node_starts[p]], node_elements[p], mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
 
 			// MPI_Isend ( &send_buffers_interp_node_indexes[ptr_disp],     node_elements[p], MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
             // MPI_Isend ( &send_buffers_interp_node_flow_fields[ptr_disp], node_elements[p], mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
+
             
 			ptr_disp += node_elements[p];
 			node_element_disp += node_elements[p];
@@ -726,7 +732,9 @@ namespace minicombust::flow
 		logger.max_nodes_buf_size_per_timestep = max(logger.max_nodes_buf_size_per_timestep, (double)node_element_disp);
 
 		if (mpi_config->particle_flow_rank == 0)
-			printf("Cell buffer used %lu (of %d) Node buffer used %lu (of %d) \n", cell_element_disp, gpu_send_buffer_elements, node_element_disp, gpu_recv_buffer_elements);
+		{
+			printf("Cell buffer used %lu (of %d) Node buffer used %lu (of %d) \n", cell_element_disp, gpu_recv_buffer_elements, node_element_disp,gpu_send_buffer_elements );
+		}
 
 
 		nvtxRangePop();
@@ -745,42 +753,11 @@ namespace minicombust::flow
 		gpuErrchk( cudaPeekAtLastError() );
 
 
-        // if ( FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0 )  printf("\tFlow Rank %d: Posted sends.\n", mpi_config->rank);
-
-        // all_processed = false;
-        // while ( !all_processed )
-        // {
-        //     all_processed = true;
-
-        //     for ( uint64_t rank_slot = 0; rank_slot < ranks.size(); rank_slot++ )
-        //     {
-		// 		//printf("p is %lu\n",p);
-        //         int recieved_particle_fields = 0;
-        //         MPI_Test(&recv_requests[2*rank_slot + 1], &recieved_particle_fields, MPI_STATUS_IGNORE);
-
-        //         if ( recieved_particle_fields && !processed_cell_fields[rank_slot] )
-        //         {
-        //     		gpuErrchk(cudaMemcpyAsync(gpu_recv_buffers_cell_particle_fields + cell_starts[rank_slot], recv_buffers_cell_particle_fields + cell_starts[rank_slot], elements[rank_slot]*sizeof(particle_aos<T>), cudaMemcpyHostToDevice, process_gpu_fields_stream));
-
-		// 			int thread_count = min(32, max(1, elements[rank_slot]));
-		// 			int block_count = max(1,(int) ceil((double) elements[rank_slot] / (double) thread_count));
-
-		// 			C_kernel_process_particle_fields(block_count, thread_count, gpu_recv_buffers_cell_indexes + cell_starts[rank_slot], gpu_recv_buffers_cell_particle_fields + cell_starts[rank_slot], gpu_particle_terms, elements[rank_slot], mesh->local_cells_disp, process_gpu_fields_stream);
-		// 			gpuErrchk( cudaPeekAtLastError() );
-
-
-        //             processed_cell_fields[rank_slot] = true;
-        //         }
-		// 		//printf("p is %lu\n",p);
-        //         all_processed &= processed_cell_fields[rank_slot];
-        //     }
-        //     if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
-        // }
-
-
         MPI_Barrier(mpi_config->particle_flow_world);
+		int coupling_done = 1;
+		MPI_Bcast(&coupling_done, 1, MPI_INT, mpi_config->world_size - mpi_config->particle_flow_world_size, mpi_config->world); // ROOT = first flow
+		// MPI_Ibcast(&coupling_done, 1, MPI_INT, mpi_config->world_size - mpi_config->particle_flow_world_size, mpi_config->world, &bcast_request); // ROOT = first flow
 		// MPI_Barrier(mpi_config->world);
-
 
 		nvtxRangePop();
         recv_time3 += MPI_Wtime();

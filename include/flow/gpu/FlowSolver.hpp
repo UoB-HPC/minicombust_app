@@ -381,7 +381,7 @@ namespace minicombust::flow
                 gpu_send_buffers_node_index_array_size  = gpu_send_buffer_elements * sizeof(uint64_t);
                 gpu_send_buffers_node_flow_array_size   = gpu_send_buffer_elements * sizeof(flow_aos<T>);
 
-                gpu_recv_buffer_elements = (100 * 80000 * 8) ; // (niters * particles_per_iter / particles_per_cell)
+                gpu_recv_buffer_elements = (100 * 80000 * 8) * 2; // (niters * particles_per_iter / particles_per_cell)
                 gpu_recv_buffers_cell_index_array_size      = gpu_recv_buffer_elements * sizeof(uint64_t);
                 gpu_recv_buffers_cell_particle_array_size   = gpu_recv_buffer_elements * sizeof(particle_aos<T>);
 
@@ -413,8 +413,12 @@ namespace minicombust::flow
                 interp_node_indexes      = (uint64_t * )    mtracker->allocate_host("interp_node_indexes", node_index_array_size);
                 interp_node_flow_fields  = (flow_aos<T> * ) mtracker->allocate_host("interp_node_flow_fields", node_flow_array_size);
 
-                send_buffers_interp_node_indexes            = (uint64_t * )    mtracker->allocate_host("send_buffers_interp_node_indexes",     gpu_send_buffers_node_index_array_size);
-                send_buffers_interp_node_flow_fields        = (flow_aos<T> * ) mtracker->allocate_host("send_buffers_interp_node_flow_fields", gpu_send_buffers_node_flow_array_size);
+                // send_buffers_interp_node_indexes            = (uint64_t * )    mtracker->allocate_host("send_buffers_interp_node_indexes",     gpu_send_buffers_node_index_array_size);
+                // send_buffers_interp_node_flow_fields        = (flow_aos<T> * ) mtracker->allocate_host("send_buffers_interp_node_flow_fields", gpu_send_buffers_node_flow_array_size);
+
+                mtracker->allocate_cuda_host("send_buffers_interp_node_indexes",     (void**)&send_buffers_interp_node_indexes,          gpu_send_buffers_node_index_array_size);
+                mtracker->allocate_cuda_host("send_buffers_interp_node_flow_fields", (void**)&send_buffers_interp_node_flow_fields,      gpu_send_buffers_node_flow_array_size);
+
 
                 mtracker->allocate_device("gpu_send_buffers_interp_node_indexes", (void**)&gpu_send_buffers_interp_node_indexes,         gpu_send_buffers_node_index_array_size);
                 mtracker->allocate_device("gpu_send_buffers_interp_node_flow_fields", (void**)&gpu_send_buffers_interp_node_flow_fields, gpu_send_buffers_node_flow_array_size);
