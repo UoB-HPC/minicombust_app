@@ -5,7 +5,9 @@
 #SBATCH -N1                     #number of nodes
 #SBATCH --ntasks-per-node=112
 #SBATCH -J coreai_devtech_all-hpc-hemelb: #job name
-  
+
+echo JOB START `date`
+
 CONT='/lustre/fsw/coreai_devtech_all/hwaugh/containers/devtech.sqsh'
 echo "Running on hosts: $(echo $(scontrol show hostname))"
 
@@ -14,13 +16,13 @@ export MINICOMBUST_NODES=1
 export MINICOMBUST_GPUS=8
 export MINICOMBUST_RANKS=$(( 14*MINICOMBUST_GPUS*MINICOMBUST_NODES ))
 export MINICOMBUST_PRANKS=$(( MINICOMBUST_RANKS - MINICOMBUST_GPUS*MINICOMBUST_NODES ))
-# export MINICOMBUST_CELLS=241
-# export MINICOMBUST_PARTICLES=280000
+export MINICOMBUST_CELLS=304
+export MINICOMBUST_PARTICLES=280000
 # export MINICOMBUST_CELLS=464
 # export MINICOMBUST_PARTICLES=1040000
-export MINICOMBUST_CELLS=484
-export MINICOMBUST_PARTICLES=1040000
-export MINICOMBUST_ITERS=100
+# export MINICOMBUST_CELLS=484
+# export MINICOMBUST_PARTICLES=1040000
+export MINICOMBUST_ITERS=0
 
 source /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/unset.sh
 
@@ -33,6 +35,9 @@ echo "MINICOMBUST_PARTICLES $MINICOMBUST_PARTICLES "
 echo "MINICOMBUST_ITERS     $MINICOMBUST_ITERS "	
 echo "MINICOMBUST_ITERS     $MINICOMBUST_ITERS "	
 echo ""	
+
+rm power.txt
+nvidia-smi --query-gpu=index,power.draw --format=csv -lms 20 > power.txt 2>&1 &
   
 cmd="./bin/gpu_minicombust $MINICOMBUST_PRANKS $MINICOMBUST_PARTICLES $MINICOMBUST_CELLS -1 $MINICOMBUST_ITERS"
 filename="STRONG-RANKS$MINICOMBUST_RANKS-GPUS$MINICOMBUST_GPUS-CELLS$MINICOMBUST_CELLS-PARTICLES-$MINICOMBUST_PARTICLES-ITERS$MINICOMBUST_ITERS.log"
@@ -43,3 +48,11 @@ srun -n${MINICOMBUST_RANKS} --container-image="${CONT}" \
      --ntasks-per-node=112 \
      --distribution=cyclic:cyclic \
      --mpi=pmix bash -c "source slurm_env.sh; ./slurm_wrapper.sh $cmd" | tee ${filename}
+
+
+pkill nvidia-smi
+# Print average power across all GPUs
+power_per_gpu=`grep -v index power.txt | awk 'BEGIN{sum=0;count=0}{sum+=$2;count+=1}END{print sum/count}'`
+echo "CLOCK $CLOCK POWER_PER_GPU ${power_per_gpu}"
+
+echo JOB END `date`

@@ -7,6 +7,10 @@
 #include "geometry/Mesh.hpp"
 #include "utils/utils.hpp"
 
+#include <chrono>
+#include <ctime>    
+
+
 #include "particles/ParticleSolver.inl"
 #ifdef have_gpu
 	#include "flow/gpu/FlowSolver.inl"
@@ -184,8 +188,17 @@ int main (int argc, char ** argv)
     MPI_Barrier(mpi_config.world);
     program_time -= MPI_Wtime();
 
+    auto start = std::chrono::system_clock::now();
+ 
+    std::time_t start_time = std::chrono::system_clock::to_time_t(start);
+ 
+    if (mpi_config.rank == 0) std::cout << "STARTING CLOCK 1410 " << std::ctime(&start_time) << std::endl;
+
 	for(uint64_t t = 0; t < ntimesteps; t++)
     {
+
+
+
         if (mpi_config.solver_type == PARTICLE)
         {
             particle_solver->timestep();
@@ -209,8 +222,16 @@ int main (int argc, char ** argv)
             }	
 		}
     }
+
     program_time += MPI_Wtime();
     MPI_Barrier(mpi_config.world);
+    auto end = std::chrono::system_clock::now();
+
+    std::time_t end_time = std::chrono::system_clock::to_time_t(end);
+
+    if (mpi_config.rank == 0) std::cout << "ENDING CLOCK 1410 " << std::ctime(&end_time) << std::endl;
+    
+
     if (mpi_config.rank == 0) printf("Done!\n\n");
 
     //Print logger stats and write performance counters

@@ -32,22 +32,31 @@ if [ $SLURM_PROCID -gt $(( MINICOMBUST_PRANKS-1 )) ]; then
   echo "UCX_CUDA_COPY_DMABUF         $UCX_CUDA_COPY_DMABUF "
   echo ""
 
+
+
+
 fi
 
 export MINICOMBUST_FRANKS=$(( MINICOMBUST_NODES * MINICOMBUST_GPUS ))
 export MINICOMBUST_RANK_ID=$SLURM_PROCID
 
 # Use $PMI_RANK for MPICH and $SLURM_PROCID with srun.
-if [ $SLURM_PROCID = $MINICOMBUST_PRANKS  ] || [ $SLURM_PROCID = 0 ]; then
+# if [ $SLURM_PROCID = $MINICOMBUST_PRANKS  ] || [ $SLURM_PROCID = 0 ]; then
+if [ $SLURM_PROCID = $MINICOMBUST_PRANKS  ]; then
 	outfile="RANK$SLURM_PROCID-RANKS$MINICOMBUST_RANKS-GPUS$MINICOMBUST_GPUS-CELLS$MINICOMBUST_CELLS-PARTICLES-$MINICOMBUST_PARTICLES-ITERS$MINICOMBUST_ITERS"
   prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$SLURM_PROCID.log " 
   prof_cmd="ncu -f --set full  --kernel-name kernel_get_phi_gradient --launch-count 1 --launch-skip 6 -o $outfile " 
-  prof_cmd="" 
   prof_cmd="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --sample=none --cpuctxsw=none --trace=cuda,nvtx,mpi --force-overwrite=true -o $outfile " 
+  prof_cmd="" 
 	echo "$SLURM_PROCID rank prof_cmd:  $prof_cmd"
 	echo "cmd:  $prof_cmd"
 	echo ""
   NSYS_CONFIG_DIRECTIVES='AgentLaunchTimeoutSec=120' $prof_cmd "$@"
+
+  # Start power collection at nvidia-smi's best internal sampling rate of 10 samples per second 
+  # [EDIT 29/4/24] nvidia-smi's best sampling rate is now 50 samples per second
+  # so -lms 20 can be used instead
+
 else
   prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$SLURM_PROCID.log "  
   prof_cmd="" 
