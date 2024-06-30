@@ -965,7 +965,9 @@ namespace minicombust::flow
 
         AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
 
+		nvtxRangePush("solveU");
 		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
+		nvtxRangePop();
 		AMGX_SAFE_CALL(AMGX_vector_download(u, gpu_phi.U));
 
 		/*for(int i = 0; i < mpi_config->particle_flow_world_size; i++){
@@ -991,7 +993,9 @@ namespace minicombust::flow
 		AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
 		AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		
+		nvtxRangePush("solveV");
 		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
+		nvtxRangePop();
 		AMGX_SAFE_CALL(AMGX_vector_download(u, gpu_phi.V));
 
 		//Solve for W
@@ -1006,7 +1010,9 @@ namespace minicombust::flow
 		AMGX_SAFE_CALL(AMGX_vector_set_zero(u, (mesh->local_mesh_size + nhalos), 1));
 		AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		
+		nvtxRangePush("solveW");
 		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
+		nvtxRangePop();
 		AMGX_SAFE_CALL(AMGX_vector_download(u, gpu_phi.W));
 	}
 
@@ -1191,7 +1197,9 @@ namespace minicombust::flow
 
 			AMGX_SAFE_CALL(AMGX_vector_set_zero(pressure_u, (mesh->local_mesh_size + nhalos), 1));
 		
+			nvtxRangePush("solveP");
 			AMGX_SAFE_CALL(AMGX_solver_solve(pressure_solver, pressure_b, pressure_u));
+			nvtxRangePop();
 			AMGX_SAFE_CALL(AMGX_vector_download(pressure_u, gpu_phi.PP));
 
 			C_kernel_find_pressure_correction_max(1, 1, &cpu_Pressure_correction_max, gpu_phi.PP, mesh->local_mesh_size);
@@ -1323,7 +1331,9 @@ namespace minicombust::flow
 	    AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 		gpuErrchk( cudaPeekAtLastError() );
 
+		nvtxRangePush("solveScalar");
 		AMGX_SAFE_CALL(AMGX_solver_solve(solver, b, u));
+		nvtxRangePop();
 		gpuErrchk( cudaPeekAtLastError() );
 		AMGX_SAFE_CALL(AMGX_vector_download(u, phi_component));
 		gpuErrchk( cudaPeekAtLastError() );
