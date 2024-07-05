@@ -132,25 +132,25 @@ int main (int argc, char ** argv)
     {
         if (mpi_config.solver_type == PARTICLE)
         {
-            particle_solver->timestep();
-            
-            if ((int64_t)(t % output_iteration) == output_iteration - 1)  
+            if ((output_iteration != -1) and (((int64_t)((t+1) % output_iteration) == 0) or (t == 0)))  
             {
                 output_time -= MPI_Wtime();
                 particle_solver->output_data(t+1);
                 output_time += MPI_Wtime();
             }
+
+            particle_solver->timestep();
         }
 		else
 		{
-            flow_solver->timestep();
-			
-			if ((int64_t)(t % output_iteration) == output_iteration - 1)
+            if ((output_iteration != -1) and (((int64_t)((t+1) % output_iteration) == 0) or (t == 0)))
             {
                 output_time -= MPI_Wtime();
 				flow_solver->output_data(t+1);
                 output_time += MPI_Wtime();
-            }	
+            }
+
+            flow_solver->timestep();
 		}
     }
     program_time += MPI_Wtime();
