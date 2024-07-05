@@ -16,6 +16,8 @@ namespace minicombust::flow
 
             double delta;
 
+            bool first_pressure = true;
+
             vector<uint64_t *>        neighbour_indexes;
             vector<particle_aos<T> *> cell_particle_aos;
 
@@ -49,7 +51,6 @@ namespace minicombust::flow
             vec<T>        *face_centers;
             phi_vector<T>  A_phi;
             phi_vector<T>  phi;
-            //phi_vector<T>  old_phi;
             phi_vector<T>  S_phi;
             phi_vector<vec<T>> phi_grad;
             
@@ -57,7 +58,9 @@ namespace minicombust::flow
 			T inlet_effective_viscosity;
 
 			Mat A;
+            Mat Pressure_A;
 			Vec b, u;
+            Vec Pressure_b;
 			KSP ksp, pressure_ksp;
 
             T *cell_densities;
@@ -120,7 +123,7 @@ namespace minicombust::flow
 
             uint64_t max_storage;
 
-            double flow_timings[24] = {0.0};
+            double flow_timings[38] = {0.0};
             double time_stats[11] = {0.0};
 			double vel_total_time = 0.0, vel_flux_time = 0.0;
 			double vel_setup_time = 0.0, vel_solve_time = 0.0;
@@ -220,11 +223,6 @@ namespace minicombust::flow
 				phi.PRO			= (T *)malloc(phi_array_size);
 				phi.VARF		= (T *)malloc(phi_array_size);
 				phi.VARP		= (T *)malloc(phi_array_size);
-				//old_phi.U       = (T *)malloc(phi_array_size);
-                //old_phi.V       = (T *)malloc(phi_array_size);
-                //old_phi.W       = (T *)malloc(phi_array_size);
-                //old_phi.P       = (T *)malloc(phi_array_size);
-				//old_phi.PP      = (T *)malloc(phi_array_size);
                 phi_grad.U      = (vec<T> *)malloc(phi_grad_array_size);
                 phi_grad.V      = (vec<T> *)malloc(phi_grad_array_size);
                 phi_grad.W      = (vec<T> *)malloc(phi_grad_array_size);
@@ -296,8 +294,6 @@ namespace minicombust::flow
                 const T visc_lambda = 0.000014;  
                 effective_viscosity = visc_lambda; // NOTE: Localise this to cells and boundaries when implementing Turbulence model
 
-                T gradient_percent = 0.2;
-
                 if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up cell data.\n", mpi_config->particle_flow_rank);
 
                 #pragma ivdep
@@ -306,16 +302,18 @@ namespace minicombust::flow
                     const uint64_t shmem_cell = block_cell + mesh->local_cells_disp - mesh->shmem_cell_disp;
                     const uint64_t *cell_nodes = &mesh->cells[shmem_cell * mesh->cell_size];
 
-                    const T gradient_val = (mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x)/mesh->mesh_dim.x;
+                    A_phi.U[block_cell]   = 0.0;
+                    A_phi.V[block_cell]   = 0.0;
+                    A_phi.W[block_cell]   = 0.0;
 
-                    A_phi.U[block_cell]   = 0.0;//gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
-                    A_phi.V[block_cell]   = 0.0;//mesh->dummy_gas_vel.y;
-                    A_phi.W[block_cell]   = 0.0;//mesh->dummy_gas_vel.z;
+                    S_phi.U[block_cell]   = 0.0;
+                    S_phi.V[block_cell]   = 0.0;
+                    S_phi.W[block_cell]   = 0.0;
 				
-                    phi.U[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
+                    phi.U[block_cell]     = mesh->dummy_gas_vel.x;
                     phi.V[block_cell]     = mesh->dummy_gas_vel.y;
                     phi.W[block_cell]     = mesh->dummy_gas_vel.z;
-                    phi.P[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_pre + (1.-gradient_percent) * mesh->dummy_gas_pre;
+                    phi.P[block_cell]     = mesh->dummy_gas_pre;
 					phi.PP[block_cell]    = 0.0;
 					phi.TE[block_cell]    = mesh->dummy_gas_turbTE;
 					phi.ED[block_cell]    = mesh->dummy_gas_turbED;
@@ -325,11 +323,6 @@ namespace minicombust::flow
 					phi.PRO[block_cell]   = mesh->dummy_gas_pro;
 					phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
 					phi.VARP[block_cell]  = mesh->dummy_gas_pro;
-
-                    // old_phi.U[block_cell] = mesh->dummy_gas_vel.x;
-                    // old_phi.V[block_cell] = mesh->dummy_gas_vel.y;
-                    // old_phi.W[block_cell] = mesh->dummy_gas_vel.z;
-                    // old_phi.P[block_cell] = mesh->dummy_gas_pre;
 
                     phi_grad.U[block_cell]    = {0.0, 0.0, 0.0};
                     phi_grad.V[block_cell]    = {0.0, 0.0, 0.0};
@@ -446,7 +439,7 @@ namespace minicombust::flow
 					}
                     else if ( mesh->boundary_types[boundary_cell] == OUTLET )
                     {
-                        phi.U[block_cell]     = mesh->dummy_gas_vel.x;//(1. - gradient_percent) * mesh->dummy_gas_vel.x;//;
+                        phi.U[block_cell]     = mesh->dummy_gas_vel.x;
                         phi.V[block_cell]     = 0.0;
                         phi.W[block_cell]     = 0.0;
                         phi.P[block_cell]     = mesh->dummy_gas_pre;
@@ -470,17 +463,12 @@ namespace minicombust::flow
 						phi.TE[block_cell]    = mesh->dummy_gas_turbTE;
 						phi.ED[block_cell]    = mesh->dummy_gas_turbED;
 						phi.TP[block_cell]    = 0.0;
-						phi.TEM[block_cell]   = 293.0;
+						phi.TEM[block_cell]   = mesh->dummy_gas_tem;//293.0;
 						phi.FUL[block_cell]   = 0.0;
 						phi.PRO[block_cell]   = 0.0;
 						phi.VARF[block_cell]  = 0.0;
 						phi.VARP[block_cell]  = 0.0;
 					}
-
-                    // old_phi.U[block_cell] = 0.0;
-                    // old_phi.V[block_cell] = 0.0;
-                    // old_phi.W[block_cell] = 0.0;
-                    // old_phi.P[block_cell] = mesh->dummy_gas_pre;
  
                     phi_grad.U[block_cell]    = {0.0, 0.0, 0.0};
                     phi_grad.V[block_cell]    = {0.0, 0.0, 0.0};
@@ -512,11 +500,13 @@ namespace minicombust::flow
 					MatSeqAIJSetPreallocation(A, 7, NULL);
 				}
 				MatSetUp(A);
+                MatDuplicate(A, MAT_DO_NOT_COPY_VALUES, &Pressure_A);
 
 				VecCreate(PETSC_COMM_WORLD, &b);
 				VecSetSizes(b, mesh->local_mesh_size, mesh->mesh_size);
 				VecSetFromOptions(b);
 				VecDuplicate(b, &u);
+                VecDuplicate(b, &Pressure_b);
 
 				PC pc;
 
@@ -533,7 +523,7 @@ namespace minicombust::flow
                 KSPGetPC(pressure_ksp, &pc);
                 PCSetType(pc, PCGAMG);
 				KSPSetPC(pressure_ksp, pc);	
-                KSPSetOperators(pressure_ksp, A, A);
+                KSPSetOperators(pressure_ksp, Pressure_A, Pressure_A);
                 KSPSetFromOptions(pressure_ksp);
 
                 send_requests.push_back ( MPI_REQUEST_NULL );
@@ -543,6 +533,9 @@ namespace minicombust::flow
                 statuses.push_back ( empty_mpi_status );
 
                 memset(&logger, 0, sizeof(Flow_Logger));
+
+                setup_sparse_matrix(1.0, A_phi.U, phi.U, S_phi.U, false);
+                setup_pressure_matrix();
 
                 // Array sizes
                 uint64_t total_node_index_array_size              = node_index_array_size;
@@ -1023,10 +1016,9 @@ namespace minicombust::flow
 
 			void set_up_field();
 			void precomp_AU();
-			void precomp_mass_flux();
 			void set_up_fgm_table();
 			
-            void setup_sparse_matrix  ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component );
+            void setup_sparse_matrix  ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component, bool UVW);
             void update_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component );
             void solve_sparse_matrix ( T *phi_component);
             void calculate_flux_UVW ();
