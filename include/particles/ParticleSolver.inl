@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include "particles/ParticleSolver.hpp"
 #include "visit/VisitWriter.hpp"
-
+#ifdef PAT
+    #include "pat_api.h"
+#endif
 
 
 namespace minicombust::particles 
@@ -303,7 +305,6 @@ namespace minicombust::particles
 		{
 			printf("\tRank %d: Completed comms.\n", mpi_config->rank);
         }
-
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
     }
             
@@ -311,6 +312,10 @@ namespace minicombust::particles
     void ParticleSolver<T>::particle_release()
     {
         performance_logger.my_papi_start();
+
+        #ifdef PAT
+            PAT_region_begin(3, "Par_release");
+        #endif
 
         // TODO: Reuse decaying particle space
         if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  
@@ -321,6 +326,10 @@ namespace minicombust::particles
 
         particle_dist->emit_particles_evenly(particles, cell_particle_field_map, node_to_field_address_map, cell_particle_indexes, cell_particle_aos, resize_cell_particles_fn, &logger);
         // particle_dist->emit_particles_waves(particles, cell_particle_field_map, cell_particle_indexes, cell_particle_aos,  &logger);
+
+        #ifdef PAT
+            PAT_region_end(3);
+        #endif
 
         performance_logger.my_papi_stop(performance_logger.emit_event_counts, &performance_logger.emit_time);
     }
@@ -334,6 +343,9 @@ namespace minicombust::particles
         const uint64_t particles_size  = particles.size(); 
 
         performance_logger.my_papi_start();
+        #ifdef PAT
+            PAT_region_begin(1, "Solve_spray_equ");
+        #endif
         
 		// Solve spray equations
         #pragma ivdep
@@ -411,6 +423,10 @@ namespace minicombust::particles
             particles.pop_back();
         }
 
+        #ifdef PAT
+            PAT_region_end(1);
+        #endif
+
         performance_logger.my_papi_stop(performance_logger.spray_kernel_event_counts, &performance_logger.spray_time);
     }
 
@@ -421,6 +437,10 @@ namespace minicombust::particles
 
         if (PARTICLE_SOLVER_DEBUG && mpi_config->rank == mpi_config->particle_flow_rank )  printf("\tRank %d: Running fn: update_particle_positions.\n", mpi_config->rank);
         const uint64_t particles_size  = particles.size();
+
+        #ifdef PAT
+            PAT_region_begin(2, "update_positions");
+        #endif
 
         uint64_t elements [mesh->num_blocks];
         for (uint64_t i = 0; i < mesh->num_blocks; i++)
@@ -493,6 +513,11 @@ namespace minicombust::particles
             particles.pop_back();
         }
         particle_timing[5] += MPI_Wtime();
+
+        #ifdef PAT
+            PAT_region_end(2);
+        #endif
+
         performance_logger.my_papi_stop(performance_logger.position_kernel_event_counts, &performance_logger.position_time);
     }
 

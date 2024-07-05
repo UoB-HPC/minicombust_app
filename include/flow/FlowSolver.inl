@@ -2,6 +2,9 @@
 #include <limits.h>
 
 #include "flow/FlowSolver.hpp"
+#ifdef PAT
+    #include "pat_api.h"
+#endif
 
 #define TERBTE 0
 #define TERBED 1
@@ -291,6 +294,9 @@ namespace minicombust::flow
 
     template<typename T> void FlowSolver<T>::get_neighbour_cells ( const uint64_t recv_id )
     {
+        #ifdef PAT
+            PAT_region_begin(8,"neighbours");
+        #endif
 		/*Find all the cells which are neighbours of the current cell.
 		  Used to find the halos*/
         double node_neighbours   = 8;
@@ -424,6 +430,10 @@ namespace minicombust::flow
         }
 
         unordered_neighbours_set[0].erase(MESH_BOUNDARY);
+
+        #ifdef PAT
+            PAT_region_end(8);
+        #endif
     }
 
     template<typename T> void FlowSolver<T>::interpolate_to_nodes ()
@@ -616,6 +626,10 @@ namespace minicombust::flow
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
+
+        #ifdef PAT
+            PAT_region_begin(7,"interpolate_flow");
+        #endif
         
         flow_timings[13] -= MPI_Wtime();
         interpolate_to_nodes ();
@@ -668,6 +682,10 @@ namespace minicombust::flow
             // recv_time2  += MPI_Wtime();
         }
         flow_timings[17] += MPI_Wtime();
+
+        #ifdef PAT
+            PAT_region_end(7);
+        #endif
         
         // recv_time3  -= MPI_Wtime();
 
@@ -931,6 +949,10 @@ namespace minicombust::flow
 
         performance_logger.my_papi_start();
 
+        #ifdef PAT
+            PAT_region_begin(21,"GRAD");
+        #endif
+
         for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
         {
             const uint64_t cell = block_cell + mesh->local_cells_disp;
@@ -1067,6 +1089,10 @@ namespace minicombust::flow
 	        solve(data_A, data_bVPR, &phi_grad.VARP[block_cell].x);
         }
         
+        #ifdef PAT
+            PAT_region_end(21);
+        #endif
+        
         performance_logger.my_papi_stop(performance_logger.get_flow_gradients_event_counts, &performance_logger.get_flow_gradients_time);
     }
 
@@ -1199,6 +1225,8 @@ namespace minicombust::flow
 
         int first_row;
         int last_row;
+
+        MatGetOwnershipRange(A, &first_row, &last_row);
 
         if(UVW)
         {
@@ -1344,6 +1372,9 @@ namespace minicombust::flow
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_sparse_matrix.\n", mpi_config->rank);
 
         performance_logger.my_papi_start();
+        #ifdef PAT
+            PAT_region_begin(13, "solve_sparse");
+        #endif
 
         VecZeroEntries(u);
 
@@ -1370,6 +1401,9 @@ namespace minicombust::flow
 			indx[i] = i+mesh->local_cells_disp;
 		}
 		VecGetValues(u, mesh->local_mesh_size, indx, phi_component);
+        #ifdef PAT
+            PAT_region_end(13);
+        #endif
         performance_logger.my_papi_stop(performance_logger.standard_solve_event_count, &performance_logger.standard_solve_time);
         flow_timings[23] += MPI_Wtime();
     }
@@ -2105,7 +2139,19 @@ namespace minicombust::flow
     {
         performance_logger.my_papi_start();
 		/*Set up a sparse A matrix using PETSc for the pressure solve*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_pressure_matrix.\n", mpi_config->rank);q
+        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_pressure_matrix.\n", mpi_config->rank);
+
+        int first_row;
+        int last_row;
+
+        if(first_pressure)
+        {
+            MatGetOwnershipRange(Pressure_A, &first_row, &last_row);
+        }
+        else
+        {
+            MatGetOwnershipRange(A, &first_row, &last_row);
+        }
 
         if(first_pressure)
         {
@@ -2189,6 +2235,9 @@ namespace minicombust::flow
 
         flow_timings[24] -= MPI_Wtime();
 
+        #ifdef PAT
+            PAT_region_begin(15,"solve_pressure_mat");
+        #endif
         if(first_pressure)
         {
             VecZeroEntries(Pressure_b);
@@ -2247,6 +2296,10 @@ namespace minicombust::flow
         }
         VecGetValues(u, mesh->local_mesh_size, indx, phi.PP);
         flow_timings[28] += MPI_Wtime();
+
+        #ifdef PAT
+            PAT_region_end(15);
+        #endif
 
         performance_logger.my_papi_stop(performance_logger.pressure_solve_event_count, &performance_logger.pressure_solve_time);
         flow_timings[22] += MPI_Wtime();
@@ -2497,6 +2550,10 @@ namespace minicombust::flow
 		/*Compute the face based flux values for a general Scalar.*/
 		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function FluxScalar.\n", mpi_config->rank);
         
+        #ifdef PAT
+            PAT_region_begin(20,"FLUX");
+        #endif
+        
         T pe0 =  9999.;
         T pe1 = -9999.;
         T GammaBlend = 0.0; // NOTE: Change when implemented other differencing schemes.
@@ -2720,6 +2777,9 @@ namespace minicombust::flow
 				}
 			}
 		}
+        #ifdef PAT
+            PAT_region_end(20);
+        #endif
 	}
 
 	template<typename T> void FlowSolver<T>::solveTurbulenceModels(int type)

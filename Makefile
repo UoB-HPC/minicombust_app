@@ -19,6 +19,11 @@ ifdef PETSC_INSTALL_PATH
 	LIB += -L$(PETSC_INSTALL_PATH)/lib -lpetsc
 endif
 
+ifdef CRAYPAT
+	INC += -DPAT -I$(CRAYPAT_ROOT)/include
+	LIB += 
+endif
+
 ifdef PAPI
 	INC += -DPAPI -I/opt/cray/pe/papi/6.0.0.7/include
 	LIB += -L/opt/cray/pe/papi/6.0.0.7/lib64 -lpapi -lpfm

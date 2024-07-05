@@ -19,6 +19,8 @@ namespace minicombust::flow
             vector<uint64_t *>        neighbour_indexes;
             vector<particle_aos<T> *> cell_particle_aos;
 
+            bool first_pressure = true;
+
             T turbulence_field;
             T combustion_field;
             T flow_field;
