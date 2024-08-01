@@ -1190,10 +1190,16 @@ namespace minicombust::flow
 
         T RURF = 1. / URFactor;
 
-        int first_row;
-        int last_row;
+        uint64_t first_row;
+        uint64_t last_row;
 
-        MatGetOwnershipRange(A, &first_row, &last_row);
+        int temp_frow;
+        int temp_lrow;
+
+        MatGetOwnershipRange(A, &temp_frow, &temp_lrow);
+
+        first_row = temp_frow;
+        last_row = temp_lrow;
 
         if(UVW)
         {
@@ -1348,13 +1354,13 @@ namespace minicombust::flow
         KSPGetIterationNumber(ksp, &num_its);
         if(reason < 0)
         {
-            if(mpi_config->particle_flow_rank == 0){
-                printf("ERROR: linear solve failed to converge %d\n", reason);
+            if(mpi_config->particle_flow_rank == 0 && FLOW_SOLVER_DEBUG){
+                fprintf(output_file, "ERROR: linear solve failed to converge %d\n", reason);
             }
         }
-        if(mpi_config->particle_flow_rank == 0)
+        if(mpi_config->particle_flow_rank == 0 && FLOW_SOLVER_DEBUG)
         {
-            printf("INFO: converged in %d its for reason %d\n", num_its, reason);
+            fprintf(output_file, "INFO: converged in %d its for reason %d\n", num_its, reason);
         }
 		
 		PetscInt indx[mesh->local_mesh_size];
@@ -1759,8 +1765,7 @@ namespace minicombust::flow
         vel_solve_time += MPI_Wtime();
 		vel_total_time += MPI_Wtime();
         flow_timings[31] += MPI_Wtime();
-        performance_logger.my_papi_stop(performance_logger.solve_uvw_event_counts, &performance_logger.solve_uvw_time);
-
+        
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) 
 				&& FLOW_SOLVER_FINE_TIME)
         {
@@ -2045,7 +2050,7 @@ namespace minicombust::flow
 		{
             if(mpi_config->particle_flow_rank == 0)
             {
-                printf("Error: coming here");
+                fprintf(output_file, "Error: coming here");
             }
 			T ratearea = - FlowIn/areaout;
 			FlowOut = 0.0;
@@ -2104,17 +2109,23 @@ namespace minicombust::flow
 		/*Set up a sparse A matrix using PETSc for the pressure solve*/
         if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function setup_pressure_matrix.\n", mpi_config->rank);
 
-        int first_row;
-        int last_row;
+        uint64_t first_row;
+        uint64_t last_row;
+
+        int temp_frow;
+        int temp_lrow;
 
         if(first_pressure)
         {
-            MatGetOwnershipRange(Pressure_A, &first_row, &last_row);
+            MatGetOwnershipRange(Pressure_A, &temp_frow, &temp_lrow);
         }
         else
         {
-            MatGetOwnershipRange(A, &first_row, &last_row);
+            MatGetOwnershipRange(A, &temp_frow, &temp_lrow);
         }
+
+        first_row = temp_frow;
+        last_row = temp_lrow;
 
         if(first_pressure)
         {
@@ -2244,7 +2255,7 @@ namespace minicombust::flow
         if(reason < 0)
         {
             if(mpi_config->particle_flow_rank == 0){
-                printf("ERROR: pressure failed to converge %d\n", reason);
+                fprintf(output_file, "ERROR: pressure failed to converge %d\n", reason);
             }   
         }
         flow_timings[27] += MPI_Wtime();
@@ -2439,8 +2450,6 @@ namespace minicombust::flow
 			}
 			if(Loop_num >= 4 or Pressure_correction_max <= 0.25*Pressure_correction_ref) Loop_continue = false;
 		}
-
-        performance_logger.my_papi_stop(performance_logger.solve_pres_event_counts, &performance_logger.solve_pres_time);
 
 		Update_P_at_boundaries(phi.P); //update boundaries for full Pressure field.
 		
@@ -3333,7 +3342,7 @@ namespace minicombust::flow
 				{
 					flow_timings[i] /= mpi_config->particle_flow_world_size;
 				}
-				printf("\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\nCommunication time: %f\nSetup: %f\nFirst loop: %f\ninterp: %f\nsmall loop: %f\nResize send buff: %f\nResize cell part: %f\nSecond loop: %f\nthrid loop: %f\nresize node array: %f\nGet Neighbours %f\nPressure solve: %f\nNormal solve: %f\nPressure:\n\tZero entries: %f\n\tSet vec values: %f\n\tAssemble: %f\n\tPure solve: %f\n\tGet values: %f\nVelocity:\n\tFlux: %f\n\tSolve: %f\n\tUpdate: %f\n\tSetup: %f\n\t\tZero: %f\n\t\tmain: %f\n\t\tDiag: %f\n\t\tMat ass: %f\n\t\tVec Ass: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10],flow_timings[11],flow_timings[19],flow_timings[12],flow_timings[13],flow_timings[14],flow_timings[15],flow_timings[16],flow_timings[17],flow_timings[18],flow_timings[20],flow_timings[21],flow_timings[22],flow_timings[23],flow_timings[24],flow_timings[25],flow_timings[26],flow_timings[27],flow_timings[28],flow_timings[29],flow_timings[31],flow_timings[32],flow_timings[30],flow_timings[33],flow_timings[34],flow_timings[35],flow_timings[36],flow_timings[37]);
+				fprintf(output_file, "\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\nCommunication time: %f\nSetup: %f\nFirst loop: %f\ninterp: %f\nsmall loop: %f\nResize send buff: %f\nResize cell part: %f\nSecond loop: %f\nthrid loop: %f\nresize node array: %f\nGet Neighbours %f\nPressure solve: %f\nNormal solve: %f\nPressure:\n\tZero entries: %f\n\tSet vec values: %f\n\tAssemble: %f\n\tPure solve: %f\n\tGet values: %f\nVelocity:\n\tFlux: %f\n\tSolve: %f\n\tUpdate: %f\n\tSetup: %f\n\t\tZero: %f\n\t\tmain: %f\n\t\tDiag: %f\n\t\tMat ass: %f\n\t\tVec Ass: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10],flow_timings[11],flow_timings[19],flow_timings[12],flow_timings[13],flow_timings[14],flow_timings[15],flow_timings[16],flow_timings[17],flow_timings[18],flow_timings[20],flow_timings[21],flow_timings[22],flow_timings[23],flow_timings[24],flow_timings[25],flow_timings[26],flow_timings[27],flow_timings[28],flow_timings[29],flow_timings[31],flow_timings[32],flow_timings[30],flow_timings[33],flow_timings[34],flow_timings[35],flow_timings[36],flow_timings[37]);
 			}
 			else
 			{

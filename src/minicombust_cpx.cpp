@@ -208,18 +208,24 @@ int main_minicombust(int argc, char ** argv, MPI_Fint custom, int instance_numbe
     {
         if (mpi_config.solver_type == PARTICLE)
         {
-
-            particle_solver->timestep();
-
-            if (((int64_t)(t % output_iteration) == output_iteration - 1))  
+            if ((output_iteration != -1) and (((int64_t)((t+1) % output_iteration) == 0) or (t == 0)))  
             {
                 output_time -= MPI_Wtime();
                 particle_solver->output_data(t+1);
                 output_time += MPI_Wtime();
             }
+
+            particle_solver->timestep();
         }
 		else
 		{
+
+            if ((output_iteration != -1) and (((int64_t)((t+1) % output_iteration) == 0) or (t == 0)))
+            {
+                output_time -= MPI_Wtime();
+				flow_solver->output_data(t+1);
+                output_time += MPI_Wtime();
+            }
 
             flow_solver->timestep();
 
@@ -229,13 +235,6 @@ int main_minicombust(int argc, char ** argv, MPI_Fint custom, int instance_numbe
                     send_recv_data(units, relative_positions, mesh->mesh_size, t, ntimesteps, p_variables_data, p_variables_recv, fp);
                 }
             }
-			
-			if (((int64_t)(t % output_iteration) == output_iteration - 1))
-            {
-                output_time -= MPI_Wtime();
-				flow_solver->output_data(t+1);
-                output_time += MPI_Wtime();
-            }	
 		}
     }
     program_time += MPI_Wtime();
