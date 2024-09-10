@@ -14,7 +14,7 @@ export UCX_PROTO_ENABLE=n
 export UCX_MAX_RNDV_RAILS=1
 export UCX_TLS=^gdr_copy
 export UCX_CUDA_COPY_DMABUF=y
-
+NICS=(mlx5_0:1 mlx5_3:1 mlx5_4:1 mlx5_5:1 mlx5_6:1 mlx5_9:1 mlx5_10:1 mlx5_11:1)
 
 export CUDA_VISIBLE_DEVICES=
 if [ $SLURM_PROCID -gt $(( MINICOMBUST_PRANKS-1 )) ]; then
@@ -22,6 +22,7 @@ if [ $SLURM_PROCID -gt $(( MINICOMBUST_PRANKS-1 )) ]; then
   # UCX_CUDA_COPY_DMABUF=no
   echo "RANK $SLURM_PROCID VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES hostname=" `hostname`
 
+  export UCX_NET_DEVICES=${NICS[$CUDA_VISIBLE_DEVICES]}
   echo ""
   echo "OMPI_MCA_pml                 $OMPI_MCA_pml "
   echo "UCX_TLS                      $UCX_TLS "
@@ -46,8 +47,8 @@ if [ $SLURM_PROCID = $MINICOMBUST_PRANKS  ]; then
 	outfile="RANK$SLURM_PROCID-RANKS$MINICOMBUST_RANKS-GPUS$MINICOMBUST_GPUS-CELLS$MINICOMBUST_CELLS-PARTICLES-$MINICOMBUST_PARTICLES-ITERS$MINICOMBUST_ITERS"
   prof_cmd="valgrind --leak-check=yes --show-reachable=yes --track-origins=yes --log-file=$SLURM_PROCID.log " 
   prof_cmd="ncu -f --set full  --kernel-name kernel_get_phi_gradient --launch-count 1 --launch-skip 6 -o $outfile " 
-  prof_cmd="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --sample=none --cpuctxsw=none --trace=cuda,nvtx,mpi --force-overwrite=true -o $outfile " 
   prof_cmd="" 
+  prof_cmd="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --sample=none --cpuctxsw=none --trace=cuda,nvtx,mpi --force-overwrite=true -o $outfile " 
 	echo "$SLURM_PROCID rank prof_cmd:  $prof_cmd"
 	echo "cmd:  $prof_cmd"
 	echo ""

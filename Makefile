@@ -19,9 +19,9 @@ endif
 
 ifdef CUDA_INSTALL_PATH
 	CC := nvcc
-	CFLAGS := --expt-relaxed-constexpr --expt-extended-lambda -gencode arch=compute_90,code=sm_90 -fopenmp --generate-line-info  -pg -g -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O3 -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion --expt-relaxed-constexpr --expt-extended-lambda
+	CFLAGS := --expt-relaxed-constexpr -rdynamic --expt-extended-lambda -gencode arch=compute_90,code=sm_90 -fopenmp --generate-line-info  -pg -g -forward-unknown-to-host-compiler -Xcompiler -std=c++2a -O3 -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion --expt-relaxed-constexpr --expt-extended-lambda
 	NVCC := nvcc
-	NVFLAGS := --expt-relaxed-constexpr --expt-extended-lambda -forward-unknown-to-host-compiler -fopenmp --extended-lambda -pg -g -O0 -gencode arch=compute_90,code=sm_90 
+	NVFLAGS := --expt-relaxed-constexpr --expt-extended-lambda -forward-unknown-to-host-compiler -rdynamic -fopenmp --extended-lambda -pg -g -O3 -gencode arch=compute_90,code=sm_90 
 	INC += -I$(CUDA_INSTALL_PATH)/include -IcuCollections/include/
 	LIB += -L$(CUDA_INSTALL_PATH)/lib64 -lcudart -lnvToolsExt
 endif
