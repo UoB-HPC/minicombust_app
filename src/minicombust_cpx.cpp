@@ -38,13 +38,13 @@ int main_minicombust(int argc, char ** argv, MPI_Fint custom, int instance_numbe
     MPI_Comm_size(mpi_config.world,  &mpi_config.world_size);
 
     //Input variables
-    int particle_ranks;
+    int flow_ranks;
     uint64_t particles_per_timestep;
     uint64_t modifier;
     int64_t output_iteration;
     uint64_t ntimesteps = coupler_cycles * combust_conversion_factor;
 
-    read_inputs(&particle_ranks, &particles_per_timestep, &modifier, &output_iteration);
+    read_inputs(&flow_ranks, &particles_per_timestep, &modifier, &output_iteration);
 
     // Run Configuration
     const double   delta                        = 1.0e-5;
@@ -54,7 +54,7 @@ int main_minicombust(int argc, char ** argv, MPI_Fint custom, int instance_numbe
     vec<uint64_t>  elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
 
     //mpi configuration
-    int flow_ranks     = mpi_config.world_size - particle_ranks;
+    int particle_ranks     = mpi_config.world_size - flow_ranks;
 
     // If rank < given number of particle ranks.
     mpi_config.solver_type = (mpi_config.rank >= flow_ranks); // 1 for particle, 0 for flow
@@ -235,6 +235,7 @@ int main_minicombust(int argc, char ** argv, MPI_Fint custom, int instance_numbe
                     send_recv_data(units, relative_positions, mesh->mesh_size, t, ntimesteps, p_variables_data, p_variables_recv, fp);
                 }
             }
+            MPI_Barrier(mpi_config.particle_flow_world);
 		}
     }
     program_time += MPI_Wtime();

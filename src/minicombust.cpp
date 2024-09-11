@@ -31,8 +31,8 @@ int main (int argc, char ** argv)
     MPI_Comm_rank(mpi_config.world,  &mpi_config.rank);
     MPI_Comm_size(mpi_config.world,  &mpi_config.world_size);
 
-    int particle_ranks = atoi(argv[1]);
-    int flow_ranks     = mpi_config.world_size - particle_ranks;
+    int flow_ranks = atoi(argv[1]);
+    int particle_ranks     = mpi_config.world_size - flow_ranks;
 
     // If rank < given number of particle ranks.
     mpi_config.solver_type = (mpi_config.rank >= flow_ranks); // 1 for particles, 0 for flow
