@@ -38,6 +38,8 @@
 build/*
 lib/*
 out/*
+slurm_logs/
+results/
 
 # Ignore any executables
 bin/*

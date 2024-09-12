@@ -16,6 +16,8 @@ USE_ENROOT=0
 INTERACTIVE=0
 INTERACTIVE_RUN=0
 AMGX_PATH=/lustre/fsw/coreai_devtech_all/hwaugh/repos/AMGX_vector_upload/install/lib/
+GLOBAL_PROF_CMD=
+PROF_RANKS=0
 
 while [ : ]; do
   case "$1" in
@@ -50,6 +52,18 @@ while [ : ]; do
     --enroot)
         USE_ENROOT=1
         shift
+        ;;
+    --nsys)
+        GLOBAL_PROF_CMD="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --sample=none --cpuctxsw=none --trace=cuda,nvtx,mpi --force-overwrite=true -o"
+        shift
+        ;;
+    --ncu)
+        GLOBAL_PROF_CMD="ncu -f --set full  --kernel-name kernel_get_phi_gradient --launch-count 1 --launch-skip 6 -o"
+        shift
+        ;;
+    --prof_ranks)
+        PROF_RANKS="$2"
+        shift 2
         ;;
     --interactive_run)
         export INTERACTIVE=1
@@ -92,10 +106,12 @@ print_config () {
     echo "  mount:                 $MOUNT"                   | tee -a $OUTFILE.log       
     echo "  wdir:                  $WDIR"                    | tee -a $OUTFILE.log       
     echo "  walltime:              $WALLTIME"                | tee -a $OUTFILE.log       
+    echo "  amgx_path:             $AMGX_PATH"               | tee -a $OUTFILE.log      
+    echo "  profile_ranks:         $PROF_RANKS"              | tee -a $OUTFILE.log      
     echo "  create_cmd:            $CREATE_CMD"              | tee -a $OUTFILE.log       
+    echo "  global_prof_cmd:       $GLOBAL_PROF_CMD"         | tee -a $OUTFILE.log      
     echo "  inner_cmd:             $INNER_CMD"               | tee -a $OUTFILE.log       
     echo "  outer_cmd:             $OUTER_CMD"               | tee -a $OUTFILE.log       
-    echo "  amgx_path:             $AMGX_PATH"               | tee -a $OUTFILE.log      
     echo "" 
     echo "" 
 }
@@ -103,19 +119,18 @@ print_config () {
 mkdir -p $RESULTS_DIR
 
 CREATE_CMD=""
-INNER_CMD="./bin/gpu_minicombust $PRANKS $PARTICLES $CELLS -1 $ITERS"
+INNER_CMD="./wrapper.sh ./bin/gpu_minicombust $PRANKS $PARTICLES $CELLS -1 $ITERS"
 OUTER_CMD="source unset.sh; srun -N${NODES} --ntasks-per-node=${MPI_PER_NODE} --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=${CONTAINER} --distribution=cyclic:cyclic --container-mounts=${MOUNT}:${MOUNT} bash -c"
 
 if [ $USE_ENROOT -eq 1 ]
 then
     CREATE_CMD="enroot create --name minicombust -- $CONTAINER || true > /dev/null 2>&1 "
     OUTER_CMD="enroot start --mount $MOUNT:$MOUNT minicombust bash -c"
-    INNER_CMD="mpirun -bind-to none -np ${RANKS} ./wrapper.sh ${INNER_CMD}"
-else
-    INNER_CMD="./slurm_wrapper.sh ${INNER_CMD}"
+    INNER_CMD="mpirun -bind-to none -np ${RANKS} ${INNER_CMD}"
 fi
 
 OUTFILE="$RESULTS_DIR/NODES${NODES}-RANKS$RANKS-GPUS$NGPUS-CELLS$CELLS-PARTICLES$PARTICLES-ITERS$ITERS"
+GLOBAL_PROF_CMD="$GLOBAL_PROF_CMD $OUTFILE"
 
 print_config
 
@@ -137,6 +152,8 @@ sed -i "s@#PARTICLES#@$PARTICLES@g"                $OUTFILE.job
 sed -i "s@#ITERS#@$ITERS@g"                        $OUTFILE.job
 sed -i "s@OUTFILE@$OUTFILE@g"                      $OUTFILE.job
 sed -i "s@#AMGX_PATH#@$AMGX_PATH@g"                $OUTFILE.job
+sed -i "s@#PROF_CMD#@$GLOBAL_PROF_CMD@g"           $OUTFILE.job
+sed -i "s@#PROF_RANKS#@$PROF_RANKS@g"              $OUTFILE.job
 
 if [ $INTERACTIVE -eq 1 ]
 then

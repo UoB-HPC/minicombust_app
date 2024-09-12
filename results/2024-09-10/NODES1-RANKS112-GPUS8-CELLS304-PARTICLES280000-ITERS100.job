@@ -1,0 +1,31 @@
+#!/bin/bash
+#SBATCH -A coreai_devtech_all                #account
+#SBATCH -p batch                             #partition
+#SBATCH -N 1                        #number of nodes
+#SBATCH --ntasks-per-node=112
+#SBATCH -J coreai_devtech_all-hpc-hpl:       #job name
+#SBATCH -t 0:20:00                     #wall time limit, hr:min:sec
+#SBATCH --exclusive
+  
+
+echo "PWD: $PWD"
+echo "Running on slurm hosts $SLURM_JOB_NODELIST" | tee -a /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/results/2024-09-10//NODES1-RANKS112-GPUS8-CELLS304-PARTICLES280000-ITERS100.log
+
+echo 'cmd: source unset.sh; srun -N1 --ntasks-per-node=112 --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=/lustre/fsw/coreai_devtech_all/hwaugh/containers/devtech.sqsh --distribution=cyclic:cyclic --container-mounts=/lustre/fsw/coreai_devtech_all/hwaugh/:/lustre/fsw/coreai_devtech_all/hwaugh/ bash -c "cd $PWD; source set_LD_PATH.sh; ./slurm_wrapper.sh ./bin/gpu_minicombust 104 280000 304 -1 100"' | tee -a /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/results/2024-09-10//NODES1-RANKS112-GPUS8-CELLS304-PARTICLES280000-ITERS100.log
+
+export MINICOMBUST_NODES=1
+export MINICOMBUST_GPUS=8
+export MINICOMBUST_RANKS=112
+export MINICOMBUST_PRANKS=104
+export MINICOMBUST_CELLS=304
+export MINICOMBUST_PARTICLES=280000
+export MINICOMBUST_ITERS=100
+export MINICOMBUST_OUT=/lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/results/2024-09-10//NODES1-RANKS112-GPUS8-CELLS304-PARTICLES280000-ITERS100.log
+
+MINICOMBUST_VARS="MINICOMBUST_NODES=$MINICOMBUST_NODES MINICOMBUST_GPUS=$MINICOMBUST_GPUS MINICOMBUST_RANKS=$MINICOMBUST_RANKS MINICOMBUST_PRANKS=$MINICOMBUST_PRANKS MINICOMBUST_CELLS=$MINICOMBUST_CELLS MINICOMBUST_PARTICLES=$MINICOMBUST_PARTICLES MINICOMBUST_ITERS=$MINICOMBUST_ITERS MINICOMBUST_OUT=$MINICOMBUST_OUT"
+
+
+
+source unset.sh; srun -N1 --ntasks-per-node=112 --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=/lustre/fsw/coreai_devtech_all/hwaugh/containers/devtech.sqsh --distribution=cyclic:cyclic --container-mounts=/lustre/fsw/coreai_devtech_all/hwaugh/:/lustre/fsw/coreai_devtech_all/hwaugh/ bash -c "cd $PWD; AMGX_PATH=/lustre/fsw/coreai_devtech_all/hwaugh/repos/AMGX_vector_upload/install/lib/ source set_LD_PATH.sh; source unset.sh;  $MINICOMBUST_VARS ./slurm_wrapper.sh ./bin/gpu_minicombust 104 280000 304 -1 100" | tee -a /lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/results/2024-09-10//NODES1-RANKS112-GPUS8-CELLS304-PARTICLES280000-ITERS100.log
+
+
