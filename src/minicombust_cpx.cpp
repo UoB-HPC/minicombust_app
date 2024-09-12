@@ -120,16 +120,19 @@ int main_minicombust(int argc, char ** argv, MPI_Fint custom, int instance_numbe
         // ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
         particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size, fp);
 
-        MPI_Send(&mpi_config.particle_flow_world_size, 1, MPI_INT, 0, 10, mpi_config.world);
-        MPI_Send(&particle_solver->total_node_index_array_size, 1, MPI_UINT64_T, 0, 11, mpi_config.world);
-        MPI_Send(&particle_solver->total_node_flow_array_size, 1, MPI_UINT64_T, 0, 12, mpi_config.world);
-        MPI_Send(&particle_solver->total_cell_particle_index_array_size, 1, MPI_UINT64_T, 0, 13, mpi_config.world);
-        MPI_Send(&particle_solver->total_cell_particle_array_size, 1, MPI_UINT64_T, 0, 14, mpi_config.world);
-        MPI_Send(&particle_solver->total_neighbours_sets_size, 1, MPI_UINT64_T, 0, 15, mpi_config.world);
-        MPI_Send(&particle_solver->total_cell_particle_field_map_size, 1, MPI_UINT64_T, 0, 16, mpi_config.world);
-        MPI_Send(&particle_solver->total_particles_size, 1, MPI_UINT64_T, 0, 17, mpi_config.world);
-        MPI_Send(&particle_solver->total_node_to_field_address_map_size, 1, MPI_UINT64_T, 0, 18, mpi_config.world);
-        MPI_Send(&particle_solver->total_memory_usage, 1, MPI_UINT64_T, 0, 19, mpi_config.world);
+        if(mpi_config.particle_flow_rank == 0)
+        {
+            MPI_Send(&mpi_config.particle_flow_world_size, 1, MPI_INT, 0, 10, mpi_config.world);
+            MPI_Send(&particle_solver->total_node_index_array_size, 1, MPI_UINT64_T, 0, 11, mpi_config.world);
+            MPI_Send(&particle_solver->total_node_flow_array_size, 1, MPI_UINT64_T, 0, 12, mpi_config.world);
+            MPI_Send(&particle_solver->total_cell_particle_index_array_size, 1, MPI_UINT64_T, 0, 13, mpi_config.world);
+            MPI_Send(&particle_solver->total_cell_particle_array_size, 1, MPI_UINT64_T, 0, 14, mpi_config.world);
+            MPI_Send(&particle_solver->total_neighbours_sets_size, 1, MPI_UINT64_T, 0, 15, mpi_config.world);
+            MPI_Send(&particle_solver->total_cell_particle_field_map_size, 1, MPI_UINT64_T, 0, 16, mpi_config.world);
+            MPI_Send(&particle_solver->total_particles_size, 1, MPI_UINT64_T, 0, 17, mpi_config.world);
+            MPI_Send(&particle_solver->total_node_to_field_address_map_size, 1, MPI_UINT64_T, 0, 18, mpi_config.world);
+            MPI_Send(&particle_solver->total_memory_usage, 1, MPI_UINT64_T, 0, 19, mpi_config.world);
+        }
 
     }
     else
