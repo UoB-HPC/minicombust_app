@@ -59,39 +59,36 @@ int main (int argc, char ** argv)
 	//TODO:sort out vtk_output.
 	//TODO:ideal flow tanks seem to cause a segfault
 
+    //Extract mpi_rank with env var
+
+
     char *buf = getenv("MINICOMBUST_RANK_ID");
     int lrank = atoi(buf); 
-    buf = getenv("MINICOMBUST_RANKS");
-    int lsize = atoi(buf); 
-    buf = getenv("MINICOMBUST_FRANKS");
-    int gpu_count = atoi(buf); 
+
+    //Should we use the GPU count currently computed in the wrapper so we can easier latter support setups where multiple GPUs are used by one MPI rank?
+    int flow_ranks = atoi(argv[1]);
 
     cudaFree(0);
-    if (lrank > (lsize-gpu_count-1)) 
+    if (lrank < flow_ranks) 
     {
-        // int cuda_dev = lrank - 104;
         int cuda_dev = 0;
         gpuErrchk( cudaSetDevice(cuda_dev));
-        // gpuErrchk( );
-        printf("Process %d selecting device %d of %d\n", lrank, cuda_dev, gpu_count);
+        printf("Process %d selecting device %d of %d\n", lrank, cuda_dev, flow_ranks);
     }
 
     // MPI Initialisation 
     MPI_Init(&argc, &argv);
     MPI_Config mpi_config;
-
     mpi_config.world = MPI_COMM_WORLD;
 
     // Create overall world
     MPI_Comm_rank(mpi_config.world,  &mpi_config.rank);
     MPI_Comm_size(mpi_config.world,  &mpi_config.world_size);
 
-    int particle_ranks = atoi(argv[1]);
-    int flow_ranks     = mpi_config.world_size - particle_ranks;
+    int particle_ranks = mpi_config.world_size - flow_ranks;
 
-    // If rank < given number of particle ranks.
-    // mpi_config.solver_type = ((lrank % 14) != 1); // 1 for particle, 0 for flow
-    mpi_config.solver_type = (mpi_config.rank < particle_ranks); // 1 for particle, 0 for flow
+    mpi_config.solver_type = (mpi_config.rank >= flow_ranks); // 1 for particle, 0 for flow
+
     MPI_Comm_split(mpi_config.world, mpi_config.solver_type, mpi_config.rank, &mpi_config.particle_flow_world);
     MPI_Comm_rank(mpi_config.particle_flow_world,  &mpi_config.particle_flow_rank);
     MPI_Comm_size(mpi_config.particle_flow_world,  &mpi_config.particle_flow_world_size);
@@ -128,7 +125,7 @@ int main (int argc, char ** argv)
 
     // Perform setup and benchmark cases
     MPI_Barrier(mpi_config.world); setup_time  -= MPI_Wtime(); mesh_time  -= MPI_Wtime(); 
-    Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks);
+    Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks, stdout);
     MPI_Barrier(mpi_config.world); mesh_time   += MPI_Wtime();
 
 	if (mpi_config.rank == 0)  printf("Mesh built in %6.2fs!\n\n", mesh_time);
@@ -155,7 +152,7 @@ int main (int argc, char ** argv)
 
         ParticleDistribution<double> *particle_dist = load_injector_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, box_dim, mesh);
         // ParticleDistribution<double> *particle_dist = load_particle_distribution(particles_per_timestep, local_particles_per_timestep, remainder_particles, &mpi_config, mesh);
-        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size); 
+        particle_solver = new ParticleSolver<double>(&mpi_config, ntimesteps, delta, particle_dist, mesh, reserve_particles_size, stdout); 
     }
     else
     {
@@ -165,7 +162,7 @@ int main (int argc, char ** argv)
 			PETSC_COMM_WORLD = mpi_config.particle_flow_world;
 			PetscInitialize(&argc, &argv, nullptr, nullptr);
 		#endif
-        flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta);
+        flow_solver     = new FlowSolver<double>(&mpi_config, mesh, delta, stdout);
     }
 
 	if (mpi_config.rank == 0)   cout << endl;

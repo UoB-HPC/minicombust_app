@@ -53,12 +53,6 @@ namespace minicombust::flow
 
             double delta;
 
-            // vector<uint64_t *>        neighbour_indexes;
-            // vector<particle_aos<T> *> cell_particle_aos;
-
-            // vector<uint64_t *>        gpu_neighbour_indexes;
-            // vector<particle_aos<T> *> gpu_cell_particle_aos;
-
             T turbulence_field;
             T combustion_field;
             T flow_field;
@@ -104,12 +98,13 @@ namespace minicombust::flow
             phi_vector<T>  phi;
             phi_vector<T>  phi_nodes;
 			
-            //phi_vector<T>  old_phi;
             phi_vector<T>  S_phi;
             phi_vector<vec<T>> phi_grad;
             
             T effective_viscosity;
 			T inlet_effective_viscosity;
+
+            FILE *output_file;
 
             Hash_map *node_hash_map, *boundary_hash_map;
             Hash_map *gpu_node_hash_map, *gpu_boundary_hash_map;
@@ -162,51 +157,11 @@ namespace minicombust::flow
             int *partition_vector;
 
             MemoryTracker *mtracker;
-
-
-			//TODO: we don't nee all this memory decolration anymore
-			/*T  *full_data_A;
-	        T  *full_data_bU;
-    	    T  *full_data_bV;
-        	T  *full_data_bW;
-	        T  *full_data_bP;
-    	    T  *full_data_bTE;
-        	T  *full_data_bED;
-	        T  *full_data_bT;
-    	    T  *full_data_bFU;
-        	T  *full_data_bPR;
-	        T  *full_data_bVFU;
-    	    T  *full_data_bVPR;*/
-
-			/*size_t A_pitch;
-	        size_t bU_pitch;
-    	    size_t bV_pitch;
-        	size_t bW_pitch;
-	        size_t bP_pitch;
-    	    size_t bTE_pitch;
-        	size_t bED_pitch;
- 	       	size_t bT_pitch;
-    	    size_t bFU_pitch;
-        	size_t bPR_pitch;
-	        size_t bVFU_pitch;
-    	    size_t bVPR_pitch;*/
 	
 			T *values;
         	int *nnz;
         	int *rows_ptr;
         	int64_t *col_indices;
-
-//PETSC
-/*			Mat A;
-			Vec b, u;
-			KSP ksp;
-
-			Mat grad_A;
-			Vec grad_b, grad_u, grad_bU, grad_bV, grad_bW;
-			Vec grad_bP, grad_bTE, grad_bED, grad_bT, grad_bFU;
-			Vec grad_bPR, grad_bVFU, grad_bVPR;
-			KSP grad_ksp;
-*/
 
 			int nrings;
 			AMGX_Mode mode = AMGX_mode_dDDI;
@@ -316,9 +271,9 @@ namespace minicombust::flow
 
 			T FGM_table[100][100][100][100];
 
-            FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh, double delta) : mesh(mesh), delta(delta), mpi_config(mpi_config)
+            FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh, double delta, FILE* fp) : mesh(mesh), delta(delta), output_file(fp), mpi_config(mpi_config)
             {
-                if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Entered FlowSolver constructor.\n", mpi_config->particle_flow_rank);
+                if (FLOW_SOLVER_DEBUG)  fprintf(fp, "\tRank %d: Entered FlowSolver constructor.\n", mpi_config->particle_flow_rank);
 
                 size_t free_sz, total;
 
@@ -328,36 +283,11 @@ namespace minicombust::flow
                 cudaStreamCreate(&process_gpu_fields_stream);
                 cudaStreamCreate(&stream2);
 
-				//Set up which GPUs to use
+				//Set up which GPUs to use 
                 int gpu_count = 0;
                 cudaGetDeviceCount(&gpu_count);
                 int rank = mpi_config->particle_flow_rank;
-                int lrank = rank % gpu_count;
-                // printf("Process %d selecting device %d of %d\n", rank, lrank, gpu_count);
-            //     cudaSetDevice(lrank);
-            //    cudaError_t ret1;                      
-            //    for (int i = 0; i < gpu_count; i++)                                       
-            //        ret1 = cudaDeviceEnablePeerAccess ( i, 0);  
-
-                // printf("Compile time check:\n");                                              
-                // #if defined(MPIX_CUDA_AWARE_SUPPORT) && MPIX_CUDA_AWARE_SUPPORT                   
-                //     printf("This MPI library has CUDA-aware support.\n", MPIX_CUDA_AWARE_SUPPORT);
-                // #elif defined(MPIX_CUDA_AWARE_SUPPORT) && !MPIX_CUDA_AWARE_SUPPORT                
-                //     printf("This MPI library does not have CUDA-aware support.\n");               
-                // #else                                                                             
-                //     printf("This MPI library cannot determine if there is CUDA-aware support.\n"); 
-                // #endif /* MPIX_CUDA_AWARE_SUPPORT */                                                    
-                                                                                                        
-                //     printf("Run time check:\n");                                                        
-                // #if defined(MPIX_CUDA_AWARE_SUPPORT)                                                    
-                //     if (1 == MPIX_Query_cuda_support()) {                                               
-                //         printf("This MPI library has CUDA-aware support.\n");                           
-                //     } else {                                                                            
-                //         printf("This MPI library does not have CUDA-aware support.\n");                 
-                //     }                                                                                   
-                // #else /* !defined(MPIX_CUDA_AWARE_SUPPORT) */                                           
-                //     printf("This MPI library cannot determine if there is CUDA-aware support.\n");      
-                // #endif /* MPIX_CUDA_AWARE_SUPPORT */      
+                int lrank = rank % gpu_count;    
  
 				partition_vector_size = mesh->mesh_size;
 
@@ -397,16 +327,6 @@ namespace minicombust::flow
                 mtracker->allocate_cuda_host("node_starts",   (void**)&node_starts,    particle_ranks          * sizeof(uint64_t));
                 mtracker->allocate_cuda_host("cell_starts",   (void**)&cell_starts,    particle_ranks          * sizeof(uint64_t));
                 mtracker->allocate_cuda_host("node_elements",  (void**)&node_elements, particle_ranks          * sizeof(int));
-
-                // Allocate arrays
-                // neighbour_indexes.push_back((uint64_t*)          mtracker->allocate_host("neighbour_indexes", cell_index_array_size[0]));
-                // cell_particle_aos.push_back((particle_aos<T> * ) mtracker->allocate_host("cell_particle_aos", cell_particle_array_size[0]));
-                // uint64_t *gpu_neighbour_indexes_tmp;
-                // particle_aos<T> *gpu_cell_particle_aos_tmp;
-                // mtracker->allocate_device("gpu_neighbour_indexes_tmp", (void**)&gpu_neighbour_indexes_tmp,  cell_index_array_size[0]);
-                // mtracker->allocate_device("gpu_cell_particle_aos_tmp", (void**)&gpu_cell_particle_aos_tmp, cell_particle_array_size[0]);
-                // gpu_neighbour_indexes.push_back(gpu_neighbour_indexes_tmp);
-                // gpu_cell_particle_aos.push_back(gpu_cell_particle_aos_tmp);
 
                 local_particle_node_sets.push_back(unordered_set<uint64_t>());
 
@@ -598,7 +518,7 @@ namespace minicombust::flow
                 const T visc_lambda = 0.000014;  
                 effective_viscosity = visc_lambda; // NOTE: Localise this to cells and boundaries when implementing Turbulence model
 
-                if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Setting up cell data.\n", mpi_config->particle_flow_rank);
+                if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Setting up cell data.\n", mpi_config->particle_flow_rank);
                 T gradient_percent = 0.01;
 
                 #pragma ivdep
@@ -838,7 +758,7 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_boundary_map", (void**)&gpu_boundary_map, mesh->mesh_size * sizeof(uint64_t));
                 mtracker->allocate_device("gpu_boundary_map_keys", (void**)&gpu_boundary_map_keys, boundary_map.size() * sizeof(uint64_t));
                 mtracker->allocate_device("gpu_boundary_map_values", (void**)&gpu_boundary_map_values, boundary_map.size() * sizeof(uint64_t));
-                printf("global_node_to_local_node_map_size %lu ps %lu\n", global_node_to_local_node_map.size(), mesh->points_size);
+                fprintf(output_file, "global_node_to_local_node_map_size %lu ps %lu\n", global_node_to_local_node_map.size(), mesh->points_size);
 
                 if (mpi_config->particle_flow_world_size != 1)
                 {
@@ -953,7 +873,7 @@ namespace minicombust::flow
 
                 uint64_t *gpu_boundary_hash_map_keys, *gpu_boundary_hash_map_values;
                 uint64_t next_pow2 = pow(2, ceil(log(boundary_map.size())/log(2)))*8;
-                if (mpi_config->particle_flow_rank == 0) printf("Boundary map size: %lu real pow2 %lu\n", boundary_map.size(), next_pow2);
+                if (mpi_config->particle_flow_rank == 0) fprintf(output_file, "Boundary map size: %lu real pow2 %lu\n", boundary_map.size(), next_pow2);
                 if (mpi_config->particle_flow_world_size != 1)
                 {
                     mtracker->allocate_device("gpu_boundary_hash_map_keys",   (void**)&gpu_boundary_hash_map_keys,   next_pow2 * sizeof(uint64_t));
@@ -1006,7 +926,7 @@ namespace minicombust::flow
 
                 uint64_t *gpu_node_hash_map_keys, *gpu_node_hash_map_values;
                 next_pow2 = pow(2, ceil(log(global_node_to_local_node_map.size())/log(2)))*8;
-                if (mpi_config->particle_flow_rank == 0) printf("Node map size: %lu  real pow2 %lu\n", global_node_to_local_node_map.size(), next_pow2);
+                if (mpi_config->particle_flow_rank == 0) fprintf(output_file, "Node map size: %lu  real pow2 %lu\n", global_node_to_local_node_map.size(), next_pow2);
                 if (mpi_config->particle_flow_world_size != 1)
                 {
                     gpuErrchk( cudaMemcpy(gpu_node_map_keys,   full_node_map_keys,   global_node_to_local_node_map.size() * sizeof(uint64_t), cudaMemcpyHostToDevice));
@@ -1040,16 +960,6 @@ namespace minicombust::flow
                 gpuErrchk( cudaFree(gpu_node_map_keys));
                 gpuErrchk( cudaFree(gpu_node_map_values));
 
-				//cell centers to gpu
-				// full_cell_centers = (vec<T> *) malloc(mesh->mesh_size * sizeof(vec<T>));
-				// for(uint64_t i = 0; i < mesh->mesh_size; i++)
-				// {
-				// 	const uint64_t cell = i - mesh->shmem_cell_disp;
-				// 	full_cell_centers[i] = mesh->cell_centers[cell];
-				// 	//printf("the center of cell %lu is (%3.8f,%3.8f,%3.8f)\n",i,full_cell_centers[i].x,full_cell_centers[i].y,full_cell_centers[i].z);
-				// } 
-
-
                 uint64_t *local_halo_cells        = (uint64_t *) malloc(nhalos * mesh->cell_size * sizeof(uint64_t)); 
                 vec<T>   *local_halo_cell_centers = (vec<T>   *) malloc(nhalos * sizeof(vec<T>)); 
 
@@ -1072,14 +982,6 @@ namespace minicombust::flow
 				gpuErrchk( cudaMemcpy(gpu_face_centers, face_centers, mesh->faces_size * sizeof(vec<T>),
 						   cudaMemcpyHostToDevice));
 
-                // gpuErrchk( cudaMemcpy(gpu_local_nodes, &mesh->points[-mesh->shmem_point_disp],
-				// 			mesh->points_size * sizeof(vec<T>),
-				// 			cudaMemcpyHostToDevice));
-
-                // gpuErrchk( cudaMemcpy(gpu_cells_per_point, &mesh->cells_per_point[-mesh->shmem_point_disp],
-				// 			mesh->points_size * sizeof(uint8_t),
-				// 			cudaMemcpyHostToDevice));
-
                 // Copy local cells across
                 gpuErrchk( cudaMemcpy(gpu_local_cells, &mesh->cells[(mesh->local_cells_disp - mesh->shmem_cell_disp) * mesh->cell_size],
 							mesh->local_mesh_size * mesh->cell_size * sizeof(uint64_t),
@@ -1101,17 +1003,15 @@ namespace minicombust::flow
                 free(local_halo_cell_centers);
                 free(local_halo_cells);
 
-				// free(full_cell_centers);
-
-                if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
+                if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
 
 				//Create config for AMGX
 				AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 				AMGX_SAFE_CALL(AMGX_install_signal_handler());
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/AMGX_Solvers/FGMRES_AGGREGATION_JACOBI.json"));
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/scratch/space1/e609/suc/new_gpu/AMGX_Solvers/FGMRES_AGGREGATION_JACOBI.json"));
 				AMGX_SAFE_CALL(AMGX_config_add_parameters(&pressure_cfg, "exception_handling=1"));
 				
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "//lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app/AMGX_Solvers/PBICGSTAB_NOPREC.json"));
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "/scratch/space1/e609/suc/new_gpu/AMGX_Solvers/PBICGSTAB_NOPREC.json"));
                 AMGX_SAFE_CALL(AMGX_config_add_parameters(&cfg, "exception_handling=1"));	
 				
 				AMGX_SAFE_CALL(AMGX_resources_create(&main_rsrc, cfg,
@@ -1123,7 +1023,7 @@ namespace minicombust::flow
 
                 if (mpi_config->particle_flow_rank == 0)
                 {
-                    printf("GPU memory %lu free of %lu before matrix +vector 1\n", free_sz, total);
+                    fprintf(output_file, "GPU memory %lu free of %lu before matrix +vector 1\n", free_sz, total);
                 }
 				
 				//Create matrix and vectors for AMGX
@@ -1135,7 +1035,7 @@ namespace minicombust::flow
 
                 if (mpi_config->particle_flow_rank == 0)
                 {
-                    printf("GPU memory %lu free of %lu before matrix +vector 2\n", free_sz, total);
+                    fprintf(output_file, "GPU memory %lu free of %lu before matrix +vector 2\n", free_sz, total);
                 }
 				
 
@@ -1147,7 +1047,7 @@ namespace minicombust::flow
 
                 if (mpi_config->particle_flow_rank == 0)
                 {
-                    printf("GPU memory %lu free of %lu before solver create\n", free_sz, total);
+                    fprintf(output_file, "GPU memory %lu free of %lu before solver create\n", free_sz, total);
                 }
 				
 				
@@ -1194,7 +1094,7 @@ namespace minicombust::flow
                 uint64_t total_new_cells_size                  = new_cells_set.size()                        * sizeof(uint64_t);
                 uint64_t total_ranks_size                      = ranks.size()                                * sizeof(uint64_t);
 
-                mtracker->print_usage();
+                mtracker->print_usage(output_file);
 
                 MPI_Barrier(mpi_config->world);
 
@@ -1205,7 +1105,7 @@ namespace minicombust::flow
 
                 if (mpi_config->particle_flow_rank == 0)
                 {
-                    printf("GPU memory %lu free of %lu\n", free_sz, total);
+                    fprintf(output_file, "GPU memory %lu free of %lu\n", free_sz, total);
                 }
             }
 
@@ -1432,24 +1332,6 @@ namespace minicombust::flow
                 free(uint_buffer);
             }
 
-
-            // void resize_cell_particle (uint64_t elements, uint64_t index)
-            // {
-            //     while ( cell_index_array_size[index] < ((size_t) elements * sizeof(uint64_t)) )
-            //     {
-            //         cell_index_array_size[index]    *= 2;
-            //         cell_particle_array_size[index] *= 2;
-
-            //         neighbour_indexes[index] = (uint64_t *)       realloc(neighbour_indexes[index],  cell_index_array_size[index]);
-            //         cell_particle_aos[index] = (particle_aos<T> *)realloc(cell_particle_aos[index],  cell_particle_array_size[index]);
-
-            //         cudaFree(gpu_neighbour_indexes[index]);
-            //         cudaFree(gpu_cell_particle_aos[index]);
-            //         cudaMalloc(&gpu_neighbour_indexes[index], cell_index_array_size[index]);
-            //         cudaMalloc(&gpu_cell_particle_aos[index], cell_particle_array_size[index]);
-            //     }
-            // }
-
             void resize_nodes_arrays (uint64_t elements)
             {
                 while ( node_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
@@ -1486,7 +1368,7 @@ namespace minicombust::flow
             {
                 while ( send_buffers_node_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
                 {
-                    printf("Flow rank resizing send bufffers for %lu elements\n", elements);
+                    fprintf(output_file, "Flow rank resizing send bufffers for %lu elements\n", elements);
                     send_buffers_node_index_array_size *= 2;
                     send_buffers_node_flow_array_size  *= 2;
 

@@ -18,8 +18,9 @@ namespace minicombust::flow
 	template<class T>void FlowSolver<T>::output_data(uint64_t timestep)
     {
 		VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
-        vtk_writer->write_flow_velocities("out/minicombust", timestep, &phi);
-		vtk_writer->write_flow_pressure("out/minicombust", timestep, &phi);
+        vtk_writer->write_flow("out/flow/minicombust", timestep, &phi);
+        // vtk_writer->write_flow_velocities("out/minicombust", timestep, &phi);
+		// vtk_writer->write_flow_pressure("out/minicombust", timestep, &phi);
     }
 	
     template<typename T> inline bool FlowSolver<T>::is_halo ( uint64_t cell )
@@ -412,6 +413,8 @@ namespace minicombust::flow
         new_cells_set.clear();
         ranks.clear();
 
+        memset(mesh->particle_terms, 0, sizeof(particle_aos<T>)*mesh->local_mesh_size);
+
         for (uint64_t i = 0; i < local_particle_node_sets.size(); i++)
         {
             local_particle_node_sets[i].clear();
@@ -425,7 +428,7 @@ namespace minicombust::flow
         static double recv_time1=0., recv_time2=0., recv_time3=0.;
 
         int recvs_complete = 0;
-        MPI_Ibcast(&recvs_complete, 1, MPI_INT, 0, mpi_config->world, &bcast_request);       
+        MPI_Ibcast(&recvs_complete, 1, MPI_INT, mpi_config->particle_flow_world_size, mpi_config->world, &bcast_request);       
  
         int message_waiting = 0;
         MPI_Iprobe(MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
@@ -442,7 +445,7 @@ namespace minicombust::flow
                 MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
 
                 resize_cell_particle(elements[rank_slot], rank_slot);
-                if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
+                if ( FLOW_SOLVER_DEBUG ) fprintf(output_file, "\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
 
                 logger.recieved_cells += elements[rank_slot];
 
@@ -483,7 +486,7 @@ namespace minicombust::flow
 
                 if ( recieved_indexes && !processed_neighbours[p] )
                 {
-                    if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
+                    if ( FLOW_SOLVER_DEBUG ) fprintf(output_file, "\tFlow block %d: Processing %d indexes from %d. Local set size %lu (%lu of %lu sets)\n", mpi_config->particle_flow_rank, elements[p], ranks[p], local_particle_node_sets[p].size(), p, local_particle_node_sets.size());
                     
                     get_neighbour_cells (p);
                     processed_neighbours[p] = true;
@@ -499,14 +502,14 @@ namespace minicombust::flow
             MPI_Test ( &bcast_request, &recvs_complete, MPI_STATUS_IGNORE );
             MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
 
-            if ( FLOW_SOLVER_DEBUG && recvs_complete ) if(recvs_complete) printf("\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
+            if ( FLOW_SOLVER_DEBUG && recvs_complete ) if(recvs_complete) fprintf(output_file, "\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
             all_processed = all_processed & !message_waiting & recvs_complete;
 			time2 += MPI_Wtime(); //1
         }
 
         logger.reduced_recieved_cells += new_cells_set.size();
 
-        if ( FLOW_SOLVER_DEBUG ) printf("\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
+        if ( FLOW_SOLVER_DEBUG ) fprintf(output_file, "\tFlow Rank %d: Recieved index sizes.\n", mpi_config->rank);
 
         time_stats[time_count++] += MPI_Wtime();
         time_stats[time_count]   -= MPI_Wtime(); //2
@@ -564,7 +567,7 @@ namespace minicombust::flow
         
         recv_time3  -= MPI_Wtime();
 
-        if ( FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0 )  printf("\tFlow Rank %d: Posted sends.\n", mpi_config->rank);
+        if ( FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0 )  fprintf(output_file, "\tFlow Rank %d: Posted sends.\n", mpi_config->rank);
 
         all_processed = false;
         while ( !all_processed )
@@ -578,7 +581,7 @@ namespace minicombust::flow
 
                 if ( recieved_indexes && !processed_neighbours[p] )
                 {
-                    if ( FLOW_SOLVER_DEBUG )  printf("\tFlow block %d: Processing %d cell fields from %d .\n", mpi_config->particle_flow_rank, elements[p], ranks[p]);
+                    if ( FLOW_SOLVER_DEBUG )  fprintf(output_file, "\tFlow block %d: Processing %d cell fields from %d .\n", mpi_config->particle_flow_rank, elements[p], ranks[p]);
                     for (int i = 0; i < elements[p]; i++)
                     {
                         mesh->particle_terms[neighbour_indexes[p][i] - mesh->local_cells_disp].momentum += cell_particle_aos[p][i].momentum;
@@ -590,14 +593,14 @@ namespace minicombust::flow
                 }
                 all_processed &= processed_cell_fields[p];
             }
-            if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
+            if ( FLOW_SOLVER_DEBUG && all_processed )  fprintf(output_file, "\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
         }
 
         recv_time3 += MPI_Wtime();
 
         MPI_Waitall(send_requests.size() - 2, send_requests.data(), MPI_STATUSES_IGNORE); // Check field values later on!
 
-        if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Processed cell particle fields .\n", mpi_config->rank);
+        if ( FLOW_SOLVER_DEBUG )  fprintf(output_file, "\tFlow Rank %d: Processed cell particle fields .\n", mpi_config->rank);
 
         MPI_Barrier(mpi_config->particle_flow_world);
         time_stats[time_count++] += MPI_Wtime();
@@ -622,13 +625,13 @@ namespace minicombust::flow
                     MPI_Reduce(MPI_IN_PLACE, &time_stats[i], 1, MPI_DOUBLE, MPI_SUM, 0, mpi_config->particle_flow_world);
 
                 double total_time = 0.0;
-                printf("\nUpdate Flow Field Communuication Timings\n");
+                fprintf(output_file, "\nUpdate Flow Field Communuication Timings\n");
 
                 for (int i = 0; i < time_count; i++)
                     total_time += time_stats[i];
                 for (int i = 0; i < time_count; i++)
-                    printf("Time stats %d: %.3f (%.2f %%)\n", i, time_stats[i]  / mpi_config->particle_flow_world_size, 100 * time_stats[i] / total_time);
-                printf("Total time %f\n", total_time / mpi_config->particle_flow_world_size);
+                    fprintf(output_file, "Time stats %d: %.3f (%.2f %%)\n", i, time_stats[i]  / mpi_config->particle_flow_world_size, 100 * time_stats[i] / total_time);
+                fprintf(output_file, "Total time %f\n", total_time / mpi_config->particle_flow_world_size);
 
             }
             else{
@@ -645,7 +648,7 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::get_phi_gradient ( T *phi_component, vec<T> *phi_grad_component, bool pressure )
 	{
 		/*Use the Least Squares method to find the gradient of a phi component*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function get_phi_gradient.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function get_phi_gradient.\n", mpi_config->rank);
 
         for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
         {
@@ -717,7 +720,6 @@ namespace minicombust::flow
 			KSPSolve(grad_ksp, grad_b, grad_u);
 			PetscInt indx[3] = {0, 1, 2};
 			VecGetValues(grad_u, 3, indx, &phi_grad_component[block_cell].x);
-			printf("grad U is (%3.18f, %3.18f, %3.18f)\n",phi_grad_component[block_cell].x,phi_grad_component[block_cell].y,phi_grad_component[block_cell].z);
 			time += MPI_Wtime();
         }
 	}
@@ -798,8 +800,7 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::limit_phi_gradients ()
     {
 		/*High level function to limit the gradient of variables*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function limit_phi_gradients.\n", mpi_config->rank);
-		printf("coming here\n");
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function limit_phi_gradients.\n", mpi_config->rank);
 		limit_phi_gradient(phi.U, phi_grad.U);
 		limit_phi_gradient(phi.V, phi_grad.V);
 		limit_phi_gradient(phi.W, phi_grad.W);
@@ -816,7 +817,7 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::get_phi_gradients ()
     {
 		/*Use the Least Squares method to find the gradient of most phi components*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function get_phi_gradients.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function get_phi_gradients.\n", mpi_config->rank);
         // NOTE: Currently Least squares is the only method supported
 
         for ( uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
@@ -998,184 +999,43 @@ namespace minicombust::flow
 
 			KSPSolve(grad_ksp, grad_bU, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.U[block_cell].x);
-			printf("\n cell is %lu\n",block_cell);
-			printf("grad U is (%3.18f, %3.18f, %3.18f)\n",phi_grad.U[block_cell].x,phi_grad.U[block_cell].y,phi_grad.U[block_cell].z);
+
 			KSPSolve(grad_ksp, grad_bV, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.V[block_cell].x);
-			//printf("grad V is (%3.18f, %3.18f, %3.18f)\n",phi_grad.V[block_cell].x,phi_grad.V[block_cell].y,phi_grad.V[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bW, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.W[block_cell].x);
-			//printf("grad W is (%3.18f, %3.18f, %3.18f)\n",phi_grad.W[block_cell].x,phi_grad.W[block_cell].y,phi_grad.W[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bP, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.P[block_cell].x);
-			//printf("grad P is (%3.18f, %3.18f, %3.18f)\n",phi_grad.P[block_cell].x,phi_grad.P[block_cell].y,phi_grad.P[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bTE, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.TE[block_cell].x);
-			//printf("grad TE is (%3.18f, %3.18f, %3.18f)\n",phi_grad.TE[block_cell].x,phi_grad.TE[block_cell].y,phi_grad.TE[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bED, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.ED[block_cell].x);
-			//printf("grad ED is (%3.18f, %3.18f, %3.18f)\n",phi_grad.ED[block_cell].x,phi_grad.ED[block_cell].y,phi_grad.ED[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bT, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.TEM[block_cell].x);
-			//printf("grad TEM is (%3.18f, %3.18f, %3.18f)\n",phi_grad.TEM[block_cell].x,phi_grad.TEM[block_cell].y,phi_grad.TEM[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bFU, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.FUL[block_cell].x);
-			//printf("grad FUL is (%3.18f, %3.18f, %3.18f)\n",phi_grad.FUL[block_cell].x,phi_grad.FUL[block_cell].y,phi_grad.FUL[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bPR, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.PRO[block_cell].x);
-			//printf("grad PRO is (%3.18f, %3.18f, %3.18f)\n",phi_grad.PRO[block_cell].x,phi_grad.PRO[block_cell].y,phi_grad.PRO[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bVFU, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.VARF[block_cell].x);
-			//printf("grad VARF is (%3.18f, %3.18f, %3.18f)\n",phi_grad.VARF[block_cell].x,phi_grad.VARF[block_cell].y,phi_grad.VARF[block_cell].z);
 
 			KSPSolve(grad_ksp, grad_bVPR, grad_u);
             VecGetValues(grad_u, 3, indx, &phi_grad.VARP[block_cell].x);
-			//printf("grad VARP is (%3.18f, %3.18f, %3.18f)\n",phi_grad.VARP[block_cell].x,phi_grad.VARP[block_cell].y,phi_grad.VARP[block_cell].z);
         }
     }
-
-	/*template<typename T> void FlowSolver<T>::precomp_mass_flux()
-	{
-		we need the value of mass flux at the inlets and outlets to caculate AU
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function precomp_mass_flux.\n", mpi_config->rank);
-		for ( uint64_t face = 0; face < mesh->faces_size; face++ )
-        {
-            const uint64_t block_cell0 = mesh->faces[face].cell0 - mesh->local_cells_disp;
-
-            if ( mesh->faces[face].cell1 < mesh->mesh_size ) continue;
-			//only need the boundary cells
-			const uint64_t boundary_cell = mesh->faces[face].cell1 - mesh->mesh_size;
-            const uint64_t boundary_type = mesh->boundary_types[boundary_cell];
-			if ( boundary_type == INLET )
-            {
-                // Constant inlet values for velocities and densities. Add custom regions laters
-                const vec<T> vel_inward = mesh->dummy_gas_vel;
-                const T Din = 1.2;
-                face_mass_fluxes[face] = Din * dot_product( vel_inward, face_normals[face] );
-            }
-            else if( boundary_type == OUTLET )
-            {
-				const vec<T> vel_outward = { phi.U[block_cell0],
-                                             phi.V[block_cell0],
-                                             phi.W[block_cell0] };
-                const T Din = 1.2;
-
-                face_mass_fluxes[face] = Din * dot_product(vel_outward, face_normals[face]);
-				// !
-                // ! For an outlet face_mass_fluxes must be 0.0 or positive
-                // !
-                if( face_mass_fluxes[face] < 0.0 )
-                {
-                    printf("PRECOMP NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
-                    face_mass_fluxes[face] = 1e-15;
-
-					phi.TE[mesh->local_mesh_size + nhalos + boundary_cell] = 
-							phi.TE[block_cell0];
-					phi.ED[mesh->local_mesh_size + nhalos + boundary_cell] =
-							phi.ED[block_cell0];
-					phi.TEM[mesh->local_mesh_size + nhalos + boundary_cell] =
-							phi.TEM[block_cell0];
-                }
-            }
-		}
-		//Conserve mass if the flow has not reached the outflow yet.
-        T FlowOut = 0.0;
-        T FlowIn = 0.0;
-        T areaout= 0.0;
-        int count_out = 0;
-        for ( uint64_t face = 0; face < mesh->faces_size; face++ )
-        {
-            if ( mesh->faces[face].cell1 < mesh->mesh_size )  continue;
-            //Boundary only
-            const uint64_t boundary_cell = mesh->faces[face].cell1 - mesh->mesh_size;
-            const uint64_t boundary_type = mesh->boundary_types[boundary_cell];
-            if(boundary_type == INLET)
-            {
-                FlowIn += face_mass_fluxes[face];
-            }
-            else if(boundary_type == OUTLET)
-            {
-                FlowOut += face_mass_fluxes[face];
-                count_out++;
-                areaout += face_areas[face];
-            }
-        }
-        T FlowFact[count_out];
-        int step = 0;
-        for(int i = 0; i < count_out; i++){
-            if(FlowOut == 0.0)
-            {
-                //This protects against NaN
-                FlowFact[i] = 0.0;
-            }
-            else
-            {
-                FlowFact[i] = -FlowIn/FlowOut;
-            }
-        }
-		MPI_Allreduce(MPI_IN_PLACE, &areaout, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
-		MPI_Allreduce(MPI_IN_PLACE, &FlowIn, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
-        MPI_Allreduce(MPI_IN_PLACE, &FlowOut, 1, MPI_DOUBLE, MPI_SUM, mpi_config->particle_flow_world);
-		if(FlowOut < 0.0000000001)
-        {
-            T ratearea = - FlowIn/areaout;
-            FlowOut = 0.0;
-            for ( uint64_t face = 0; face < mesh->faces_size; face++ )
-            {
-                if ( mesh->faces[face].cell1 < mesh->mesh_size )  continue;
-                //Boundary only
-                const uint64_t boundary_cell = mesh->faces[face].cell1 - mesh->mesh_size;
-                const uint64_t boundary_type = mesh->boundary_types[boundary_cell];
-                if(boundary_type == OUTLET)
-                {
-                    //NOTE: this assumes density is constant and uniform
-					//NOTE: assumes one outflow region
-                    face_mass_fluxes[face] = ratearea*face_areas[face];
-                    T FaceFlux = face_mass_fluxes[face]/cell_densities[0]/face_areas[face];
-                    
-					phi.U[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).x;
-                    phi.V[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).y;
-                    phi.W[mesh->local_mesh_size + nhalos + boundary_cell] = FaceFlux*normalise(face_normals[face]).z;
-
-                    FlowOut += face_mass_fluxes[face];
-                }
-            }
-        }
-        T fact = -FlowIn/(FlowOut + 0.0000001);
-        step = 0;
-		for ( uint64_t face = 0; face < mesh->faces_size; face++ )
-        {
-            if ( mesh->faces[face].cell1 < mesh->mesh_size )  continue;
-            //Boundary only
-            const uint64_t boundary_cell = mesh->faces[face].cell1 - mesh->mesh_size;
-            const uint64_t boundary_type = mesh->boundary_types[boundary_cell];
-            if(boundary_type == OUTLET)
-            {
-                face_mass_fluxes[face] *= FlowFact[step];
-                step ++;
-
-                phi.U[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
-                phi.V[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
-                phi.W[mesh->local_mesh_size + nhalos + boundary_cell] *= fact;
-
-                const uint64_t block_cell0 = mesh->faces[face].cell0 - mesh->local_cells_disp;
-				S_phi.U[block_cell0] -= face_mass_fluxes[face];
-            }
-        }
-	}*/
 
 	template<typename T> void FlowSolver<T>::precomp_AU()
 	{
 		/*Compute AU needed for the first calculation of mass flux*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function precomp_AU.\n", mpi_config->rank);	
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function precomp_AU.\n", mpi_config->rank);	
 		#pragma ivdep
         for ( uint64_t i = 0; i < mesh->local_mesh_size + nhalos; i++ )
         {
@@ -1216,7 +1076,7 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::set_up_field()
 	{
 		/*We need inital values for mass_flux and AU for the first iteration*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function set_up_field.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function set_up_field.\n", mpi_config->rank);
 		precomp_AU();
 		exchange_A_halos(A_phi.U);
 		calculate_mass_flux();
@@ -1225,7 +1085,7 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::set_up_fgm_table()
 	{
 		/* Set up some data for the FGM look up table*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function set_up_fgm_table.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function set_up_fgm_table.\n", mpi_config->rank);
 		//TODO: take into account to memory requirement of this table.
 		//Should we reduce this table to 2-d and compute the PDFs of the two variables
 		//to look up with??? I think not but why.
@@ -1250,7 +1110,7 @@ namespace minicombust::flow
 		/*Look up the result in the FGM table for each local cell
           this would be the source term in the progress variable
           calculation*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function FGM_look_up.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function FGM_look_up.\n", mpi_config->rank);
 		#pragma ivdep
 		for(uint64_t i = 0; i < mesh->local_mesh_size; i++)
 		{
@@ -1294,7 +1154,7 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::setup_sparse_matrix ( T URFactor, T *A_phi_component, T *phi_component, T *S_phi_component )
     {
 		/*Set up A matrix and b vector using PETSc for a sparse linear solve*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_sparse_matrix.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function setup_sparse_matrix.\n", mpi_config->rank);
 
         T RURF = 1. / URFactor;
 
@@ -1347,7 +1207,7 @@ namespace minicombust::flow
 		/*This function is to reduce the number of insertions into
           the sparse A matrix, given that face_fields (RFace) is
           constant for U, V and W.*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function update_sparse_matrix.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function update_sparse_matrix.\n", mpi_config->rank);
         
 		T RURF = 1. / URFactor;
 
@@ -1391,7 +1251,7 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::solve_sparse_matrix ( T *phi_component)
     {
 		/*Solve the linear system Au=b using PETSc*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_sparse_matrix.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function solve_sparse_matrix.\n", mpi_config->rank);
         VecZeroEntries(u);
 
 		KSPSolve(ksp, b, u);
@@ -1410,7 +1270,7 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::calculate_flux_UVW()
     {
 		/*Calculate the face based Velocity flux values for UVW*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_flux_UVW.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function calculate_flux_UVW.\n", mpi_config->rank);
 
         T pe0 =  9999.;
         T pe1 = -9999.;
@@ -1606,7 +1466,7 @@ namespace minicombust::flow
 
                     if( face_mass_fluxes[face] < 0.0 )
                     {
-                        printf("MAIN COMP UVW NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
+                        fprintf(output_file, "MAIN COMP UVW NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
                         face_mass_fluxes[face] = 1e-15;
                     }
                     
@@ -1690,7 +1550,7 @@ namespace minicombust::flow
 		  3. Account for pressure forces
 		  4. Account transent forces
 		  5. Solve each velocity component*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_UVW.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function calculate_UVW.\n", mpi_config->rank);
 		
         vel_total_time -= MPI_Wtime(); 
 
@@ -1796,17 +1656,17 @@ namespace minicombust::flow
 				MPI_Reduce(MPI_IN_PLACE, &vel_solve_time, 1, MPI_DOUBLE,
 							MPI_SUM, 0, mpi_config->particle_flow_world);
 
-                printf("\nVelocity Field Solve Timings:\n");
-				printf("Compute Flux time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "\nVelocity Field Solve Timings:\n");
+				fprintf(output_file, "Compute Flux time: %.3f (%.2f %%)\n",
                         vel_flux_time / mpi_config->particle_flow_world_size,
                         100 * vel_flux_time / vel_total_time);
-				printf("Matrix Setup time: %.3f (%.2f %%)\n",
+				fprintf(output_file, "Matrix Setup time: %.3f (%.2f %%)\n",
                         vel_setup_time / mpi_config->particle_flow_world_size,
                         100 * vel_setup_time / vel_total_time);
-				printf("Matrix Solve time: %.3f (%.2f %%)\n",
+				fprintf(output_file, "Matrix Solve time: %.3f (%.2f %%)\n",
                         vel_solve_time / mpi_config->particle_flow_world_size,
                         100 * vel_solve_time / vel_total_time);
-                printf("Total time: %f\n", vel_total_time / mpi_config->particle_flow_world_size);
+                fprintf(output_file, "Total time: %f\n", vel_total_time / mpi_config->particle_flow_world_size);
 			}
 			else
 			{
@@ -1829,7 +1689,7 @@ namespace minicombust::flow
 	{
 		/*Update the mass flux for the internal faces. Used for the incremental
         update of the velocity and pressure fields*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function update_mass_flux.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function update_mass_flux.\n", mpi_config->rank);
 		
 		//exchange_phi_halos();
 		//MPI_Barrier(mpi_config->particle_flow_world);
@@ -1899,7 +1759,7 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::calculate_mass_flux()
     {
 		/*Calculate face based mass flux values for pressure solve*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_mass_flux.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function calculate_mass_flux.\n", mpi_config->rank);
 
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
         {
@@ -1995,7 +1855,7 @@ namespace minicombust::flow
                     // !
                     if( face_mass_fluxes[face] < 0.0 )
                     {
-                        printf("MAIN COMP PRES NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
+                        fprintf(output_file, "MAIN COMP PRES NEGATIVE OUTFLOW %3.18f\n", face_mass_fluxes[face]);
                         face_mass_fluxes[face] = 1e-15;
 
 						phi.TE[mesh->local_mesh_size + nhalos + boundary_cell] =
@@ -2101,7 +1961,7 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::setup_pressure_matrix()
     {
 		/*Set up a sparse A matrix using PETSc for the pressure solve*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function setup_pressure_matrix.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function setup_pressure_matrix.\n", mpi_config->rank);
 
 		MatZeroEntries(A);
 
@@ -2140,7 +2000,7 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::solve_pressure_matrix()
     {
 		/*Set up b vectory and solve linear system Au=b using PETSc*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solve_pressure_matrix.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function solve_pressure_matrix.\n", mpi_config->rank);
 
 		VecZeroEntries(b);
 		VecZeroEntries(u);
@@ -2182,7 +2042,7 @@ namespace minicombust::flow
 		/*Update the value of a Pressure phi component at the boundaries, with
         the value of phi for the internal side of the face. Used in the progressive update
         of Pressure and Velocity fields in compute pressure.*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function Update_P_at_boundaries.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function Update_P_at_boundaries.\n", mpi_config->rank);
 		#pragma ivdep 
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
 		{
@@ -2197,7 +2057,7 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::update_P(T *phi_component, vec<T> *phi_grad_component)
 	{
 		/*Final update of the value of P at each boundary*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function update_P.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function update_P.\n", mpi_config->rank);
 		#pragma ivdep
         for ( uint64_t face = 0; face < mesh->faces_size; face++ )
         {
@@ -2228,7 +2088,7 @@ namespace minicombust::flow
             4. Correct the face mass fluxes
             5. Correct the cell velocities
         */
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function calculate_pressure.\n", mpi_config->rank);
 		pres_total_time -= MPI_Wtime();
 		int Loop_num = 0;
 		bool Loop_continue = true;
@@ -2375,20 +2235,20 @@ namespace minicombust::flow
 				MPI_Reduce(MPI_IN_PLACE, &pres_halo_time, 1, MPI_DOUBLE,
 							MPI_SUM, 0, mpi_config->particle_flow_world);
 
-                printf("\nPressure Field Solve Timings:\n");
-                printf("Compute Flux time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "\nPressure Field Solve Timings:\n");
+                fprintf(output_file, "Compute Flux time: %.3f (%.2f %%)\n",
                         pres_flux_time / mpi_config->particle_flow_world_size,
                         100 * pres_flux_time / pres_total_time);
-                printf("Matrix Setup time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "Matrix Setup time: %.3f (%.2f %%)\n",
                         pres_setup_time / mpi_config->particle_flow_world_size,
                         100 * pres_setup_time / pres_total_time);
-                printf("Matrix Solve time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "Matrix Solve time: %.3f (%.2f %%)\n",
                         pres_solve_time / mpi_config->particle_flow_world_size,
                         100 * pres_solve_time / pres_total_time);
-				printf("Communication time: %.3f (%.2f %%)\n",
+				fprintf(output_file, "Communication time: %.3f (%.2f %%)\n",
 						pres_halo_time / mpi_config->particle_flow_world_size,
 						100 * pres_halo_time / pres_total_time);
-                printf("Total time: %f\n", pres_total_time / mpi_config->particle_flow_world_size);
+                fprintf(output_file, "Total time: %f\n", pres_total_time / mpi_config->particle_flow_world_size);
             }
             else
             {
@@ -2413,7 +2273,7 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::FluxScalar(int type, T *phi_component, vec<T> *phi_grad_component)
 	{
 		/*Compute the face based flux values for a general Scalar.*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function FluxScalar.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function FluxScalar.\n", mpi_config->rank);
 
         T pe0 =  9999.;
         T pe1 = -9999.;
@@ -2551,7 +2411,7 @@ namespace minicombust::flow
 					}
 					else
 					{
-						printf("Error: unkown type in flux scalar\n");
+						fprintf(output_file, "Error: unkown type in flux scalar\n");
 						exit(0);
 					}		
 
@@ -2644,7 +2504,7 @@ namespace minicombust::flow
 	{
 		/*compute the effects of the terbulent forces including the effect
         at the wall*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function solveTurbulenceModels.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function solveTurbulenceModels.\n", mpi_config->rank);
 		if(type == TERBTE)
 		{
 			for ( uint64_t i = 0; i < mesh->local_mesh_size; i++ )
@@ -2786,7 +2646,7 @@ namespace minicombust::flow
           1. Collect face fluxes
           2. Compute extra steps for terbulence
           3. set-up and solve matrix*/
-		if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function Scalar_solve.\n", mpi_config->rank);
+		if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function Scalar_solve.\n", mpi_config->rank);
 		
 		sca_total_time[type] -= MPI_Wtime();
 		//reuse Au and Su to reduce storage requirements
@@ -2901,48 +2761,48 @@ namespace minicombust::flow
 				}
 				if(type == TERBTE)
 				{
-					printf("\nTE Turbulence Field Solve Timings:\n");
-					printf("Compute Turbulence time: %.3f (%.2f %%)\n",
+					fprintf(output_file, "\nTE Turbulence Field Solve Timings:\n");
+					fprintf(output_file, "Compute Turbulence time: %.3f (%.2f %%)\n",
                         sca_terb_time[type] / mpi_config->particle_flow_world_size,
                         100 * sca_terb_time[type] / sca_total_time[type]);
 				}
 				else if(type == TERBED)
 				{
-					printf("\nED Turbulence Field Solve Timings:\n");
-					printf("Compute Turbulence time: %.3f (%.2f %%)\n",
+					fprintf(output_file, "\nED Turbulence Field Solve Timings:\n");
+					fprintf(output_file, "Compute Turbulence time: %.3f (%.2f %%)\n",
                         sca_terb_time[type] / mpi_config->particle_flow_world_size,
                         100 * sca_terb_time[type] / sca_total_time[type]);
 				}
 				else if(type == TEMP)
 				{
-					printf("\nTempurature Field Solve Timings:\n");
+					fprintf(output_file, "\nTempurature Field Solve Timings:\n");
 				} 
 				else if(type == FUEL)
 				{
-					printf("\nMixture Fraction Field Solve Timings:\n");
+					fprintf(output_file, "\nMixture Fraction Field Solve Timings:\n");
 				}
 				else if(type == PROG)
 				{
-					printf("\nProgress Variable Field Solve Timings:\n");
+					fprintf(output_file, "\nProgress Variable Field Solve Timings:\n");
 				}
 				else if(type == VARFU)
 				{
-					printf("\nVariance of Mixture Fraction Field Solve Timings:\n");
+					fprintf(output_file, "\nVariance of Mixture Fraction Field Solve Timings:\n");
 				}
 				else if(type == VARPR)
 				{
-					printf("\nVariance of Progress Variable Field Solve Timings:\n");
+					fprintf(output_file, "\nVariance of Progress Variable Field Solve Timings:\n");
 				}
-                printf("Compute Flux time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "Compute Flux time: %.3f (%.2f %%)\n",
                         sca_flux_time[type] / mpi_config->particle_flow_world_size,
                         100 * sca_flux_time[type] / sca_total_time[type]);
-                printf("Matrix Setup time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "Matrix Setup time: %.3f (%.2f %%)\n",
                         sca_setup_time[type] / mpi_config->particle_flow_world_size,
                         100 * sca_setup_time[type] / sca_total_time[type]);
-                printf("Matrix Solve time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "Matrix Solve time: %.3f (%.2f %%)\n",
                         sca_solve_time[type] / mpi_config->particle_flow_world_size,
                         100 * sca_solve_time[type] / sca_total_time[type]);
-                printf("Total time: %f\n", sca_total_time[type] / mpi_config->particle_flow_world_size);
+                fprintf(output_file, "Total time: %f\n", sca_total_time[type] / mpi_config->particle_flow_world_size);
             }
             else
             {
@@ -3017,27 +2877,21 @@ namespace minicombust::flow
             logger.recieved_cells /= non_zero_blocks;
             logger.sent_nodes     /= non_zero_blocks;
             
-            printf("Flow Solver Stats:\t                            AVG       MIN       MAX\n");
-            printf("\tReduced Recieved Cells ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.reduced_recieved_cells / timesteps), round(min_red_cells / timesteps), round(max_red_cells / timesteps));
-            printf("\tRecieved Cells ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.recieved_cells / timesteps), round(min_cells / timesteps), round(max_cells / timesteps));
-            printf("\tSent Nodes     ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.sent_nodes     / timesteps), round(min_nodes / timesteps), round(max_nodes / timesteps));
-            printf("\tFlow blocks with <1%% max droplets  : %d\n", mpi_config->particle_flow_world_size - (int)non_zero_blocks); 
-            printf("\tAvg Cells with droplets             : %.2f%%\n", 100 * total_cells_recieved / (timesteps * mesh->mesh_size));
-            printf("\tCell copies across particle ranks   : %.2f%%\n", 100.*(1 - total_reduced_cells_recieves / total_cells_recieved ));
+            fprintf(output_file, "Flow Solver Stats:\t                            AVG       MIN       MAX\n");
+            fprintf(output_file, "\tReduced Recieved Cells ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.reduced_recieved_cells / timesteps), round(min_red_cells / timesteps), round(max_red_cells / timesteps));
+            fprintf(output_file, "\tRecieved Cells ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.recieved_cells / timesteps), round(min_cells / timesteps), round(max_cells / timesteps));
+            fprintf(output_file, "\tSent Nodes     ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.sent_nodes     / timesteps), round(min_nodes / timesteps), round(max_nodes / timesteps));
+            fprintf(output_file, "\tFlow blocks with <1%% max droplets  : %d\n", mpi_config->particle_flow_world_size - (int)non_zero_blocks); 
+            fprintf(output_file, "\tAvg Cells with droplets             : %.2f%%\n", 100 * total_cells_recieved / (timesteps * mesh->mesh_size));
+            fprintf(output_file, "\tCell copies across particle ranks   : %.2f%%\n", 100.*(1 - total_reduced_cells_recieves / total_cells_recieved ));
 
             
             MPI_Barrier (mpi_config->particle_flow_world);
-
-            // printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(loggers[mpi_config->particle_flow_rank].recieved_cells / timesteps), round(loggers[mpi_config->particle_flow_rank].sent_nodes / timesteps));
-
-            // MPI_Barrier (mpi_config->particle_flow_world);
             cout << endl;
         }
         else
         {
             MPI_Barrier (mpi_config->particle_flow_world);
-            // printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(logger.recieved_cells / timesteps), round(logger.sent_nodes / timesteps));
-            // MPI_Barrier (mpi_config->particle_flow_world);
         }
 
         MPI_Barrier(mpi_config->world);
@@ -3050,11 +2904,11 @@ namespace minicombust::flow
     template<typename T> void FlowSolver<T>::timestep()
     {
 		/*High level function to advance the flow solver one timestep.*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
 
         int comms_timestep = 1;
 		if ( mpi_config->particle_flow_rank == 0 )
-			printf("\ntimestep %lu\n",timestep_count + 1);
+			fprintf(output_file, "\ntimestep %lu\n",timestep_count + 1);
 
         if (((timestep_count + 1) % 100) == 0)
         {
@@ -3072,7 +2926,7 @@ namespace minicombust::flow
 
             if ( mpi_config->particle_flow_rank == 0 )
             {
-                printf("Timestep %6lu Flow     mem (TOTAL %8.3f GB)" 
+                fprintf(output_file, "Timestep %6lu Flow     mem (TOTAL %8.3f GB)" 
 						"(AVG %8.3f GB) \n", timestep_count + 1, 
 						(arr_usage_total + stl_usage_total + mesh_usage_total), 
 						(arr_usage_total + stl_usage_total + mesh_usage_total) / 
@@ -3143,27 +2997,6 @@ namespace minicombust::flow
 		fgm_lookup_time += MPI_Wtime();
 		compute_time += MPI_Wtime();
 
-		/*if(((timestep_count + 1) % 5) == 0)
-		{
-			if(mpi_config->particle_flow_rank == 0)
-			{
-				printf("Result is:\n");
-			}
-			for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
-			{
-				if(i == mpi_config->particle_flow_rank)
-				{
-					for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
-					{
-						const uint64_t cell = block_cell + mesh->local_cells_disp;
-						printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
-						printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
-					}
-				}
-				MPI_Barrier(mpi_config->particle_flow_world);
-			}
-		}*/
-
 		if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
         {
             if(mpi_config->particle_flow_rank == 0)
@@ -3179,20 +3012,20 @@ namespace minicombust::flow
 					scalar_time += sca_total_time[i];
 				} 
 
-                printf("\nTotal Flow Solver Timings:\n");
-                printf("Compute Velocity time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "\nTotal Flow Solver Timings:\n");
+                fprintf(output_file, "Compute Velocity time: %.3f (%.2f %%)\n",
                         vel_total_time / mpi_config->particle_flow_world_size,
                         100 * vel_total_time / total_time);
-                printf("Compute Pressure time: %.3f (%.2f %%)\n",
+                fprintf(output_file, "Compute Pressure time: %.3f (%.2f %%)\n",
                         pres_total_time / mpi_config->particle_flow_world_size,
                         100 * pres_total_time / total_time);
-				printf("Compute 8 Scalars time %.3f (%.2f %%)\n",
+				fprintf(output_file, "Compute 8 Scalars time %.3f (%.2f %%)\n",
 						scalar_time / mpi_config->particle_flow_world_size,
 						100 * scalar_time / total_time);
-				printf("FGM Table Lookup time %.3f (%.2f %%)\n",
+				fprintf(output_file, "FGM Table Lookup time %.3f (%.2f %%)\n",
 						fgm_lookup_time / mpi_config->particle_flow_world_size,
 						100 * fgm_lookup_time / total_time);
-                printf("Total time: %f\n\n", 
+                fprintf(output_file, "Total time: %f\n\n", 
 						total_time / mpi_config->particle_flow_world_size);
             }
 			else
@@ -3209,7 +3042,7 @@ namespace minicombust::flow
 			}
         }
         
-		if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
+		if ( FLOW_SOLVER_DEBUG )  fprintf(output_file, "\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
         timestep_count++;
     }
 }

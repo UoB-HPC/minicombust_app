@@ -15,8 +15,9 @@ namespace minicombust::flow
 	template<class T>void FlowSolver<T>::output_data(uint64_t timestep)
     	{
 		VisitWriter<double> *vtk_writer = new VisitWriter<double>(mesh, mpi_config);
-        	vtk_writer->write_flow_velocities("out/minicombust", timestep, &phi);
-		vtk_writer->write_flow_pressure("out/minicombust", timestep, &phi);
+		vtk_writer->write_flow("out/flow/minicombust", timestep, &phi);
+        // 	vtk_writer->write_flow_velocities("out/minicombust", timestep, &phi);
+		// vtk_writer->write_flow_pressure("out/minicombust", timestep, &phi);
     	}
 	
 	template<typename T> inline bool FlowSolver<T>::is_halo ( uint64_t cell )
@@ -357,147 +358,6 @@ namespace minicombust::flow
 
     }
 
-    // template<typename T> void FlowSolver<T>::get_neighbour_cells ( const uint64_t recv_id )
-    // {
-	// 	/*Find all the cells which are neighbours of the current cell.
-	// 	  Used to find the halos*/
-    //     double node_neighbours   = 8;
-    //     const uint64_t cell_size = mesh->cell_size;
-
-    //     resize_nodes_arrays(node_to_position_map.size() + elements[recv_id] * cell_size + 1 );
-
-	// 	int local_disp = 0;
-	// 	// resize_send_buffers_nodes_arrays (send_buffer_disp + elements[recv_id] * cell_size + 1);
-
-    //     #pragma ivdep
-    //     for (int i = 0; i < elements[recv_id]; i++)
-    //     {
-    //         uint64_t cell = neighbour_indexes[recv_id][i];
-
-    //         #pragma ivdep
-    //         for (uint64_t n = 0; n < cell_size; n++)
-    //         {
-    //             const uint64_t node_id      = mesh->cells[(cell - mesh->shmem_cell_disp) * mesh->cell_size + n];
-	// 			if (!local_particle_node_sets[recv_id].contains(node_id))
-	// 			{
-	// 				// if (!global_node_to_local_node_map.contains(node_id))
-	// 				// {
-	// 				// 	printf("FRANK %lu has non local node %lu produced by cell %lu local_mesh_disp %lu lmesh_size %lu\n", mpi_config->particle_flow_rank, node_id, cell, mesh->local_cells_disp, mesh->local_mesh_size);
-	// 				// 	continue;
-	// 				// }
-
-    //             	local_particle_node_sets[recv_id].insert(node_id);
-	// 				send_buffers_interp_node_indexes[send_buffer_disp + local_disp] = node_id;
-	// 				local_disp++;
-	// 			}
-    //         }
-
-    //     }
-
-
-	// 	if (local_disp != 0){
-
-	// 		int thread_count = min( (int) 32, (int)local_particle_node_sets[recv_id].size());
-	// 		int block_count = max(1, (int) ceil((double) (local_particle_node_sets[recv_id].size()) / (double) thread_count));
-
-
-	// 		if ((send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t) >= gpu_send_buffers_node_index_array_size )
-	// 		{
-	// 			printf("GPU BUFFER OVERFLOW : %lu > %lu\n", (send_buffer_disp + local_particle_node_sets[recv_id].size()) * sizeof(uint64_t), gpu_send_buffers_node_index_array_size );
-	// 		}
-
-
-	// 		gpuErrchk(cudaMemcpyAsync(&gpu_send_buffers_interp_node_indexes[send_buffer_disp], &send_buffers_interp_node_indexes[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(uint64_t), cudaMemcpyHostToDevice, (cudaStream_t) 0));
-	// 		C_kernel_pack_flow_field_buffer(block_count, thread_count, &gpu_send_buffers_interp_node_indexes[send_buffer_disp] , gpu_phi_nodes, &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], gpu_node_hash_map, local_particle_node_sets[recv_id].size(), global_node_to_local_node_map.size(), recv_id);
-	// 		// gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost, (cudaStream_t) 0));
-	// 		gpuErrchk( cudaPeekAtLastError() );
-			
-	// 		gpuErrchk(cudaMemcpyAsync(&send_buffers_interp_node_flow_fields[send_buffer_disp], &gpu_send_buffers_interp_node_flow_fields[send_buffer_disp], local_particle_node_sets[recv_id].size()*sizeof(flow_aos<T>), cudaMemcpyDeviceToHost));
-
-	// 	}
-
-		
-
-	// 	send_buffer_disp += local_particle_node_sets[recv_id].size();
-		
-    //     unordered_neighbours_set[0].erase(MESH_BOUNDARY);
-    // }
-
-    // template<typename T> void FlowSolver<T>::interpolate_to_nodes ()
-    // {
-	// 	/*Interpolate values from particle side to flow grid*/
-    //     const uint64_t cell_size = mesh->cell_size;
-    //     double node_neighbours   = 8;
-
-    //     // Process the allocation of cell fields (NOTE: Imperfect solution near edges. Fix by doing interpolation on flow side.)
-    //     // #pragma ivdep
-    //     for ( uint64_t cell : unordered_neighbours_set[0] )
-    //     {
-    //         const uint64_t block_cell      = cell - mesh->local_cells_disp;
-    //         const uint64_t shmem_cell      = cell - mesh->shmem_cell_disp;
-
-    //         flow_aos<T> flow_term;      
-    //         flow_aos<T> flow_grad_term; 
-
-	// 		//TODO: Now all our terms work we should probably sort this out for all the versions
-
-    //         if (is_halo(cell)) 
-    //         {
-    //             // flow_term.temp          = mesh->dummy_gas_tem;      
-    //             // flow_grad_term.temp     = 0.0;  
-
-    //             // flow_term.pressure      = phi.P[boundary_map[cell]];      
-    //             // flow_grad_term.pressure = 0.0; 
-
-    //             // flow_term.vel.x         = phi.U[boundary_map[cell]]; 
-    //             // flow_term.vel.y         = phi.V[boundary_map[cell]]; 
-    //             // flow_term.vel.z         = phi.W[boundary_map[cell]]; 
-    //             // flow_grad_term.vel = { 0.0, 0.0, 0.0 }; 
-
-	// 			continue;
-    //         }
-    //         else
-    //         {
-
-    //             flow_term.vel.x    = phi.U[block_cell];
-    //             flow_term.vel.y    = phi.V[block_cell];
-    //             flow_term.vel.z    = phi.W[block_cell];
-    //             flow_term.pressure = phi.P[block_cell];
-    //             flow_term.temp     = phi.TEM[block_cell];
-
-    //             flow_grad_term = mesh->flow_grad_terms[block_cell]; 
-    //         }
-
-    //         // cout << "vel " << print_vec(flow_term.vel) << " pressure " << flow_term.pressure << " temperature " << flow_term.temp << endl;
-
-
-    //         const vec<T> cell_centre         = mesh->cell_centers[shmem_cell];
-
-    //         // check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      cell );
-    //         // check_flow_field_exit ( "INTERP NODAL ERROR: Flow grad value", &flow_grad_term, &mesh->dummy_flow_field_grad, cell );
-
-    //         // if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow value",      &flow_term,      &mesh->dummy_flow_field,      cell );
-    //         // if (FLOW_SOLVER_DEBUG) check_flow_field_exit ( "INTERP NODAL ERROR: Flow grad value", &flow_grad_term, &mesh->dummy_flow_field_grad, cell );
-
-    //         #pragma ivdep
-    //         for (uint64_t n = 0; n < cell_size; n++)
-    //         {
-    //             const uint64_t node_id = mesh->cells[shmem_cell*mesh->cell_size + n];
-
-    //             if (node_to_position_map.count(node_id))
-    //             {
-    //                 const vec<T> direction      = mesh->points[node_id - mesh->shmem_point_disp] - cell_centre;
-
-    //                 // interp_node_flow_fields[node_to_position_map[node_id]].temp     += (flow_term.temp     + dot_product(flow_grad_term.temp,     direction)) / node_neighbours;
-    //                 // interp_node_flow_fields[node_to_position_map[node_id]].pressure += (flow_term.pressure + dot_product(flow_grad_term.pressure, direction)) / node_neighbours;
-    //                 // interp_node_flow_fields[node_to_position_map[node_id]].vel      += (flow_term.vel      + dot_product(flow_grad_term.vel,      direction)) / node_neighbours;
-
-	// 				interp_node_flow_fields[node_to_position_map[node_id]]     = mesh->dummy_flow_field;
-    //             }
-    //         }
-    //     }
-    // }
-
     template<typename T> void FlowSolver<T>::update_flow_field()
     {
 		nvtxRangePush("Waiting time: update_flow_field");
@@ -529,7 +389,7 @@ namespace minicombust::flow
         static double recv_time1=0., recv_time2=0., recv_time3=0.;
 
         int recvs_complete = 0;
-        MPI_Ibcast(&recvs_complete, 1, MPI_INT, 0, mpi_config->world, &bcast_request);       
+        MPI_Ibcast(&recvs_complete, 1, MPI_INT, mpi_config->particle_flow_world_size, mpi_config->world, &bcast_request);       
  
         int message_waiting = 0;
         MPI_Iprobe(MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
@@ -564,9 +424,6 @@ namespace minicombust::flow
                 ranks.push_back(statuses[rank_slot].MPI_SOURCE);
                 MPI_Get_count( &statuses[rank_slot], MPI_UINT64_T, &elements[rank_slot] );
 
-                // resize_cell_particle(elements[rank_slot], rank_slot);
-                // if ( FLOW_SOLVER_DEBUG ) printf("\tFlow block %d: Recieving %d indexes from %d (slot %lu). Max element size %lu. neighbour index rank size %ld array_pointer %p \n", mpi_config->particle_flow_rank, elements[rank_slot], ranks.back(), rank_slot, cell_index_array_size[rank_slot] / sizeof(uint64_t), neighbour_indexes.size(), neighbour_indexes[rank_slot]);
-
                 logger.recieved_cells += elements[rank_slot];
 
 				cell_starts[rank_slot] = cell_element_disp;
@@ -575,15 +432,13 @@ namespace minicombust::flow
 
 				if (cell_element_disp > gpu_recv_buffer_elements)
 				{
-					printf("Cell array recv buffer overflow disp %lu max %d\n", cell_element_disp, gpu_recv_buffer_elements);
+					fprintf(output_file, "Cell array recv buffer overflow disp %lu max %d\n", cell_element_disp, gpu_recv_buffer_elements);
 					exit(1);
 				}
 
                 MPI_Irecv(recv_buffers_cell_indexes         + cell_starts[rank_slot], elements[rank_slot], MPI_UINT64_T,                       ranks[rank_slot], 0, mpi_config->world, &recv_requests[2*rank_slot]     );
                 MPI_Irecv(recv_buffers_cell_particle_fields + cell_starts[rank_slot], elements[rank_slot], mpi_config->MPI_PARTICLE_STRUCTURE, ranks[rank_slot], 2, mpi_config->world, &recv_requests[2*rank_slot + 1] );
 				
-				// printf("Rank %d recieving from rank %d (slot=%d) \n", mpi_config->particle_flow_rank, ranks[rank_slot], rank_slot);
-
                 processed_neighbours[rank_slot] = false;  // Invalid write
 
                 if ( statuses.size() <= ranks.size() )
@@ -597,28 +452,12 @@ namespace minicombust::flow
                     cell_index_array_size.push_back(max_storage    * sizeof(uint64_t));
                     cell_particle_array_size.push_back(max_storage * sizeof(particle_aos<T>));
 
-					// uint64_t *tmp_ptr;
-					// particle_aos<T> *tmp_ptr0;
-                	// mtracker->allocate_cuda_host("neighbour_indexes", (void**)&tmp_ptr,    cell_index_array_size.back());
-                	// mtracker->allocate_cuda_host("cell_particle_aos", (void**)&tmp_ptr0,   cell_particle_array_size.back());
-
-                    // neighbour_indexes.push_back(tmp_ptr);
-                    // cell_particle_aos.push_back(tmp_ptr0);
-
-					// uint64_t *cuda_pointer_tmp;
-					// particle_aos<T> *cuda_pointer_tmp2;
-					// cudaMalloc(&cuda_pointer_tmp,  cell_index_array_size.back());
-					// cudaMalloc(&cuda_pointer_tmp2, cell_particle_array_size.back());
-					// gpu_neighbour_indexes.push_back(cuda_pointer_tmp);
-					// gpu_cell_particle_aos.push_back(cuda_pointer_tmp2);
-
                     local_particle_node_sets.push_back(unordered_set<uint64_t>());
                 }
 
 
                 message_waiting = 0;
 				
-				// get_neighbour_cells (rank_slot);
 				processed_neighbours[rank_slot] = false;
 
                 MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
@@ -646,26 +485,16 @@ namespace minicombust::flow
 					gpuErrchk(cudaMemcpyAsync(&node_elements[rank_slot], gpu_atomic_buffer_index, sizeof(uint32_t), cudaMemcpyDeviceToHost, (cudaStream_t) 0 ));
 					gpuErrchk(cudaMemsetAsync(gpu_seen_node, 0, global_node_to_local_node_map.size() * sizeof(int) , (cudaStream_t) 0 ));
 
-					
-
-					// cudaStreamSynchronize(0);
-					// printf("Rank %d has received %d cells from rank %d (slot %lu). Start position in buffer %d, length %d\n", mpi_config->particle_flow_rank, elements[rank_slot], ranks[rank_slot], rank_slot, node_starts[rank_slot], node_elements[rank_slot]);
-					// printf("Rank %d Node starts 0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d 8:%d 9:%d 10:%d 11:%d 12:%d \n", mpi_config->particle_flow_rank, node_starts[0], node_starts[1], node_starts[2], node_starts[3], node_starts[4], node_starts[5], node_starts[6], node_starts[7], node_starts[8], node_starts[9], node_starts[10], node_starts[11], node_starts[12]);
-
 					processed_neighbours[rank_slot] = true;
 				}
 				
 				all_processed &= processed_neighbours[rank_slot];
 			}
 
-
-			// nvtxRangePush("update_flow::MPI_Test");
-
             MPI_Test ( &bcast_request, &recvs_complete, MPI_STATUS_IGNORE );
             MPI_Iprobe (MPI_ANY_SOURCE, 0, mpi_config->world, &message_waiting, &statuses[ranks.size()]);
-			// nvtxRangePop();
 
-            if ( FLOW_SOLVER_DEBUG && recvs_complete ) if(recvs_complete) printf("\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
+            if ( FLOW_SOLVER_DEBUG && recvs_complete ) if(recvs_complete) fprintf(output_file, "\tFlow block %d: Recieved broadcast signal. message_waiting %d recvs_complete %d all_processed %d\n", mpi_config->particle_flow_rank, message_waiting, recvs_complete, all_processed);
             all_processed &= !message_waiting & recvs_complete;
         }
 
@@ -679,15 +508,8 @@ namespace minicombust::flow
 
         logger.sent_nodes += neighbour_point_size;
 
-		
-
-		
-
 		nvtxRangePush("update_flow::pack_and_post_buffers");
-		// printf("Rank %d Node starts before 0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d 8:%d 9:%d 10:%d 11:%d 12:%d \n", mpi_config->particle_flow_rank, node_starts[0], node_starts[1], node_starts[2], node_starts[3], node_starts[4], node_starts[5], node_starts[6], node_starts[7], node_starts[8], node_starts[9], node_starts[10], node_starts[11], node_starts[12]);
-
 		cudaStreamSynchronize(0);
-		// printf("Rank %d Node starts after 0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d 8:%d 9:%d 10:%d 11:%d 12:%d \n", mpi_config->particle_flow_rank, node_starts[0], node_starts[1], node_starts[2], node_starts[3], node_starts[4], node_starts[5], node_starts[6], node_starts[7], node_starts[8], node_starts[9], node_starts[10], node_starts[11], node_starts[12]);
 
 		uint64_t ptr_disp = 0;
         bool *processed_cell_fields = async_locks;
@@ -695,16 +517,9 @@ namespace minicombust::flow
         {
             uint64_t local_disp = 0;
 
-			// printf("Rank %d: Sending elements %d to rank %d\n", mpi_config->particle_flow_rank,  node_elements[p], ranks[p]);
-
-			// printf("Rank %d sending to rank %d (slot %lu). Start position in buffer %d, length %d\n", mpi_config->particle_flow_rank, ranks[p], p, node_starts[p], node_elements[p]);
-
 			MPI_Isend ( &gpu_send_buffers_interp_node_indexes[node_starts[p]],     node_elements[p], MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
             MPI_Isend ( &gpu_send_buffers_interp_node_flow_fields[node_starts[p]], node_elements[p], mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
 
-			// MPI_Isend ( &send_buffers_interp_node_indexes[ptr_disp],     node_elements[p], MPI_UINT64_T,                   ranks[p], 0, mpi_config->world, &send_requests[p] );
-            // MPI_Isend ( &send_buffers_interp_node_flow_fields[ptr_disp], node_elements[p], mpi_config->MPI_FLOW_STRUCTURE, ranks[p], 1, mpi_config->world, &send_requests[p + ranks.size()] );
-            
 			ptr_disp += node_elements[p];
 			node_element_disp += node_elements[p];
 
@@ -726,7 +541,7 @@ namespace minicombust::flow
 		logger.max_nodes_buf_size_per_timestep = max(logger.max_nodes_buf_size_per_timestep, (double)node_element_disp);
 
 		if (mpi_config->particle_flow_rank == 0)
-			printf("Cell buffer used %lu (of %d) Node buffer used %lu (of %d) \n", cell_element_disp, gpu_send_buffer_elements, node_element_disp, gpu_recv_buffer_elements);
+			fprintf(output_file, "Cell buffer used %lu (of %d) Node buffer used %lu (of %d) \n", cell_element_disp, gpu_send_buffer_elements, node_element_disp, gpu_recv_buffer_elements);
 
 
 		nvtxRangePop();
@@ -745,49 +560,12 @@ namespace minicombust::flow
 		gpuErrchk( cudaPeekAtLastError() );
 
 
-        // if ( FLOW_SOLVER_DEBUG && mpi_config->particle_flow_rank == 0 )  printf("\tFlow Rank %d: Posted sends.\n", mpi_config->rank);
-
-        // all_processed = false;
-        // while ( !all_processed )
-        // {
-        //     all_processed = true;
-
-        //     for ( uint64_t rank_slot = 0; rank_slot < ranks.size(); rank_slot++ )
-        //     {
-		// 		//printf("p is %lu\n",p);
-        //         int recieved_particle_fields = 0;
-        //         MPI_Test(&recv_requests[2*rank_slot + 1], &recieved_particle_fields, MPI_STATUS_IGNORE);
-
-        //         if ( recieved_particle_fields && !processed_cell_fields[rank_slot] )
-        //         {
-        //     		gpuErrchk(cudaMemcpyAsync(gpu_recv_buffers_cell_particle_fields + cell_starts[rank_slot], recv_buffers_cell_particle_fields + cell_starts[rank_slot], elements[rank_slot]*sizeof(particle_aos<T>), cudaMemcpyHostToDevice, process_gpu_fields_stream));
-
-		// 			int thread_count = min(32, max(1, elements[rank_slot]));
-		// 			int block_count = max(1,(int) ceil((double) elements[rank_slot] / (double) thread_count));
-
-		// 			C_kernel_process_particle_fields(block_count, thread_count, gpu_recv_buffers_cell_indexes + cell_starts[rank_slot], gpu_recv_buffers_cell_particle_fields + cell_starts[rank_slot], gpu_particle_terms, elements[rank_slot], mesh->local_cells_disp, process_gpu_fields_stream);
-		// 			gpuErrchk( cudaPeekAtLastError() );
-
-
-        //             processed_cell_fields[rank_slot] = true;
-        //         }
-		// 		//printf("p is %lu\n",p);
-        //         all_processed &= processed_cell_fields[rank_slot];
-        //     }
-        //     if ( FLOW_SOLVER_DEBUG && all_processed )  printf("\tFlow block %d: all_processed %d\n", mpi_config->particle_flow_rank, all_processed);
-        // }
-
-
         MPI_Barrier(mpi_config->particle_flow_world);
-		// MPI_Barrier(mpi_config->world);
-
 
 		nvtxRangePop();
         recv_time3 += MPI_Wtime();
 
-        // MPI_Waitall(send_requests.size() - 2, send_requests.data(), MPI_STATUSES_IGNORE); // Check field values later on!
-
-        if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Processed cell particle fields .\n", mpi_config->rank);
+        if ( FLOW_SOLVER_DEBUG )  fprintf(output_file, "\tFlow Rank %d: Processed cell particle fields .\n", mpi_config->rank);
 
         performance_logger.my_papi_stop(performance_logger.update_flow_field_event_counts, &performance_logger.update_flow_field_time);
         
@@ -802,13 +580,13 @@ namespace minicombust::flow
                     MPI_Reduce(MPI_IN_PLACE, &time_stats[i], 1, MPI_DOUBLE, MPI_SUM, 0, mpi_config->particle_flow_world);
 
                 double total_time = 0.0;
-                printf("\nUpdate Flow Field Communuication Timings\n");
+                fprintf(output_file, "\nUpdate Flow Field Communuication Timings\n");
 
                 for (int i = 0; i < time_count; i++)
                     total_time += time_stats[i];
                 for (int i = 0; i < time_count; i++)
-                    printf("Time stats %d: %.3f (%.2f %%)\n", i, time_stats[i]  / mpi_config->particle_flow_world_size, 100 * time_stats[i] / total_time);
-                printf("Total time %f\n", total_time / mpi_config->particle_flow_world_size);
+                    fprintf(output_file, "Time stats %d: %.3f (%.2f %%)\n", i, time_stats[i]  / mpi_config->particle_flow_world_size, 100 * time_stats[i] / total_time);
+                fprintf(output_file, "Total time %f\n", total_time / mpi_config->particle_flow_world_size);
 
             }
             else{
@@ -934,21 +712,9 @@ namespace minicombust::flow
 				}
         	}
 
-	/*		for(int i = 0; i < mesh->mesh_size; i++)
-            {
-                printf("%d, ",partition_vector[i]);
-            }
-            printf("\n");
-	*/		
 			first_mat = false;
 			AMGX_SAFE_CALL(AMGX_matrix_upload_all_global(A, mesh->mesh_size, mesh->local_mesh_size, cpu_nnz, 1, 1, rows_ptr, col_indices, values, NULL, 1, 1, partition_vector));
 
-			/*for(int i = 0; i < mesh->mesh_size; i++)
-			{
-				printf("%d, ",partition_vector[i]);
-			}
-			printf("\n");	
-	*/
 			AMGX_SAFE_CALL(AMGX_vector_bind(u, A));
 			AMGX_SAFE_CALL(AMGX_vector_bind(b, A));
 			AMGX_SAFE_CALL(AMGX_vector_upload(b, (mesh->local_mesh_size + nhalos), 1, gpu_S_phi.U));
@@ -1107,7 +873,7 @@ namespace minicombust::flow
 		exchange_A_halos(gpu_A_phi.U); //exchange A_phi.
 
 		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("exchange_A_halos\n");
+		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "exchange_A_halos\n");
 		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 
@@ -1117,10 +883,10 @@ namespace minicombust::flow
 		cudaMemGetInfo( &free_mem, &total );
 		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0)
 		{
-			printf("GPU memory %lu free of %lu\n", free_mem, total);
+			fprintf(output_file, "GPU memory %lu free of %lu\n", free_mem, total);
 		}
 		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("calculate_mass_flux\n");
+		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "calculate_mass_flux\n");
 		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 		if (mpi_config->particle_flow_rank == 0)
@@ -1145,10 +911,10 @@ namespace minicombust::flow
 		cudaMemGetInfo( &free_mem, &total );
 		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0)
 		{
-			printf("GPU memory %lu free of %lu\n", free_mem, total);
+			fprintf(output_file, "GPU memory %lu free of %lu\n", free_mem, total);
 		}
 		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_setup_pressure_matrix\n");
+		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "C_kernel_setup_pressure_matrix\n");
 		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 	
@@ -1203,7 +969,6 @@ namespace minicombust::flow
 			AMGX_SAFE_CALL(AMGX_vector_download(pressure_u, gpu_phi.PP));
 
 			C_kernel_find_pressure_correction_max(1, 1, &cpu_Pressure_correction_max, gpu_phi.PP, mesh->local_mesh_size);
-			//printf("max is %f\n",cpu_Pressure_correction_max);
 			gpuErrchk( cudaPeekAtLastError() );
 
 			MPI_Allreduce(MPI_IN_PLACE, &cpu_Pressure_correction_max, 1, MPI_DOUBLE, MPI_MAX, mpi_config->particle_flow_world);
@@ -1255,7 +1020,7 @@ namespace minicombust::flow
 		cudaMemGetInfo( &free_mem, &total );
 		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0)
 		{
-			printf("After pressure GPU memory %lu free of %lu\n", free_mem, total);
+			fprintf(output_file, "After pressure GPU memory %lu free of %lu\n", free_mem, total);
 		}
 	}
 
@@ -1342,7 +1107,7 @@ namespace minicombust::flow
 	template<typename T> void FlowSolver<T>::set_up_field()
     {
         /*We need inital values for mass_flux and AU for the first iteration*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tRank %d: Running function set_up_field.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Running function set_up_field.\n", mpi_config->rank);
 
 		precomp_AU();
         exchange_A_halos(gpu_A_phi.U);
@@ -1368,7 +1133,7 @@ namespace minicombust::flow
 		C_kernel_fgm_look_up(block_count, thread_count, gpu_fgm_table, gpu_S_phi, gpu_phi, mesh->local_mesh_size);
 		
 		if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_fgm_look_up\n");
+		if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "C_kernel_fgm_look_up\n");
 		if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 		if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 	}
@@ -1449,37 +1214,28 @@ namespace minicombust::flow
 			logger.max_cells_buf_size_per_timestep /= mpi_config->particle_flow_world_size;
 			logger.max_nodes_buf_size_per_timestep /= mpi_config->particle_flow_world_size;
             
-            printf("Flow Solver Stats:\t                            AVG       MIN       MAX\n");
-            // printf("\tReduced Recieved Cells ( per rank ) : %9.0f %9.0f %9.0f\n", round(logger.reduced_recieved_cells / timesteps), round(min_red_cells / timesteps), round(max_red_cells / timesteps));
-            // printf("\tRecieved Cells ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.recieved_cells / timesteps), round(min_cells / timesteps), round(max_cells / timesteps));
-            // printf("\tSent Nodes     ( per rank )         : %9.0f %9.0f %9.0f\n", round(logger.sent_nodes     / timesteps), round(min_nodes / timesteps), round(max_nodes / timesteps));
-            printf("\tmin_cells_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.min_cells_buf_size_per_timestep, min_min_cells_buf_size_per_timestep, max_min_cells_buf_size_per_timestep);
-            printf("\tmax_cells_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.max_cells_buf_size_per_timestep, min_max_cells_buf_size_per_timestep, max_max_cells_buf_size_per_timestep);
-			printf("\tmin_nodes_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.min_cells_buf_size_per_timestep, min_min_cells_buf_size_per_timestep, max_min_cells_buf_size_per_timestep);
-            printf("\tmax_nodes_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.max_cells_buf_size_per_timestep, min_max_cells_buf_size_per_timestep, max_max_cells_buf_size_per_timestep);
+            fprintf(output_file, "Flow Solver Stats:\t                            AVG       MIN       MAX\n");
+            fprintf(output_file, "\tmin_cells_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.min_cells_buf_size_per_timestep, min_min_cells_buf_size_per_timestep, max_min_cells_buf_size_per_timestep);
+            fprintf(output_file, "\tmax_cells_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.max_cells_buf_size_per_timestep, min_max_cells_buf_size_per_timestep, max_max_cells_buf_size_per_timestep);
+			fprintf(output_file, "\tmin_nodes_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.min_cells_buf_size_per_timestep, min_min_cells_buf_size_per_timestep, max_min_cells_buf_size_per_timestep);
+            fprintf(output_file, "\tmax_nodes_recv    ( per rank )         : %9.0f %9.0f %9.0f\n", logger.max_cells_buf_size_per_timestep, min_max_cells_buf_size_per_timestep, max_max_cells_buf_size_per_timestep);
            
 		   
 		   
-		    printf("\tFlow blocks with <1%% max droplets  : %d\n", mpi_config->particle_flow_world_size - (int)non_zero_blocks); 
-            printf("\tAvg Cells with droplets             : %.2f%%\n", 100 * total_cells_recieved / (timesteps * mesh->mesh_size));
-            printf("\tCell copies across particle ranks   : %.2f%%\n", 100.*(1 - total_reduced_cells_recieves / total_cells_recieved ));
+		    fprintf(output_file, "\tFlow blocks with <1%% max droplets  : %d\n", mpi_config->particle_flow_world_size - (int)non_zero_blocks); 
+            fprintf(output_file, "\tAvg Cells with droplets             : %.2f%%\n", 100 * total_cells_recieved / (timesteps * mesh->mesh_size));
+            fprintf(output_file, "\tCell copies across particle ranks   : %.2f%%\n", 100.*(1 - total_reduced_cells_recieves / total_cells_recieved ));
 
 
 
 
             
             MPI_Barrier (mpi_config->particle_flow_world);
-
-            // printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(loggers[mpi_config->particle_flow_rank].recieved_cells / timesteps), round(loggers[mpi_config->particle_flow_rank].sent_nodes / timesteps));
-
-            // MPI_Barrier (mpi_config->particle_flow_world);
             cout << endl;
         }
         else
         {
             MPI_Barrier (mpi_config->particle_flow_world);
-            // printf("\tFlow Rank %4d: Recieved Cells %7.0f Sent Nodes %7.0f\n", mpi_config->particle_flow_rank, round(logger.recieved_cells / timesteps), round(logger.sent_nodes / timesteps));
-            // MPI_Barrier (mpi_config->particle_flow_world);
         }
 
         MPI_Barrier(mpi_config->world);
@@ -1493,11 +1249,11 @@ namespace minicombust::flow
     {
 		nvtxRangePush(__FUNCTION__);
 		/*High level function to advance the flow solver one timestep.*/
-        if (FLOW_SOLVER_DEBUG)  printf("\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
+        if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tFlow Rank %d: Start flow timestep.\n", mpi_config->rank);
 
         int comms_timestep = 3;
 		if ( mpi_config->particle_flow_rank == 0 )
-			printf("timestep %lu\n",timestep_count + 1);
+			fprintf(output_file, "timestep %lu\n",timestep_count + 1);
 
 
 		for (int subiter = 0; subiter < 3; subiter++)
@@ -1509,7 +1265,7 @@ namespace minicombust::flow
 
 			if (mpi_config->particle_flow_rank == 0)
 			{
-				printf("GPU memory %lu free of %lu\n", free_mem, total);
+				fprintf(output_file, "GPU memory %lu free of %lu\n", free_mem, total);
 			}
 			
 			if (((timestep_count + 1) % 100) == 0)
@@ -1528,7 +1284,7 @@ namespace minicombust::flow
 
 				if ( mpi_config->particle_flow_rank == 0 )
 				{
-					printf("Timestep %6lu Flow     mem (TOTAL %8.3f GB)" 
+					fprintf(output_file, "Timestep %6lu Flow     mem (TOTAL %8.3f GB)" 
 							"(AVG %8.3f GB) \n", timestep_count + 1, 
 							(arr_usage_total + stl_usage_total + mesh_usage_total), 
 							(arr_usage_total + stl_usage_total + mesh_usage_total) / 
@@ -1555,7 +1311,7 @@ namespace minicombust::flow
 
 
 			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("exchange_A_halos\n");
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "exchange_A_halos\n");
 			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 
@@ -1568,7 +1324,7 @@ namespace minicombust::flow
 
 
 			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("get_phi_gradients\n");
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "get_phi_gradients\n");
 			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 
@@ -1606,7 +1362,7 @@ namespace minicombust::flow
 				// C_kernel_interpolate_init_boundaries(block_count1, thread_count1, gpu_phi_nodes, gpu_cells_per_point, global_node_to_local_node_map.size());
 				// gpuErrchk( cudaPeekAtLastError() );
 
-				if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_interpolate_phi_to_nodes mesh_size + halos %lu mesh_size %lu halos %lu\n", mesh->local_mesh_size + nhalos, mesh->local_mesh_size , nhalos);
+				if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "C_kernel_interpolate_phi_to_nodes mesh_size + halos %lu mesh_size %lu halos %lu\n", mesh->local_mesh_size + nhalos, mesh->local_mesh_size , nhalos);
 
 				C_kernel_interpolate_phi_to_nodes(block_count, thread_count, gpu_phi, gpu_phi_grad, gpu_phi_nodes, gpu_local_nodes, gpu_node_hash_map, gpu_boundary_hash_map, gpu_cells_per_point, gpu_local_cells, gpu_cell_centers, mesh->local_mesh_size, mesh->local_cells_disp, global_node_to_local_node_map.size(), nhalos);
 				gpuErrchk( cudaPeekAtLastError() );
@@ -1614,7 +1370,7 @@ namespace minicombust::flow
 
 
 			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("C_kernel_interpolate_phi_to_nodes\n");
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "C_kernel_interpolate_phi_to_nodes\n");
 			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 
@@ -1638,7 +1394,7 @@ namespace minicombust::flow
 			}
 
 			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("update_flow_field\n");
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "update_flow_field\n");
 			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 
@@ -1656,7 +1412,7 @@ namespace minicombust::flow
 
 
 			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("calculate_UVW\n");
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "calculate_UVW\n");
 			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 
@@ -1665,55 +1421,9 @@ namespace minicombust::flow
 
 		
 			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("exchange_phi_halos\n");
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "exchange_phi_halos\n");
 			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
-
-			//printf("We finish pressure\n");
-	/*
-			if(((timestep_count + 1) % 1) == 0)
-			{
-				gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.TE, gpu_phi.TE, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.ED, gpu_phi.ED, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.FUL, gpu_phi.FUL, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.PRO, gpu_phi.PRO, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.VARF, gpu_phi.VARF, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.VARP, gpu_phi.VARP, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				if(mpi_config->particle_flow_rank == 0)
-				{
-					printf("Result is:\n");
-				}
-				for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
-				{
-					if(i == mpi_config->particle_flow_rank)
-					{
-						for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
-						{
-							const uint64_t cell = block_cell + mesh->local_cells_disp;
-							printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
-							printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
-						}
-					}
-					MPI_Barrier(mpi_config->particle_flow_world);
-				}
-			}
-	*/
 
 			nvtxRangePush("calculate_pressure");
 
@@ -1722,7 +1432,7 @@ namespace minicombust::flow
 			flow_timings[3] += MPI_Wtime();
 
 			if (CUDA_SYNC_DEBUG) MPI_Barrier(mpi_config->particle_flow_world);
-			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) printf("calculate_pressure\n");
+			if (CUDA_SYNC_DEBUG && mpi_config->particle_flow_rank == 0) fprintf(output_file, "calculate_pressure\n");
 			if (CUDA_SYNC_DEBUG) gpuErrchk( cudaPeekAtLastError() );
 			if (CUDA_SYNC_DEBUG) gpuErrchk(cudaDeviceSynchronize());
 
@@ -1776,51 +1486,6 @@ namespace minicombust::flow
 
 			nvtxRangePop();
 
-
-
-		/*	if(((timestep_count + 1) % 1) == 0)
-			{
-				gpuErrchk(cudaMemcpy(phi.U, gpu_phi.U, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.V, gpu_phi.V, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.W, gpu_phi.W, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.P, gpu_phi.P, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.TE, gpu_phi.TE, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.ED, gpu_phi.ED, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.TEM, gpu_phi.TEM, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.FUL, gpu_phi.FUL, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.PRO, gpu_phi.PRO, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.VARF, gpu_phi.VARF, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				gpuErrchk(cudaMemcpy(phi.VARP, gpu_phi.VARP, phi_array_size,
-						cudaMemcpyDeviceToHost));
-				if(mpi_config->particle_flow_rank == 0)
-				{
-					printf("Result is:\n");
-				}
-				for(int i = 0; i < mpi_config->particle_flow_world_size; i++)
-				{
-					if(i == mpi_config->particle_flow_rank)
-					{
-						for(uint64_t block_cell = 0; block_cell < mesh->local_mesh_size; block_cell++ )
-						{
-							const uint64_t cell = block_cell + mesh->local_cells_disp;
-							printf("locate (%4.18f,%4.18f,%4.18f)\n", mesh->cell_centers[cell-mesh->shmem_cell_disp].x,mesh->cell_centers[cell-mesh->shmem_cell_disp].y,mesh->cell_centers[cell-mesh->shmem_cell_disp].z);
-							printf("Variables are pressure %4.18f \nvel (%4.18f,%4.18f,%4.18f) \nTerb (%4.18f,%4.18f) \ntemerature %4.18f fuel mix %4.18f \nand progression %.6f\n var mix %4.18f\n var pro %4.18f\n\n", phi.P[block_cell], phi.U[block_cell], phi.V[block_cell], phi.W[block_cell], phi.TE[block_cell], phi.ED[block_cell], phi.TEM[block_cell], phi.FUL[block_cell], phi.PRO[block_cell], phi.VARF[block_cell], phi.VARP[block_cell]);
-						}
-					}
-					MPI_Barrier(mpi_config->particle_flow_world);
-				}
-			}
-	*/
 			if(((timestep_count + 1) % TIMER_OUTPUT_INTERVAL == 0) && FLOW_SOLVER_TIME)
 			{
 				if(mpi_config->particle_flow_rank == 0)
@@ -1836,20 +1501,20 @@ namespace minicombust::flow
 						scalar_time += sca_total_time[i];
 					} 
 
-					printf("\nTotal Flow Solver Timings:\n");
-					printf("Compute Velocity time: %.3f (%.2f %%)\n",
+					fprintf(output_file, "\nTotal Flow Solver Timings:\n");
+					fprintf(output_file, "Compute Velocity time: %.3f (%.2f %%)\n",
 							vel_total_time / mpi_config->particle_flow_world_size,
 							100 * vel_total_time / total_time);
-					printf("Compute Pressure time: %.3f (%.2f %%)\n",
+					fprintf(output_file, "Compute Pressure time: %.3f (%.2f %%)\n",
 							pres_total_time / mpi_config->particle_flow_world_size,
 							100 * pres_total_time / total_time);
-					printf("Compute 8 Scalars time %.3f (%.2f %%)\n",
+					fprintf(output_file, "Compute 8 Scalars time %.3f (%.2f %%)\n",
 							scalar_time / mpi_config->particle_flow_world_size,
 							100 * scalar_time / total_time);
-					printf("FGM Table Lookup time %.3f (%.2f %%)\n",
+					fprintf(output_file, "FGM Table Lookup time %.3f (%.2f %%)\n",
 							fgm_lookup_time / mpi_config->particle_flow_world_size,
 							100 * fgm_lookup_time / total_time);
-					printf("Total time: %f\n\n", 
+					fprintf(output_file, "Total time: %f\n\n", 
 							total_time / mpi_config->particle_flow_world_size);
 				}
 				else
@@ -1876,7 +1541,7 @@ namespace minicombust::flow
 					{
 						flow_timings[i] /= mpi_config->particle_flow_world_size;
 					}
-					printf("\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10]);
+					fprintf(output_file, "\nFlow Timing: \nCalc gradients: %f\nCalc update particles: %f\nCalc velocity: %f\nCalc Pressure: %f\nCalc Turb TE: %f\nCalc Turb ED: %f\nCalc Heat: %f\nCalc PROG: %f\nCalc FUEL: %f\nCalc VAR PROG: %f\nCalc VAR FUEL: %f\n",flow_timings[0],flow_timings[1],flow_timings[2],flow_timings[3],flow_timings[4],flow_timings[5],flow_timings[6],flow_timings[7],flow_timings[8],flow_timings[9],flow_timings[10]);
 				}
 				else
 				{
@@ -1885,7 +1550,7 @@ namespace minicombust::flow
 				}
 			}		
 			
-			if ( FLOW_SOLVER_DEBUG )  printf("\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
+			if ( FLOW_SOLVER_DEBUG )  fprintf(output_file, "\tFlow Rank %d: Stop flow timestep.\n", mpi_config->rank);
 
 		}
 
