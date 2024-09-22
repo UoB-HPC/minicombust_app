@@ -61,19 +61,33 @@ int main (int argc, char ** argv)
 
     //Extract mpi_rank with env var
 
-
     char *buf = getenv("MINICOMBUST_RANK_ID");
-    int lrank = atoi(buf); 
+    const int rank_id = atoi(buf); 
 
-    //Should we use the GPU count currently computed in the wrapper so we can easier latter support setups where multiple GPUs are used by one MPI rank?
-    int flow_ranks = atoi(argv[1]);
+    buf = getenv("MINICOMBUST_FRANKS");
+    const int flow_ranks = atoi(buf); 
+
+    buf = getenv("MINICOMBUST_PRANKS");
+    const int particle_ranks = atoi(buf); 
+
+    buf = getenv("MINICOMBUST_ITERS");
+    const uint64_t ntimesteps = atoi(buf); 
+
+    buf = getenv("MINICOMBUST_OUTPUT_ITER");
+    const int64_t output_iteration = atoi(buf); 
+
+    buf = getenv("MINICOMBUST_PARTICLES");
+    const uint64_t particles_per_timestep = atoi(buf); 
+
+    buf = getenv("MINICOMBUST_CELLS");
+    const uint64_t modifier = atoi(buf); 
 
     cudaFree(0);
-    if (lrank < flow_ranks) 
+    if (rank_id < flow_ranks) 
     {
         int cuda_dev = 0;
         gpuErrchk( cudaSetDevice(cuda_dev));
-        printf("Process %d selecting device %d of %d\n", lrank, cuda_dev, flow_ranks);
+        printf("Process %d selecting device %d of %d\n", rank_id, cuda_dev, flow_ranks);
     }
 
     // MPI Initialisation 
@@ -84,8 +98,6 @@ int main (int argc, char ** argv)
     // Create overall world
     MPI_Comm_rank(mpi_config.world,  &mpi_config.rank);
     MPI_Comm_size(mpi_config.world,  &mpi_config.world_size);
-
-    int particle_ranks = mpi_config.world_size - flow_ranks;
 
     mpi_config.solver_type = (mpi_config.rank >= flow_ranks); // 1 for particle, 0 for flow
 
@@ -103,14 +115,9 @@ int main (int argc, char ** argv)
     MPI_Op_create(&sum_particle_aos<double>, 1, &mpi_config.MPI_PARTICLE_OPERATION);
 
     // Run Configuration
-    const uint64_t ntimesteps                   = (argc > 5) ? atoi(argv[5]) : 1500;
     const double   delta                        = 1.0e-5;
-    const int64_t output_iteration              = (argc > 4) ? atoi(argv[4]) : 10;
-    const uint64_t particles_per_timestep       = (argc > 2) ? atoi(argv[2]) : 10;
-   
 
     // Mesh Configuration
-    const uint64_t modifier                = (argc > 3) ? atoi(argv[3]) : 10;
     vec<double>    box_dim                 = {0.05*modifier*2, 0.05*modifier, 0.05*modifier};//{1, 0.5, 0.5};
     vec<uint64_t>  elements_per_dim        = {modifier*2,   modifier*1,  modifier*1};
 

@@ -1008,10 +1008,18 @@ namespace minicombust::flow
 				//Create config for AMGX
 				AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 				AMGX_SAFE_CALL(AMGX_install_signal_handler());
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, "/scratch/space1/e609/suc/new_gpu/AMGX_Solvers/FGMRES_AGGREGATION_JACOBI.json"));
+
+                char *minicombust_path = getenv("MINICOMBUST_DIR");
+                std::string minicombust_path_string( minicombust_path );
+                std::string pressure_cfg_path = minicombust_path_string + "/AMGX_Solvers/FGMRES_AGGREGATION_JACOBI.json";
+                std::string solver_cfg_path   = minicombust_path_string + "/AMGX_Solvers/PBICGSTAB_NOPREC.json";
+
+                fprintf(output_file, "Using AMGX_Solvers location: %s \n", minicombust_path_string.c_str());
+
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, pressure_cfg_path.c_str()));
 				AMGX_SAFE_CALL(AMGX_config_add_parameters(&pressure_cfg, "exception_handling=1"));
 				
-				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, "/scratch/space1/e609/suc/new_gpu/AMGX_Solvers/PBICGSTAB_NOPREC.json"));
+				AMGX_SAFE_CALL(AMGX_config_create_from_file(&cfg, solver_cfg_path.c_str()));
                 AMGX_SAFE_CALL(AMGX_config_add_parameters(&cfg, "exception_handling=1"));	
 				
 				AMGX_SAFE_CALL(AMGX_resources_create(&main_rsrc, cfg,
