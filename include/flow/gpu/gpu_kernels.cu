@@ -6,8 +6,6 @@
 #include <thrust/execution_policy.h>
 #include <thrust/transform_reduce.h>
 
-#include <cuco/static_map.cuh>
-
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
 #include <thrust/iterator/zip_iterator.h>
@@ -118,24 +116,6 @@ __device__ void solve(double *A, double *b, double *out)
     out[2] = b[0] * invdet * (A[3] * A[7] - A[6] * A[4]) +
              b[1] * invdet * (A[6] * A[1] - A[0] * A[7]) +
              b[2] * invdet * (A[0] * A[4] - A[3] * A[1]);
-}
-
-template <typename Map>
-__global__ void insert(Map map_ref,
-					   uint64_t *keys,
-					   uint64_t *values,
-					   size_t num_keys)
-{
-  auto tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-  while (tid < num_keys) 
-  {
-	// Map::insert returns `true` if it is the first time the given key was
-	// inserted and `false` if the key already existed
-	map_ref.insert(cuco::pair{keys[tid], values[tid]});
-
-    tid += gridDim.x * blockDim.x;
-  }
 }
 
 __global__ void kernel_create_map(Hash_map *node_map, uint64_t *keys, uint64_t *values, uint64_t size)
@@ -2538,42 +2518,3 @@ void C_kernel_process_particle_fields(uint64_t block_count, int thread_count, ui
 
 	kernel_process_particle_fields<<<block_count, thread_count, 0, stream>>>(sent_cell_indexes, sent_particle_fields, particle_fields, num_fields, local_mesh_disp);
 }
-
-// void C_create_cuco_map(int block_count, int thread_count, uint64_t *gpu_keys, uint64_t *gpu_values, uint64_t size)
-// {
-// 	printf("Creating a map with size %lu\n", size);
-// 	using Key   = int;
-// 	using Value = int;
-
-// 	// Empty slots are represented by reserved "sentinel" values. These values should be selected such
-// 	// that they never occur in your input data.
-// 	Key constexpr empty_key_sentinel     = -1;
-// 	Value constexpr empty_value_sentinel = -1;
-
-//   	// Number of key/value pairs to be inserted
-//   	std::size_t num_keys = size;
-
-//   	// Compute capacity based on a 50% load factor
-// 	auto constexpr load_factor = 0.5;
-// 	std::size_t const capacity = std::ceil(num_keys / load_factor);
-
-//     auto boundary_map = cuco::static_map{capacity,
-// 								cuco::empty_key{empty_key_sentinel},
-// 								cuco::empty_value{empty_value_sentinel},
-// 								thrust::equal_to<Key>{},
-// 								cuco::linear_probing<1, cuco::default_hash_function<Key>>{}};
-
-// 	// Get a non-owning, mutable reference of the map that allows inserts to pass by value into the
-// 	// kernel
-// 	auto insert_ref = boundary_map.ref(cuco::insert);
-
-// 	auto constexpr block_size = 256;
-// 	auto const grid_size      = (num_keys + block_size - 1) / block_size;
-// 	insert<<<grid_size, block_size>>>(insert_ref, gpu_keys, gpu_values, num_keys);
-
-// 	std::cout << "Number of keys inserted: " << num_keys << std::endl;
-
-// 	// Get a non-owning reference of the map that allows find operations to pass by value into the
-// 	// kernel
-// 	auto find_ref = boundary_map.ref(cuco::find);
-// }

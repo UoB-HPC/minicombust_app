@@ -124,6 +124,115 @@ namespace minicombust::visit
                 }
             }
 
+            void write_flow(string filename, int id, phi_vector<T> *phi)
+			{
+				ofstream vtk_file;
+
+                vtk_file.open (filename + "_flow" + to_string(mpi_config->rank) + "_timestep" + to_string(id) + ".vtk");
+                vtk_file << "# vtk DataFile Version 3.0 " << endl;
+                vtk_file << "MiniCOMBUST " << endl;
+                vtk_file << "ASCII " << endl;
+                vtk_file << "DATASET POLYDATA " << endl;
+
+
+                // TODO: Allow different datatypes
+                // Print point data
+                vtk_file << endl << "POINTS " << mesh->local_mesh_size << " float"  << endl;
+                for(int cell = 0; cell < (int)mesh->local_mesh_size; cell++)
+                {
+                    const int data_per_line = 10;
+                    if (cell % data_per_line == 0)  vtk_file << endl;
+                    else             vtk_file << "  ";
+                    vtk_file << print_vec(mesh->cell_centers[cell + mesh->local_cells_disp - mesh->shmem_cell_disp]) << "\t";
+                }
+                vtk_file << endl << endl;
+
+                // Print particle values for points
+                vtk_file << endl << "VERTICES " << mesh->local_mesh_size << " " << mesh->local_mesh_size * 2  << endl;
+                uint64_t count = 0;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << "1 " << count++ << "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << endl << "POINT_DATA " << mesh->local_mesh_size << endl;
+
+                vtk_file << "VECTORS flow_velocity float" << endl;
+                // vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << phi->U[cell]<< " " << phi->V[cell] << " " << phi->W[cell] << " " << "\t";
+                }
+                vtk_file << endl;
+	
+                vtk_file << "SCALARS flow_pressure float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << phi->P[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << "SCALARS flow_te float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << phi->TE[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << "SCALARS flow_ed float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << phi->ED[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << "SCALARS flow_tem float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << std::setprecision(11) << phi->TEM[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << "SCALARS flow_ful float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << std::setprecision(11) << phi->PRO[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << "SCALARS flow_pro float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << std::setprecision(11) << phi->FUL[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << "SCALARS flow_varf float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << std::setprecision(11) << phi->VARF[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file << "SCALARS flow_varp float" << endl;
+                vtk_file << "LOOKUP_TABLE default" << endl;
+                for(uint64_t cell = 0; cell < mesh->local_mesh_size; cell++)
+                {
+                    vtk_file << std::setprecision(11) << phi->VARP[cell]<< "\t";
+                }
+                vtk_file << endl;
+
+                vtk_file.close();
+            }
+
             void write_flow_velocities (string filename, int id, phi_vector<T> *phi)
             {
                 ofstream vtk_file;

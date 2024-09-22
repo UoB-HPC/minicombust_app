@@ -84,7 +84,8 @@ namespace minicombust::geometry
             uint64_t local_cells_disp;    // Number of polygons in the mesh that a flow rank owns.
             
             vec<T> mesh_dim;
-            
+            FILE *fp;
+
             vec<T> cell_size_vector;      // Cell size
             vec<T> *points;               // Mesh points    = {{0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, ...}:
             uint64_t *cells;              // Cells          = {{0, 1, 2, 300, 40, 36, 7, 2}, {1, 2, 4, 300}, ...};
@@ -143,8 +144,8 @@ namespace minicombust::geometry
             size_t flow_term_size                  = 0;
             size_t particle_term_size              = 0;
 
-            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<uint64_t> *faces, uint64_t *cell_faces, uint64_t *cell_neighbours, uint8_t *cells_per_point, uint64_t num_blocks, uint64_t *shmem_cell_disps, uint64_t *shmem_point_disps, uint64_t *block_element_disp, vec<uint64_t> flow_block_dim, uint64_t num_boundary_cells, uint64_t *boundary_cells, uint64_t num_boundary_points, vec<T> *boundary_points, uint64_t *boundary_types, vec<T> mesh_dim) 
-            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_faces(cell_faces), cell_neighbours(cell_neighbours), cells_per_point(cells_per_point), num_blocks(num_blocks), shmem_cell_disps(shmem_cell_disps), shmem_point_disps(shmem_point_disps), block_element_disp(block_element_disp), flow_block_dim(flow_block_dim), boundary_cells_size(num_boundary_cells), boundary_cells(boundary_cells), boundary_points_size(num_boundary_points), boundary_points(boundary_points), boundary_types(boundary_types), mesh_dim(mesh_dim)
+            Mesh(MPI_Config *mpi_config, uint64_t points_size, uint64_t mesh_size, uint64_t cell_size, uint64_t faces_size, uint64_t faces_per_cell, vec<T> *points, uint64_t *cells, Face<uint64_t> *faces, uint64_t *cell_faces, uint64_t *cell_neighbours, uint8_t *cells_per_point, uint64_t num_blocks, uint64_t *shmem_cell_disps, uint64_t *shmem_point_disps, uint64_t *block_element_disp, vec<uint64_t> flow_block_dim, uint64_t num_boundary_cells, uint64_t *boundary_cells, uint64_t num_boundary_points, vec<T> *boundary_points, uint64_t *boundary_types, vec<T> mesh_dim, FILE *fp) 
+            : mpi_config(mpi_config), points_size(points_size), mesh_size(mesh_size), cell_size(cell_size), faces_size(faces_size), faces_per_cell(faces_per_cell), points(points), cells(cells), faces(faces), cell_faces(cell_faces), cell_neighbours(cell_neighbours), cells_per_point(cells_per_point), num_blocks(num_blocks), shmem_cell_disps(shmem_cell_disps), shmem_point_disps(shmem_point_disps), block_element_disp(block_element_disp), flow_block_dim(flow_block_dim), boundary_cells_size(num_boundary_cells), boundary_cells(boundary_cells), boundary_points_size(num_boundary_points), boundary_points(boundary_points), boundary_types(boundary_types), mesh_dim(mesh_dim), fp(fp)
             {
                 
                 shmem_cell_disp   = shmem_cell_disps[mpi_config->node_rank];
@@ -219,7 +220,7 @@ namespace minicombust::geometry
                 
                 uint64_t memory_usage          = get_memory_usage();
                 uint64_t total_memory_usage    = memory_usage;
-                uint64_t particle_memory_usage = memory_usage;
+                uint64_t flow_memory_usage = memory_usage;
 
                 uint64_t total_points_array_size               = points_array_size;
                 uint64_t total_cells_array_size                = cells_array_size;
@@ -248,26 +249,26 @@ namespace minicombust::geometry
                     MPI_Reduce(MPI_IN_PLACE, &total_particle_term_size,              1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
 
 					//TODO: faces_size here is zero since it is a particle cell					
-                    if (mpi_config->solver_type == PARTICLE)
-                        MPI_Reduce(MPI_IN_PLACE, &particle_memory_usage, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    if (mpi_config->solver_type == FLOW)
+                        MPI_Reduce(MPI_IN_PLACE, &flow_memory_usage, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
 
 
-                    printf("\nMesh storage requirements (%d processes) : \n", mpi_config->world_size);
-                    printf("\tpoints_array_size                 (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " vertexes)\n"  , (float) total_points_array_size                / 1000000.0, (float) total_points_array_size                / (1000000.0 * mpi_config->world_size), points_size);
-                    printf("\tcells_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " cells)\n"     , (float) total_cells_array_size                 / 1000000.0, (float) total_cells_array_size                 / (1000000.0 * mpi_config->world_size), mesh_size);
-                    printf("\tfaces_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " faces)\n"     , (float) total_faces_array_size                 / 1000000.0, (float) total_faces_array_size                 / (1000000.0 * mpi_config->world_size), faces_size);
-                    printf("\tcell_faces_array_size             (TOTAL %8.2f MB) (AVG %8.2f MB)\n"                           , (float) total_cell_faces_array_size            / 1000000.0, (float) total_cell_faces_array_size            / (1000000.0 * mpi_config->world_size));
-                    printf("\tcell_centre_size                  (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_cell_centre_size                 / 1000000.0, (float) total_cell_centre_size                 / (1000000.0 * mpi_config->world_size));
-                    printf("\tcell_neighbours_array_size        (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_cell_neighbours_array_size       / 1000000.0, (float) total_cell_neighbours_array_size       / (1000000.0 * mpi_config->world_size));
-                    printf("\tcells_per_point_size              (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_cells_per_point_size             / 1000000.0, (float) total_cells_per_point_size             / (1000000.0 * mpi_config->world_size));
-                    printf("\tblock_disp_size                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
-                    printf("\t2 * block_disp_size               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
-                    printf("\t2 * flow_term_size                (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_flow_term_size                   / 1000000.0, (float) total_flow_term_size                   / (1000000.0 * mpi_config->world_size));
-                    printf("\tparticle_term_size                (TOTAL %8.2f MB) (AVG %8.2f MB) \n\n"                        , (float) total_particle_term_size               / 1000000.0, (float) total_particle_term_size               / (1000000.0 * mpi_config->world_size));
+                    fprintf(fp, "\nMesh storage requirements (%d processes) : \n", mpi_config->world_size);
+                    fprintf(fp, "\tpoints_array_size                 (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " vertexes)\n"  , (float) total_points_array_size                / 1000000.0, (float) total_points_array_size                / (1000000.0 * mpi_config->world_size), points_size);
+                    fprintf(fp, "\tcells_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " cells)\n"     , (float) total_cells_array_size                 / 1000000.0, (float) total_cells_array_size                 / (1000000.0 * mpi_config->world_size), mesh_size);
+                    fprintf(fp, "\tfaces_array_size                  (TOTAL %8.2f MB) (AVG %8.2f MB)   (%" PRIu64 " faces)\n"     , (float) total_faces_array_size                 / 1000000.0, (float) total_faces_array_size                 / (1000000.0 * mpi_config->world_size), faces_size);
+                    fprintf(fp, "\tcell_faces_array_size             (TOTAL %8.2f MB) (AVG %8.2f MB)\n"                           , (float) total_cell_faces_array_size            / 1000000.0, (float) total_cell_faces_array_size            / (1000000.0 * mpi_config->world_size));
+                    fprintf(fp, "\tcell_centre_size                  (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_cell_centre_size                 / 1000000.0, (float) total_cell_centre_size                 / (1000000.0 * mpi_config->world_size));
+                    fprintf(fp, "\tcell_neighbours_array_size        (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_cell_neighbours_array_size       / 1000000.0, (float) total_cell_neighbours_array_size       / (1000000.0 * mpi_config->world_size));
+                    fprintf(fp, "\tcells_per_point_size              (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_cells_per_point_size             / 1000000.0, (float) total_cells_per_point_size             / (1000000.0 * mpi_config->world_size));
+                    fprintf(fp, "\tblock_disp_size                   (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
+                    fprintf(fp, "\t2 * block_disp_size               (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_block_disp_size                  / 1000000.0, (float) total_block_disp_size                  / (1000000.0 * mpi_config->world_size));
+                    fprintf(fp, "\t2 * flow_term_size                (TOTAL %8.2f MB) (AVG %8.2f MB) \n"                          , (float) total_flow_term_size                   / 1000000.0, (float) total_flow_term_size                   / (1000000.0 * mpi_config->world_size));
+                    fprintf(fp, "\tparticle_term_size                (TOTAL %8.2f MB) (AVG %8.2f MB) \n\n"                        , (float) total_particle_term_size               / 1000000.0, (float) total_particle_term_size               / (1000000.0 * mpi_config->world_size));
 
-                    printf("\tFlow rank mesh size               (TOTAL %12.2f MB) (AVG %.2f MB) \n"                          , (float)(total_memory_usage - particle_memory_usage)/1000000.0, (float)(total_memory_usage - particle_memory_usage)/(1000000.0 * (mpi_config->world_size - mpi_config->particle_flow_world_size)));
-                    printf("\tParticle rank mesh size           (TOTAL %12.2f MB) (AVG %.2f MB) \n"                          , (float)particle_memory_usage/1000000.0,                        (float)particle_memory_usage/(1000000.0 * mpi_config->particle_flow_world_size));
-                    printf("\tTotal mesh size                   (TOTAL %12.2f MB) \n\n"                                      , (float)total_memory_usage/1000000.0);
+                    fprintf(fp, "\tFlow rank mesh size               (TOTAL %12.2f MB) (AVG %.2f MB) \n"                          , (float) flow_memory_usage/1000000.0,                        (float)flow_memory_usage/(1000000.0 * mpi_config->particle_flow_world_size));
+                    fprintf(fp, "\tParticle rank mesh size           (TOTAL %12.2f MB) (AVG %.2f MB) \n"                          , (float) (total_memory_usage - flow_memory_usage)/1000000.0, (float)(total_memory_usage - flow_memory_usage)/(1000000.0 * (mpi_config->world_size - mpi_config->particle_flow_world_size)));
+                    fprintf(fp, "\tTotal mesh size                   (TOTAL %12.2f MB) \n\n"                                      , (float)total_memory_usage/1000000.0);
                 }
                 else
                 {
@@ -284,8 +285,8 @@ namespace minicombust::geometry
                     MPI_Reduce(&total_flow_term_size,                  nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
                     MPI_Reduce(&total_particle_term_size,              nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->world);
 
-                    if (mpi_config->solver_type == PARTICLE)
-                        MPI_Reduce(&particle_memory_usage, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
+                    if (mpi_config->solver_type == FLOW)
+                        MPI_Reduce(&flow_memory_usage, nullptr, 1, MPI_UINT64_T, MPI_SUM, 0, mpi_config->particle_flow_world);
                 }
             }
 

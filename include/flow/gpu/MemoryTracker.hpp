@@ -124,13 +124,13 @@ namespace minicombust::flow
                 }
             }
 
-            void print_usage()
+            void print_usage(FILE *fp)
             {
                 size_t local_size = 0;
                 size_t global_size = 0;
 
                 if (mpi_config->particle_flow_rank == 0)
-                    printf("Flow Host Memory Usage:\n");
+                    fprintf(fp, "Flow Host Memory Usage:\n");
 
                 for (void *ptr : host_vector)
                 {
@@ -139,20 +139,20 @@ namespace minicombust::flow
                     size_t world_size;
                     MPI_Allreduce(&val_pair.second, &world_size, 1, MPI_UINT64_T, MPI_SUM, mpi_config->particle_flow_world);
                     if (mpi_config->particle_flow_rank == 0)
-                        printf("\t%40s        (TOTAL %8.2f GB) (AVG %8.2f GB) \n", val_pair.first.c_str(), (float) world_size / 1.e9, (float) world_size / (1.e9 * (float)mpi_config->particle_flow_world_size));
+                        fprintf(fp, "\t%40s        (TOTAL %8.2f GB) (AVG %8.2f GB) \n", val_pair.first.c_str(), (float) world_size / 1.e9, (float) world_size / (1.e9 * (float)mpi_config->particle_flow_world_size));
                     
                     local_size  += val_pair.second;
                     global_size += world_size;
                 }
                 if (mpi_config->particle_flow_rank == 0)
-                    printf("\t%40s        (TOTAL %8.2f GB) (AVG %8.2f GB) \n", "FLOW TOTAL HOST USAGE", (float) global_size / 1.e9, (float) global_size / (1.e9 * (float)mpi_config->particle_flow_world_size)  );
+                    fprintf(fp, "\t%40s        (TOTAL %8.2f GB) (AVG %8.2f GB) \n", "FLOW TOTAL HOST USAGE", (float) global_size / 1.e9, (float) global_size / (1.e9 * (float)mpi_config->particle_flow_world_size)  );
             
 
                 local_size = 0;
                 global_size = 0;
 
                 if (mpi_config->particle_flow_rank == 0)
-                    printf("Flow Device Memory Usage:\n");
+                    fprintf(fp, "Flow Device Memory Usage:\n");
 
                 for (void *ptr : device_vector)
                 {
@@ -161,13 +161,13 @@ namespace minicombust::flow
                     size_t world_size;
                     MPI_Allreduce(&val_pair.second, &world_size, 1, MPI_UINT64_T, MPI_SUM, mpi_config->particle_flow_world);
                     if (mpi_config->particle_flow_rank == 0)
-                        printf("\t%40s (TOTAL %8.2f GB) (AVG %8.2f GB) \n", val_pair.first.c_str(), (float) world_size / 1.e9, (float) world_size / (1.e9 * (float)mpi_config->particle_flow_world_size));
+                        fprintf(fp, "\t%40s (TOTAL %8.2f GB) (AVG %8.2f GB) \n", val_pair.first.c_str(), (float) world_size / 1.e9, (float) world_size / (1.e9 * (float)mpi_config->particle_flow_world_size));
                     
                     local_size  += val_pair.second;
                     global_size += world_size;
                 }
                 if (mpi_config->particle_flow_rank == 0)
-                    printf("\t%40s (TOTAL %8.2f GB) (AVG %8.2f GB) \n\n", "FLOW TOTAL DEVICE USAGE",  (float) global_size / 1.e9, (float) global_size / (1.e9 * (float)mpi_config->particle_flow_world_size)  );
+                    fprintf(fp, "\t%40s (TOTAL %8.2f GB) (AVG %8.2f GB) \n\n", "FLOW TOTAL DEVICE USAGE",  (float) global_size / 1.e9, (float) global_size / (1.e9 * (float)mpi_config->particle_flow_world_size)  );
             
             
             }
