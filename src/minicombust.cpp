@@ -59,12 +59,8 @@ int main (int argc, char ** argv)
 	//TODO:sort out vtk_output.
 	//TODO:ideal flow tanks seem to cause a segfault
 
-    //Extract mpi_rank with env var
-
-    char *buf = getenv("MINICOMBUST_RANK_ID");
-    const int rank_id = atoi(buf); 
-
-    buf = getenv("MINICOMBUST_FRANKS");
+    //Extract runtime parameters with env var
+    char *buf = getenv("MINICOMBUST_FRANKS");
     const int flow_ranks = atoi(buf); 
 
     buf = getenv("MINICOMBUST_PRANKS");
@@ -82,13 +78,19 @@ int main (int argc, char ** argv)
     buf = getenv("MINICOMBUST_CELLS");
     const uint64_t modifier = atoi(buf); 
 
-    cudaFree(0);
-    if (rank_id < flow_ranks) 
-    {
-        int cuda_dev = 0;
-        gpuErrchk( cudaSetDevice(cuda_dev));
-        printf("Process %d selecting device %d of %d\n", rank_id, cuda_dev, flow_ranks);
-    }
+    #ifdef have_gpu
+        //Extract mpi_rank with env var
+        buf = getenv("MINICOMBUST_RANK_ID");
+        const int rank_id = atoi(buf); 
+        
+        cudaFree(0);
+        if (rank_id < flow_ranks) 
+        {
+            int cuda_dev = 0;
+            gpuErrchk( cudaSetDevice(cuda_dev));
+            printf("Process %d selecting device %d of %d\n", rank_id, cuda_dev, flow_ranks);
+        }
+    #endif
 
     // MPI Initialisation 
     MPI_Init(&argc, &argv);
