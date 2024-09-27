@@ -82,9 +82,6 @@ namespace minicombust::geometry
             uint64_t local_mesh_size;     // Number of polygons in the mesh that a flow rank owns.
             uint64_t local_points_size;     // Number of polygons in the mesh that a flow rank owns.
             uint64_t local_cells_disp;    // Number of polygons in the mesh that a flow rank owns.
-            
-            vec<T> mesh_dim;
-            FILE *fp;
 
             vec<T> cell_size_vector;      // Cell size
             vec<T> *points;               // Mesh points    = {{0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, ...}:
@@ -102,14 +99,15 @@ namespace minicombust::geometry
             uint64_t     *block_element_disp;
             vec<uint64_t> flow_block_dim;
 
-
             uint64_t  boundary_cells_size;
             uint64_t *boundary_cells;
             uint64_t  boundary_points_size;
             vec<T>   *boundary_points;
             uint64_t *boundary_types;
             
- 
+            vec<T> mesh_dim;
+            FILE *fp;
+
             uint64_t *particles_per_point; // Number of particles in each cell
 
             // Flow source terms
