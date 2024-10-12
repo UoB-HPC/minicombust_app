@@ -44,6 +44,7 @@ This bash script, `.gen_job.sh`, generates and manages jobs for the MiniCombust 
  - `--prof_ranks <ranks>`: Set ranks to profile
  - `--interactive`: Run interactively within the container
  - `--jump_into_container`: Jump into container, don't run minicombust.
+ - `--no_container`: Don't use containers. (Untested but implemented..)
 
 Default options are set in `defaults.sh`
 

@@ -69,6 +69,11 @@ while [ : ]; do
     --jump_into_container)
         export INTERACTIVE=1
         export INTERACTIVE_RUN=0
+        export USE_ENROOT=1
+        shift
+        ;;
+    --no_container)
+        export NO_CONTAINER=1
         shift
         ;;
     --) 
@@ -127,10 +132,13 @@ fi
 
 if [ $BUILD -eq 1 ]
 then
-    echo "USE_ENROOT $USE_ENROOT" 
     INNER_CMD="source build.sh"
     OUTER_CMD="source unset.sh; srun --overlap -N1 --ntasks-per-node=1 --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=${CONTAINER} --distribution=cyclic:cyclic --container-mounts=${MOUNT}:${MOUNT} bash -c"
+fi
 
+if [ $NO_CONTAINER -eq 1 ]
+then
+    OUTER_CMD="bash -c"
 fi
 
 OUTFILE="$RESULTS_DIR/NODES${NODES}-RANKS$RANKS-GPUS$NGPUS-CELLS$CELLS-PARTICLES$PARTICLES-ITERS$ITERS"
