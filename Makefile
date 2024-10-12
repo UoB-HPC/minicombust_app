@@ -1,6 +1,7 @@
 ## Compilers and Flags
 CC := mpicxx
-CFLAGS := -fopenmp -g -G -Wall -Wextra -std=c++2a -O3 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
+#-G
+CFLAGS := -fopenmp -g -Wall -Wextra -std=c++2a -O3 -march=native -Wno-unknown-pragmas -Wno-deprecated-enum-enum-conversion
 
 LIB := -Lbuild/
 INC := -Iinclude/
