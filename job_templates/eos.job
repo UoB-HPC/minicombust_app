@@ -32,6 +32,7 @@ echo "" | tee -a OUTFILE.log
 echo "GLOBAL_PROF_CMD: #PROF_CMD#" | tee -a OUTFILE.log
 
 CREATE_CMD
-OUTER_CMD "cd $PWD; export AMGX_PATH=#AMGX_PATH#; export MPI_PATH=#MPI_PATH#; export CUDA_PATH=#CUDA_PATH#; source set_LD_PATH.sh; source unset.sh; $MINICOMBUST_VARS GLOBAL_PROF_CMD='#PROF_CMD#' INNER_CMD" | tee -a OUTFILE.log
+BUILD_OUT_CMD "cd $PWD; export AMGX_PATH=#AMGX_PATH#; export MPI_PATH=#MPI_PATH#; export CUDA_PATH=#CUDA_PATH#; source set_LD_PATH.sh; source unset.sh; $MINICOMBUST_VARS GLOBAL_PROF_CMD='#PROF_CMD#' BUILD_CMD" | tee -a OUTFILE.log
+OUTER_CMD       "cd $PWD; export AMGX_PATH=#AMGX_PATH#; export MPI_PATH=#MPI_PATH#; export CUDA_PATH=#CUDA_PATH#; source set_LD_PATH.sh; source unset.sh; $MINICOMBUST_VARS GLOBAL_PROF_CMD='#PROF_CMD#' INNER_CMD" | tee -a OUTFILE.log
 
 

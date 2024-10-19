@@ -123,13 +123,23 @@ print_config () {
     echo "  profile_ranks:         $PROF_RANKS"              | tee -a $OUTFILE.log      
     echo "  create_cmd:            $CREATE_CMD"              | tee -a $OUTFILE.log       
     echo "  global_prof_cmd:       $GLOBAL_PROF_CMD"         | tee -a $OUTFILE.log      
+    echo "  build_cmd:             $BUILD_CMD"               | tee -a $OUTFILE.log       
+    echo "  outer_build_cmd:       $BUILD_OUT_CMD"         | tee -a $OUTFILE.log       
     echo "  inner_cmd:             $INNER_CMD"               | tee -a $OUTFILE.log       
-    echo "  outer_cmd:             $OUTER_CMD"               | tee -a $OUTFILE.log       
+    echo "  outer_cmd:             $OUTER_CMD"               | tee -a $OUTFILE.log   
     echo "" 
     echo "" 
 }
 
 mkdir -p $RESULTS_DIR
+
+BUILD_OUT_CMD=""
+BUILD_CMD=""
+if [ $BUILD -eq 1 ]
+then
+    BUILD_CMD="source build.sh;"
+    BUILD_OUT_CMD="source unset.sh; srun --overlap -N1 --ntasks-per-node=1 --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=${CONTAINER} --distribution=cyclic:cyclic --container-mounts=${MOUNT}:${MOUNT} bash -c"
+fi
 
 CREATE_CMD=""
 INNER_CMD="./wrapper.sh ./bin/gpu_minicombust $PRANKS $PARTICLES $CELLS -1 $ITERS"
@@ -138,15 +148,11 @@ OUTER_CMD="source unset.sh; srun --overlap -N${NODES} --ntasks-per-node=${MPI_PE
 if [ $USE_ENROOT -eq 1 ]
 then
     CREATE_CMD="enroot create --name minicombust -- $CONTAINER || true > /dev/null 2>&1 "
-    OUTER_CMD="enroot start --mount $MOUNT:$MOUNT minicombust bash -c"
     INNER_CMD="mpirun -bind-to none -np ${RANKS} ${INNER_CMD}"
+    OUTER_CMD="enroot start --mount $MOUNT:$MOUNT minicombust bash -c"
+    BUILD_OUT_CMD="$OUTER_CMD"
 fi
 
-if [ $BUILD -eq 1 ]
-then
-    INNER_CMD="source build.sh"
-    OUTER_CMD="source unset.sh; srun --overlap -N1 --ntasks-per-node=1 --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=${CONTAINER} --distribution=cyclic:cyclic --container-mounts=${MOUNT}:${MOUNT} bash -c"
-fi
 
 if [ $NO_CONTAINER -eq 1 ]
 then
@@ -172,6 +178,8 @@ sed -i "s@#CONTAINER#@$CONTAINER@g"                $OUTFILE.job
 sed -i "s@CREATE_CMD@$CREATE_CMD@g"                $OUTFILE.job
 sed -i "s@INNER_CMD@$INNER_CMD@g"                  $OUTFILE.job
 sed -i "s@OUTER_CMD@$OUTER_CMD@g"                  $OUTFILE.job
+sed -i "s@BUILD_CMD@$BUILD_CMD@g"                  $OUTFILE.job
+sed -i "s@BUILD_OUT_CMD@$BUILD_OUT_CMD@g"      $OUTFILE.job
 sed -i "s@#WALLTIME#@$WALLTIME@g"                  $OUTFILE.job
 sed -i "s@#RANKS#@$RANKS@g"                        $OUTFILE.job
 sed -i "s@#PRANKS#@$PRANKS@g"                      $OUTFILE.job
