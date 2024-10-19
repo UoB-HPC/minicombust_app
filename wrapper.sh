@@ -5,8 +5,8 @@ export OMPI_MCA_pml=ucx
 export OMPI_MCA_coll=^hcoll
 export UCX_PROTO_ENABLE=n
 export UCX_MAX_RNDV_RAILS=1
-export UCX_TLS=^gdr_copy
-export UCX_CUDA_COPY_DMABUF=y
+# export UCX_TLS=^gdr_copy
+# export UCX_CUDA_COPY_DMABUF=y
 
 NICS=(mlx5_0:1 mlx5_3:1 mlx5_4:1 mlx5_5:1 mlx5_6:1 mlx5_9:1 mlx5_10:1 mlx5_11:1)
 

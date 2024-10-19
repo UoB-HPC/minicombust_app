@@ -530,8 +530,6 @@ namespace minicombust::flow
                     // const T gradient_val = mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x;
                     // const T gradient_val = (mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x) / mesh->mesh_dim.x;
 
-                
-
                     // A_phi.U[block_cell]   = 0.0;//gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
                     // A_phi.V[block_cell]   = 0.0;//mesh->dummy_gas_vel.y;
                     // A_phi.W[block_cell]   = 0.0;//mesh->dummy_gas_vel.z;
@@ -758,7 +756,7 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_boundary_map", (void**)&gpu_boundary_map, mesh->mesh_size * sizeof(uint64_t));
                 mtracker->allocate_device("gpu_boundary_map_keys", (void**)&gpu_boundary_map_keys, boundary_map.size() * sizeof(uint64_t));
                 mtracker->allocate_device("gpu_boundary_map_values", (void**)&gpu_boundary_map_values, boundary_map.size() * sizeof(uint64_t));
-                fprintf(output_file, "global_node_to_local_node_map_size %lu ps %lu\n", global_node_to_local_node_map.size(), mesh->points_size);
+                // fprintf(output_file, "global_node_to_local_node_map_size %lu ps %lu\n", global_node_to_local_node_map.size(), mesh->points_size);
 
                 if (mpi_config->particle_flow_world_size != 1)
                 {
@@ -873,7 +871,7 @@ namespace minicombust::flow
 
                 uint64_t *gpu_boundary_hash_map_keys, *gpu_boundary_hash_map_values;
                 uint64_t next_pow2 = pow(2, ceil(log(boundary_map.size())/log(2)))*8;
-                if (mpi_config->particle_flow_rank == 0) fprintf(output_file, "Boundary map size: %lu real pow2 %lu\n", boundary_map.size(), next_pow2);
+                // if (mpi_config->particle_flow_rank == 0) fprintf(output_file, "Boundary map size: %lu real pow2 %lu\n", boundary_map.size(), next_pow2);
                 if (mpi_config->particle_flow_world_size != 1)
                 {
                     mtracker->allocate_device("gpu_boundary_hash_map_keys",   (void**)&gpu_boundary_hash_map_keys,   next_pow2 * sizeof(uint64_t));
@@ -926,7 +924,7 @@ namespace minicombust::flow
 
                 uint64_t *gpu_node_hash_map_keys, *gpu_node_hash_map_values;
                 next_pow2 = pow(2, ceil(log(global_node_to_local_node_map.size())/log(2)))*8;
-                if (mpi_config->particle_flow_rank == 0) fprintf(output_file, "Node map size: %lu  real pow2 %lu\n", global_node_to_local_node_map.size(), next_pow2);
+                // if (mpi_config->particle_flow_rank == 0) fprintf(output_file, "Node map size: %lu  real pow2 %lu\n", global_node_to_local_node_map.size(), next_pow2);
                 if (mpi_config->particle_flow_world_size != 1)
                 {
                     gpuErrchk( cudaMemcpy(gpu_node_map_keys,   full_node_map_keys,   global_node_to_local_node_map.size() * sizeof(uint64_t), cudaMemcpyHostToDevice));
@@ -1014,7 +1012,7 @@ namespace minicombust::flow
                 std::string pressure_cfg_path = minicombust_path_string + "/AMGX_Solvers/FGMRES_AGGREGATION_JACOBI.json";
                 std::string solver_cfg_path   = minicombust_path_string + "/AMGX_Solvers/PBICGSTAB_NOPREC.json";
 
-                fprintf(output_file, "Using AMGX_Solvers location: %s \n", minicombust_path_string.c_str());
+                if ( mpi_config->rank == 0 )  fprintf(output_file, "Using AMGX_Solvers location: %s \n", minicombust_path_string.c_str());
 
 				AMGX_SAFE_CALL(AMGX_config_create_from_file(&pressure_cfg, pressure_cfg_path.c_str()));
 				AMGX_SAFE_CALL(AMGX_config_add_parameters(&pressure_cfg, "exception_handling=1"));
@@ -1029,23 +1027,13 @@ namespace minicombust::flow
 
 	            cudaMemGetInfo( &free_sz, &total );
 
-                if (mpi_config->particle_flow_rank == 0)
-                {
-                    fprintf(output_file, "GPU memory %lu free of %lu before matrix +vector 1\n", free_sz, total);
-                }
-				
 				//Create matrix and vectors for AMGX
 				AMGX_SAFE_CALL(AMGX_matrix_create(&A, main_rsrc, mode));
 				AMGX_SAFE_CALL(AMGX_vector_create(&u, main_rsrc, mode));
 				AMGX_SAFE_CALL(AMGX_vector_create(&b, main_rsrc, mode));
 
-                 cudaMemGetInfo( &free_sz, &total );
+                cudaMemGetInfo( &free_sz, &total );
 
-                if (mpi_config->particle_flow_rank == 0)
-                {
-                    fprintf(output_file, "GPU memory %lu free of %lu before matrix +vector 2\n", free_sz, total);
-                }
-				
 
 				AMGX_SAFE_CALL(AMGX_matrix_create(&pressure_A, pressure_rsrc, mode));
                 AMGX_SAFE_CALL(AMGX_vector_create(&pressure_u, pressure_rsrc, mode));
@@ -1053,11 +1041,6 @@ namespace minicombust::flow
 
                  cudaMemGetInfo( &free_sz, &total );
 
-                if (mpi_config->particle_flow_rank == 0)
-                {
-                    fprintf(output_file, "GPU memory %lu free of %lu before solver create\n", free_sz, total);
-                }
-				
 				
 				//Create solvers for AMGX
 				AMGX_SAFE_CALL(AMGX_solver_create(&solver, main_rsrc, mode, cfg));

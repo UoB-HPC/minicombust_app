@@ -88,7 +88,7 @@ int main (int argc, char ** argv)
         {
             int cuda_dev = 0;
             gpuErrchk( cudaSetDevice(cuda_dev));
-            printf("Process %d selecting device %d of %d\n", rank_id, cuda_dev, flow_ranks);
+            // printf("Process %d selecting device %d of %d\n", rank_id, cuda_dev, flow_ranks);
         }
     #endif
 
