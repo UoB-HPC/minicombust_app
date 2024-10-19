@@ -329,7 +329,6 @@ namespace minicombust::flow
 		  values from particle solve.*/
         int time_count = 0;
         time_stats[time_count]  -= MPI_Wtime(); //0
-        unordered_neighbours_set[0].clear();
         node_to_position_map.clear();
         new_cells_set.clear();
         ranks.clear();
@@ -406,9 +405,6 @@ namespace minicombust::flow
                     recv_requests.push_back ( MPI_REQUEST_NULL );
                     send_requests.push_back ( MPI_REQUEST_NULL );
                     send_requests.push_back ( MPI_REQUEST_NULL );
-
-                    cell_index_array_size.push_back(max_storage    * sizeof(uint64_t));
-                    cell_particle_array_size.push_back(max_storage * sizeof(particle_aos<T>));
 
                     local_particle_node_sets.push_back(unordered_set<uint64_t>());
                 }

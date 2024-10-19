@@ -26,8 +26,6 @@
   } \
 }
 
-
-
 /* print callback*/
 void print_callback(const char *msg, int length)
 {
@@ -42,6 +40,16 @@ void print_callback(const char *msg, int length)
 
 namespace minicombust::flow 
 {
+    // MEMORY TRACKING CATEGORIES
+    #define PHI_NODE_DATA        (void*)0x0
+    #define PHI_CELL_DATA        (void*)0x1
+    #define PHI_GRAD_DATA        (void*)0x2
+    #define PHI_A_DATA           (void*)0x3
+    #define PHI_S_DATA           (void*)0x4
+    #define PHI_HALO_DATA        (void*)0x5
+    #define PHI_GRAD_HALO_DATA   (void*)0x6
+    #define PHI_HALO_INDEX_DATA  (void*)0x7
+
     template<class T>
     class FlowSolver 
     {
@@ -57,18 +65,14 @@ namespace minicombust::flow
             T combustion_field;
             T flow_field;
 
-            vector<unordered_set<uint64_t>>             unordered_neighbours_set;
             unordered_set<uint64_t>                     new_cells_set;
-            vector<unordered_map<uint64_t, uint64_t>>   cell_particle_field_map;
             unordered_map<uint64_t, uint64_t>           node_to_position_map;
             unordered_map<uint64_t, uint64_t>           global_node_to_local_node_map;
             vector<unordered_set<uint64_t>>             local_particle_node_sets;
 
-            uint64_t    *interp_node_indexes;
-            flow_aos<T> *interp_node_flow_fields;
-
-            uint64_t    *send_buffers_interp_node_indexes;
-            flow_aos<T> *send_buffers_interp_node_flow_fields;
+            // Sending directly from GPU buffers.
+            // uint64_t    *send_buffers_interp_node_indexes;
+            // flow_aos<T> *send_buffers_interp_node_flow_fields;
 
             uint64_t        *recv_buffers_cell_indexes;
             particle_aos<T> *recv_buffers_cell_particle_fields;
@@ -83,10 +87,6 @@ namespace minicombust::flow
 			bool first_mat = true;
             bool *async_locks;
             
-            uint64_t         *send_counts;         
-            uint64_t        **recv_indexes;        
-            particle_aos<T> **recv_indexed_fields; 
-
             Face<T>       *face_fields;
             T             *face_mass_fluxes;
             T             *face_areas;
@@ -187,7 +187,6 @@ namespace minicombust::flow
             int      *node_elements;
             uint64_t *node_starts;
             uint64_t *cell_starts;
-            uint64_t *element_disps;
 
             uint64_t nhalos = 0;
             vector<int> halo_ranks;
@@ -212,9 +211,6 @@ namespace minicombust::flow
         public:
             MPI_Config *mpi_config;
             PerformanceLogger<T> performance_logger;
-
-            vector<size_t> cell_index_array_size;
-            vector<size_t> cell_particle_array_size;
 
             size_t cell_flow_array_size;
 
@@ -276,30 +272,36 @@ namespace minicombust::flow
                 if (FLOW_SOLVER_DEBUG)  fprintf(fp, "\tRank %d: Entered FlowSolver constructor.\n", mpi_config->particle_flow_rank);
 
                 size_t free_sz, total;
+                int particle_ranks = mpi_config->world_size - mpi_config->particle_flow_world_size;
+				compute_time = 0;
 
-               
-                mtracker = new MemoryTracker(mpi_config);
-
-                cudaStreamCreate(&process_gpu_fields_stream);
-                cudaStreamCreate(&stream2);
-
-				//Set up which GPUs to use 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// GPU SETUP
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                //Set up which GPUs to use 
                 int gpu_count = 0;
                 cudaGetDeviceCount(&gpu_count);
                 int rank = mpi_config->particle_flow_rank;
-                int lrank = rank % gpu_count;    
- 
-				partition_vector_size = mesh->mesh_size;
+                int lrank = rank % gpu_count;  
 
+                cudaStreamCreate(&process_gpu_fields_stream);
+                cudaStreamCreate(&stream2);  
+
+               /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+               ////////////// CREATE MEMORY TRACKER
+               /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                mtracker = new MemoryTracker(mpi_config);
+
+                partition_vector_size = mesh->mesh_size;
                 partition_vector = (int *)mtracker->allocate_host("partition_vector", partition_vector_size * sizeof(int));
+
+                async_locks = (bool*)mtracker->allocate_host("async_locks", (4 * particle_ranks + 1) * sizeof(bool));
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE BUFFERS FOR RECIEVING PARTICLE FIELDS AND SENDING CELLS FIELDS
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 const float fraction  = 0.0005;
                 max_storage           = max((uint64_t)(fraction * mesh->local_mesh_size), 1UL);
-
-                int particle_ranks = mpi_config->world_size - mpi_config->particle_flow_world_size;
-
-                // Compute array sizes
-                cell_index_array_size.push_back(max_storage    * sizeof(uint64_t));
-                cell_particle_array_size.push_back(max_storage * sizeof(particle_aos<T>));
 
                 node_index_array_size   = max_storage * sizeof(uint64_t);
                 node_flow_array_size    = max_storage * sizeof(flow_aos<T>);
@@ -311,32 +313,20 @@ namespace minicombust::flow
                 gpu_send_buffers_node_index_array_size  = gpu_send_buffer_elements * sizeof(uint64_t);
                 gpu_send_buffers_node_flow_array_size   = gpu_send_buffer_elements * sizeof(flow_aos<T>);
 
-                gpu_recv_buffer_elements = (100 * 80000 * 8) ; // (niters * particles_per_iter / particles_per_cell)
+                gpu_recv_buffer_elements = (100 * 80000 * 8) ;   // (niters * particles_per_iter / particles_per_cell)
                 gpu_recv_buffers_cell_index_array_size      = gpu_recv_buffer_elements * sizeof(uint64_t);
                 gpu_recv_buffers_cell_particle_array_size   = gpu_recv_buffer_elements * sizeof(particle_aos<T>);
 
-                async_locks = (bool*)mtracker->allocate_host("async_locks", (4 * particle_ranks + 1) * sizeof(bool));
-                
-                send_counts    =              (uint64_t*) mtracker->allocate_host("send_counts", mesh->num_blocks * sizeof(uint64_t));
-                recv_indexes   =             (uint64_t**) mtracker->allocate_host("recv_indexes", mesh->num_blocks * sizeof(uint64_t*));
-                recv_indexed_fields = (particle_aos<T>**) mtracker->allocate_host("recv_indexed_fields", mesh->num_blocks * sizeof(particle_aos<T>*));
+                elements      = (int *)mtracker->allocate_host("elements",            particle_ranks    * sizeof(int));
 
-                elements        = (int*)mtracker->allocate_host("elements", particle_ranks               * sizeof(int));
-                element_disps   = (uint64_t*)mtracker->allocate_host("element_disps", (particle_ranks+1) * sizeof(uint64_t));
+                mtracker->allocate_cuda_host("node_starts",   (void**)&node_starts,   particle_ranks          * sizeof(uint64_t));
+                mtracker->allocate_cuda_host("cell_starts",   (void**)&cell_starts,   particle_ranks          * sizeof(uint64_t));
+                mtracker->allocate_cuda_host("node_elements", (void**)&node_elements, particle_ranks          * sizeof(int));
 
-                mtracker->allocate_cuda_host("node_starts",   (void**)&node_starts,    particle_ranks          * sizeof(uint64_t));
-                mtracker->allocate_cuda_host("cell_starts",   (void**)&cell_starts,    particle_ranks          * sizeof(uint64_t));
-                mtracker->allocate_cuda_host("node_elements",  (void**)&node_elements, particle_ranks          * sizeof(int));
+                // send_buffers_interp_node_indexes      = (uint64_t * )    mtracker->allocate_host("send_buffers_interp_node_indexes",     gpu_send_buffers_node_index_array_size);
+                // send_buffers_interp_node_flow_fields  = (flow_aos<T> * ) mtracker->allocate_host("send_buffers_interp_node_flow_fields", gpu_send_buffers_node_flow_array_size);
 
-                local_particle_node_sets.push_back(unordered_set<uint64_t>());
-
-                interp_node_indexes      = (uint64_t * )    mtracker->allocate_host("interp_node_indexes", node_index_array_size);
-                interp_node_flow_fields  = (flow_aos<T> * ) mtracker->allocate_host("interp_node_flow_fields", node_flow_array_size);
-
-                send_buffers_interp_node_indexes            = (uint64_t * )    mtracker->allocate_host("send_buffers_interp_node_indexes",     gpu_send_buffers_node_index_array_size);
-                send_buffers_interp_node_flow_fields        = (flow_aos<T> * ) mtracker->allocate_host("send_buffers_interp_node_flow_fields", gpu_send_buffers_node_flow_array_size);
-
-                mtracker->allocate_device("gpu_send_buffers_interp_node_indexes", (void**)&gpu_send_buffers_interp_node_indexes,         gpu_send_buffers_node_index_array_size);
+                mtracker->allocate_device("gpu_send_buffers_interp_node_indexes",     (void**)&gpu_send_buffers_interp_node_indexes,     gpu_send_buffers_node_index_array_size);
                 mtracker->allocate_device("gpu_send_buffers_interp_node_flow_fields", (void**)&gpu_send_buffers_interp_node_flow_fields, gpu_send_buffers_node_flow_array_size);
 
                 mtracker->allocate_cuda_host("recv_buffers_cell_indexes",         (void**)&recv_buffers_cell_indexes,              gpu_recv_buffers_cell_index_array_size);
@@ -344,13 +334,11 @@ namespace minicombust::flow
 
                 mtracker->allocate_device("gpu_recv_buffers_cell_indexes",         (void**)&gpu_recv_buffers_cell_indexes,         gpu_recv_buffers_cell_index_array_size);
                 mtracker->allocate_device("gpu_recv_buffers_cell_particle_fields", (void**)&gpu_recv_buffers_cell_particle_fields, gpu_recv_buffers_cell_particle_array_size);
+                
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE FACE DATA
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-                unordered_neighbours_set.push_back(unordered_set<uint64_t>());
-                cell_particle_field_map.push_back(unordered_map<uint64_t, uint64_t>());
-
-				compute_time = 0;
-
-                // Allocate face data
                 face_field_array_size       = mesh->faces_size * sizeof(Face<T>);
                 face_centers_array_size     = mesh->faces_size * sizeof(vec<T>);
                 face_normals_array_size     = mesh->faces_size * sizeof(vec<T>);
@@ -359,17 +347,31 @@ namespace minicombust::flow
                 face_lambdas_array_size     = mesh->faces_size * sizeof(T);
                 face_rlencos_array_size     = mesh->faces_size * sizeof(T);
 
-                face_fields      = (Face<T> *) mtracker->allocate_host("face_fields",  face_field_array_size       );
-                face_centers     = (vec<T>  *) mtracker->allocate_host("face_centers",  face_centers_array_size     );
-                face_normals     = (vec<T>  *) mtracker->allocate_host("face_normals",  face_normals_array_size     );
-                face_mass_fluxes = (T *)       mtracker->allocate_host("face_mass_fluxes",  face_mass_fluxes_array_size );       
-                face_areas       = (T *)       mtracker->allocate_host("face_areas",  face_areas_array_size       ); 
-                face_lambdas     = (T *)       mtracker->allocate_host("face_lambdas",  face_lambdas_array_size     );   
-                face_rlencos     = (T *)       mtracker->allocate_host("face_rlencos",  face_rlencos_array_size     );   
+                face_fields      = (Face<T> *) mtracker->allocate_host("face_fields",      face_field_array_size       );
+                face_centers     = (vec<T>  *) mtracker->allocate_host("face_centers",     face_centers_array_size     );
+                face_normals     = (vec<T>  *) mtracker->allocate_host("face_normals",     face_normals_array_size     );
+                face_mass_fluxes = (T *)       mtracker->allocate_host("face_mass_fluxes", face_mass_fluxes_array_size );       
+                face_areas       = (T *)       mtracker->allocate_host("face_areas",       face_areas_array_size       ); 
+                face_lambdas     = (T *)       mtracker->allocate_host("face_lambdas",     face_lambdas_array_size     );   
+                face_rlencos     = (T *)       mtracker->allocate_host("face_rlencos",     face_rlencos_array_size     );   
+
+                mtracker->allocate_device("gpu_faces",      (void**)&gpu_faces,      mesh->faces_size*sizeof(Face<uint64_t>));
+				mtracker->allocate_device("gpu_cell_faces", (void**)&gpu_cell_faces, mesh->local_mesh_size * mesh->faces_per_cell * sizeof(uint64_t));
+
+                cudaMemcpy(gpu_faces,      mesh->faces,      mesh->faces_size*sizeof(Face<uint64_t>), cudaMemcpyHostToDevice);
+				cudaMemcpy(gpu_cell_faces, mesh->cell_faces, mesh->local_mesh_size * mesh->faces_per_cell * sizeof(uint64_t), cudaMemcpyHostToDevice);
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// SETUP HALOS
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 setup_halos();
 
-                // Create global node to local node map
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// CREATE MAPPING : GLOBAL NODE ID -> LOCAL NODE ID
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+                // Iterate over flow block's global cells and map to local position.
                 for (uint64_t local_cell = 0; local_cell < mesh->local_mesh_size; local_cell++)
                 {
                     uint64_t cell = local_cell + mesh->local_cells_disp;
@@ -385,7 +387,7 @@ namespace minicombust::flow
                         }
                     }
                 }
-                // Iterate over halos
+                // Iterate over flow block's global halo ids and map to local map.
                 for ( auto cell_halo_pair : boundary_map )
                 {
                     uint64_t cell = cell_halo_pair.first;
@@ -403,69 +405,130 @@ namespace minicombust::flow
                     }
                 }
 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE EXTRA SPACE FOR ACCUMULATING NODE SEND BUFFERS 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
                 mtracker->allocate_device("gpu_seen_node",           (void**)&gpu_seen_node,           global_node_to_local_node_map.size() * sizeof(int) );
                 mtracker->allocate_device("gpu_atomic_buffer_index", (void**)&gpu_atomic_buffer_index, sizeof(uint32_t) );
-                mtracker->allocate_device("gpu_node_buffer_disp",    (void**)&gpu_node_buffer_disp, sizeof(uint64_t) );
+                mtracker->allocate_device("gpu_node_buffer_disp",    (void**)&gpu_node_buffer_disp,    sizeof(uint64_t) );
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE EXTRA SPACE FOR ACCUMULATING NODE SEND BUFFERS 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 phi_array_size        = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
                 phi_nodes_array_size  = (global_node_to_local_node_map.size()) * sizeof(T);
                 phi_grad_array_size   = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(vec<T>);
                 source_phi_array_size = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
 
-                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.U,   phi_nodes_array_size, (void*)0x0);
-                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.V,   phi_nodes_array_size, (void*)0x0);
-                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.W,   phi_nodes_array_size, (void*)0x0);
-                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.P,   phi_nodes_array_size, (void*)0x0);
-                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.TEM, phi_nodes_array_size, (void*)0x0);
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE PHI NODE DATA
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.U,   phi_nodes_array_size, (void**)0x0);
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.V,   phi_nodes_array_size, (void**)0x0);
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.W,   phi_nodes_array_size, (void**)0x0);
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.P,   phi_nodes_array_size, (void**)0x0);
-                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.TEM, phi_nodes_array_size, (void**)0x0);
+                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.U,        phi_nodes_array_size, PHI_NODE_DATA);
+                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.V,        phi_nodes_array_size, PHI_NODE_DATA);
+                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.W,        phi_nodes_array_size, PHI_NODE_DATA);
+                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.P,        phi_nodes_array_size, PHI_NODE_DATA);
+                mtracker->allocate_cuda_host("phi_nodes", (void**)&phi_nodes.TEM,      phi_nodes_array_size, PHI_NODE_DATA);
 
-                mtracker->allocate_cuda_host("phi", (void**)&phi.U          , phi_array_size, (void*)0x1);
-                mtracker->allocate_cuda_host("phi", (void**)&phi.V          , phi_array_size, (void*)0x1);
-                mtracker->allocate_cuda_host("phi", (void**)&phi.W          , phi_array_size, (void*)0x1);
-                mtracker->allocate_cuda_host("phi", (void**)&phi.P          , phi_array_size, (void*)0x1);
-				mtracker->allocate_cuda_host("phi", (void**)&phi.PP         , phi_array_size, (void*)0x1);
-				mtracker->allocate_cuda_host("phi", (void**)&phi.TE         , phi_array_size, (void*)0x1);
-				mtracker->allocate_cuda_host("phi", (void**)&phi.ED         , phi_array_size, (void*)0x1);
-				mtracker->allocate_cuda_host("phi", (void**)&phi.TP         , phi_array_size, (void*)0x1);
-                mtracker->allocate_cuda_host("phi", (void**)&phi.TEM        , phi_array_size, (void*)0x1);
-				mtracker->allocate_cuda_host("phi", (void**)&phi.FUL		, phi_array_size, (void*)0x1);
-				mtracker->allocate_cuda_host("phi", (void**)&phi.PRO		, phi_array_size, (void*)0x1);
-				mtracker->allocate_cuda_host("phi", (void**)&phi.VARF	    , phi_array_size, (void*)0x1);
-				mtracker->allocate_cuda_host("phi", (void**)&phi.VARP	    , phi_array_size, (void*)0x1);
-                phi_grad.U      = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-                phi_grad.V      = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-                phi_grad.W      = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-                phi_grad.P      = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-                phi_grad.PP     = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-				phi_grad.TE     = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-                phi_grad.ED     = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-				phi_grad.TEM    = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-				phi_grad.FUL	= (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-				phi_grad.PRO	= (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-				phi_grad.VARF   = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-				phi_grad.VARP   = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, (void*)0x2);
-				A_phi.U         = (T *)mtracker->allocate_host("A_phi", source_phi_array_size, (void*)0x3);
-                A_phi.V         = (T *)mtracker->allocate_host("A_phi", source_phi_array_size, (void*)0x3);
-                A_phi.W         = (T *)mtracker->allocate_host("A_phi", source_phi_array_size, (void*)0x3);
-				S_phi.U         = (T *)mtracker->allocate_host("S_phi", source_phi_array_size, (void*)0x4);
-                S_phi.V         = (T *)mtracker->allocate_host("S_phi", source_phi_array_size, (void*)0x4);
-                S_phi.W         = (T *)mtracker->allocate_host("S_phi", source_phi_array_size, (void*)0x4);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.U,   phi_nodes_array_size, PHI_NODE_DATA);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.V,   phi_nodes_array_size, PHI_NODE_DATA);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.W,   phi_nodes_array_size, PHI_NODE_DATA);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.P,   phi_nodes_array_size, PHI_NODE_DATA);
+                mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.TEM, phi_nodes_array_size, PHI_NODE_DATA);
 
-				//GPU
-				mtracker->allocate_device("gpu_faces", (void**)&gpu_faces, mesh->faces_size*sizeof(Face<uint64_t>));
-				mtracker->allocate_device("gpu_cell_faces", (void**)&gpu_cell_faces, mesh->local_mesh_size * mesh->faces_per_cell	* sizeof(uint64_t));
-	
-				cudaMemcpy(gpu_faces, mesh->faces, 
-						   mesh->faces_size*sizeof(Face<uint64_t>), cudaMemcpyHostToDevice);
-				cudaMemcpy(gpu_cell_faces, mesh->cell_faces, 
-						   mesh->local_mesh_size * mesh->faces_per_cell * sizeof(uint64_t),
-							cudaMemcpyHostToDevice);
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE PHI DATA
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+                mtracker->allocate_cuda_host("phi", (void**)&phi.U,         phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_cuda_host("phi", (void**)&phi.V,         phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_cuda_host("phi", (void**)&phi.W,         phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_cuda_host("phi", (void**)&phi.P,         phi_array_size, PHI_CELL_DATA);
+				mtracker->allocate_cuda_host("phi", (void**)&phi.PP,        phi_array_size, PHI_CELL_DATA);
+				mtracker->allocate_cuda_host("phi", (void**)&phi.TE,        phi_array_size, PHI_CELL_DATA);
+				mtracker->allocate_cuda_host("phi", (void**)&phi.ED,        phi_array_size, PHI_CELL_DATA);
+				mtracker->allocate_cuda_host("phi", (void**)&phi.TP,        phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_cuda_host("phi", (void**)&phi.TEM,       phi_array_size, PHI_CELL_DATA);
+				mtracker->allocate_cuda_host("phi", (void**)&phi.FUL,       phi_array_size, PHI_CELL_DATA);
+				mtracker->allocate_cuda_host("phi", (void**)&phi.PRO,       phi_array_size, PHI_CELL_DATA);
+				mtracker->allocate_cuda_host("phi", (void**)&phi.VARF,      phi_array_size, PHI_CELL_DATA);
+				mtracker->allocate_cuda_host("phi", (void**)&phi.VARP,      phi_array_size, PHI_CELL_DATA);
+
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.U,    phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.V,    phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.W,    phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.P,    phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.PP,   phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.TE,   phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.ED,   phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.TP,   phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.TEM,  phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.FUL,  phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.PRO,  phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.VARF, phi_array_size, PHI_CELL_DATA);
+                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.VARP, phi_array_size, PHI_CELL_DATA);
+                
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE PHI GRAD DATA
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+                phi_grad.U      = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+                phi_grad.V      = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+                phi_grad.W      = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+                phi_grad.P      = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+                phi_grad.PP     = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+				phi_grad.TE     = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+                phi_grad.ED     = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+				phi_grad.TEM    = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+				phi_grad.FUL	= (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+				phi_grad.PRO	= (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+				phi_grad.VARF   = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+				phi_grad.VARP   = (vec<T> *)mtracker->allocate_host("phi_grad", phi_grad_array_size, PHI_GRAD_DATA);
+
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.U,    phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.V,    phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.W,    phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.P,    phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.PP,   phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.TE,   phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.ED,   phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.TEM,  phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.FUL,  phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.PRO,  phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.VARF, phi_grad_array_size, PHI_GRAD_DATA);
+                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.VARP, phi_grad_array_size, PHI_GRAD_DATA);
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE PHI A DATA
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+				A_phi.U = (T *)mtracker->allocate_host("A_phi", source_phi_array_size, PHI_A_DATA);
+                A_phi.V = (T *)mtracker->allocate_host("A_phi", source_phi_array_size, PHI_A_DATA);
+                A_phi.W = (T *)mtracker->allocate_host("A_phi", source_phi_array_size, PHI_A_DATA);
+
+                mtracker->allocate_device("gpu_A_phi", (void**)&gpu_A_phi.U, source_phi_array_size, PHI_A_DATA);
+                mtracker->allocate_device("gpu_A_phi", (void**)&gpu_A_phi.V, source_phi_array_size, PHI_A_DATA);
+                mtracker->allocate_device("gpu_A_phi", (void**)&gpu_A_phi.W, source_phi_array_size, PHI_A_DATA);
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// ALLOCATE PHI S DATA
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+				S_phi.U = (T *)mtracker->allocate_host("S_phi", source_phi_array_size, PHI_S_DATA);
+                S_phi.V = (T *)mtracker->allocate_host("S_phi", source_phi_array_size, PHI_S_DATA);
+                S_phi.W = (T *)mtracker->allocate_host("S_phi", source_phi_array_size, PHI_S_DATA);
+
+                mtracker->allocate_device("gpu_S_phi", (void**)&gpu_S_phi.U, source_phi_array_size, PHI_S_DATA);
+                mtracker->allocate_device("gpu_S_phi", (void**)&gpu_S_phi.V, source_phi_array_size, PHI_S_DATA);
+                mtracker->allocate_device("gpu_S_phi", (void**)&gpu_S_phi.W, source_phi_array_size, PHI_S_DATA);
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				
 				density_array_size = (mesh->local_mesh_size + nhalos) * sizeof(T);
                 volume_array_size  = (mesh->local_mesh_size + nhalos) * sizeof(T);
                 cell_densities     = (T *)mtracker->allocate_host("cell_densities", density_array_size);
@@ -724,28 +787,6 @@ namespace minicombust::flow
 					phi_grad.VARP[block_cell] = {0.0, 0.0, 0.0}; 
                 }
 
-                
-
-				//Transfer data to GPU
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.U, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.V, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.W, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.P, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.PP, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.TE, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.ED, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.TP, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.TEM, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.FUL, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.PRO, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.VARF, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.VARP, phi_array_size, (void*)0x1);
-                mtracker->allocate_device("gpu_A_phi", (void**)&gpu_A_phi.U, source_phi_array_size, (void*)0x2);
-                mtracker->allocate_device("gpu_A_phi", (void**)&gpu_A_phi.V, source_phi_array_size, (void*)0x2);
-                mtracker->allocate_device("gpu_A_phi", (void**)&gpu_A_phi.W, source_phi_array_size, (void*)0x2);
-                mtracker->allocate_device("gpu_S_phi", (void**)&gpu_S_phi.U, source_phi_array_size, (void*)0x3);
-                mtracker->allocate_device("gpu_S_phi", (void**)&gpu_S_phi.V, source_phi_array_size, (void*)0x3);
-                mtracker->allocate_device("gpu_S_phi", (void**)&gpu_S_phi.W, source_phi_array_size, (void*)0x3);
                 mtracker->allocate_device("gpu_face_rlencos", (void**)&gpu_face_rlencos, face_rlencos_array_size);
                 mtracker->allocate_device("gpu_face_mass_fluxes", (void**)&gpu_face_mass_fluxes, face_mass_fluxes_array_size);
                 mtracker->allocate_device("gpu_cell_densities", (void**)&gpu_cell_densities, density_array_size);
@@ -816,20 +857,7 @@ namespace minicombust::flow
 				cudaMemcpy(gpu_halo_sizes, tmp, halo_sizes.size() * sizeof(int), cudaMemcpyHostToDevice);
 				tmp = &halo_disps[0];
 				cudaMemcpy(gpu_halo_disps, tmp, halo_disps.size() * sizeof(int), cudaMemcpyHostToDevice);
-				
-
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.U, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.V, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.W, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.P, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.PP, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.TE, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.ED, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.TEM, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.FUL, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.PRO, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.VARF, phi_grad_array_size, (void*)0x4);
-                mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.VARP, phi_grad_array_size, (void*)0x4);
+			
 	
 				cudaMemcpy(gpu_phi_grad.U, phi_grad.U, phi_grad_array_size, cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_phi_grad.V, phi_grad.V, phi_grad_array_size, cudaMemcpyHostToDevice);
@@ -1077,8 +1105,6 @@ namespace minicombust::flow
                 uint64_t total_density_array_size                 = density_array_size;
 
                 // STL sizes
-                uint64_t total_unordered_neighbours_set_size   = unordered_neighbours_set[0].size() * sizeof(uint64_t) ;
-                uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()  * sizeof(uint64_t);
                 uint64_t total_node_to_position_map_size       = node_to_position_map.size()        * sizeof(uint64_t);
                 uint64_t total_mpi_requests_size               = recv_requests.size() * send_requests.size() * sizeof(MPI_Request);
                 uint64_t total_mpi_statuses_size               = statuses.size()                             * sizeof(MPI_Status);
@@ -1269,39 +1295,39 @@ namespace minicombust::flow
                         uint_buffer[i] = uint_buffer[i] - mesh->local_cells_disp; 
                     }
                     uint64_t *tmp;
-                    mtracker->allocate_device("gpu_halo_indexes", (void**)&tmp, sizeof(uint64_t) * num_indexes, (void*)0x7);
+                    mtracker->allocate_device("gpu_halo_indexes", (void**)&tmp, sizeof(uint64_t) * num_indexes, PHI_HALO_INDEX_DATA);
                     cudaMemcpy(tmp, uint_buffer, num_indexes * sizeof(uint64_t), cudaMemcpyHostToDevice);
                     gpu_halo_indexes.push_back(tmp);
 
                     phi_vector<T> phi_tmp;
                     phi_vector<vec<T>> phi_grad_tmp;
 
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.U,         sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.V,         sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.W,         sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.P,         sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.PP,        sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.TE,        sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.ED,        sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.TP,        sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.TEM,       sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.FUL,       sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.PRO,       sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.VARF,      sizeof(T) * num_indexes, (void*)0x5);
-                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.VARP,      sizeof(T) * num_indexes, (void*)0x5);
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.U,         sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.V,         sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.W,         sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.P,         sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.PP,        sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.TE,        sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.ED,        sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.TP,        sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.TEM,       sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.FUL,       sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.PRO,       sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.VARF,      sizeof(T) * num_indexes, PHI_HALO_DATA );
+                    mtracker->allocate_device("phi_halo_buffer", (void**)&phi_tmp.VARP,      sizeof(T) * num_indexes, PHI_HALO_DATA );
 
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.U,    sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.V,    sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.W,    sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.P,    sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.PP,   sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.TE,   sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.ED,   sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.TEM,  sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.FUL,  sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.PRO,  sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.VARF, sizeof(vec<T>) * num_indexes, (void*)0x6);
-                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.VARP, sizeof(vec<T>) * num_indexes, (void*)0x6);
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.U,    sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.V,    sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.W,    sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.P,    sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.PP,   sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.TE,   sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.ED,   sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.TEM,  sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.FUL,  sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.PRO,  sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.VARF, sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
+                    mtracker->allocate_device("phi_grad_halo_buffer", (void**)&phi_grad_tmp.VARP, sizeof(vec<T>) * num_indexes, PHI_GRAD_HALO_DATA );
 
                     gpu_phi_send_buffers.push_back(phi_tmp);
                     gpu_phi_grad_send_buffers.push_back(phi_grad_tmp);
@@ -1322,19 +1348,6 @@ namespace minicombust::flow
                 free(buffer);
                 free(uint_buffer);
             }
-
-            void resize_nodes_arrays (uint64_t elements)
-            {
-                while ( node_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
-                {
-                    node_index_array_size *= 2;
-                    node_flow_array_size  *= 2;
-
-                    interp_node_indexes     = (uint64_t*)    realloc(interp_node_indexes,     node_index_array_size);
-                    interp_node_flow_fields = (flow_aos<T> *)realloc(interp_node_flow_fields, node_flow_array_size);
-                }
-            }
-
 			void AMGX_free()
 			{
 				AMGX_SAFE_CALL(AMGX_solver_destroy(solver));
@@ -1354,19 +1367,6 @@ namespace minicombust::flow
 				AMGX_SAFE_CALL(AMGX_config_destroy(cfg));
 				AMGX_SAFE_CALL(AMGX_config_destroy(pressure_cfg));
 			}
-			
-            void resize_send_buffers_nodes_arrays (uint64_t elements)
-            {
-                while ( send_buffers_node_index_array_size < ((size_t) elements * sizeof(uint64_t)) )
-                {
-                    fprintf(output_file, "Flow rank resizing send bufffers for %lu elements\n", elements);
-                    send_buffers_node_index_array_size *= 2;
-                    send_buffers_node_flow_array_size  *= 2;
-
-                    send_buffers_interp_node_indexes     = (uint64_t*)    realloc(send_buffers_interp_node_indexes,     send_buffers_node_index_array_size);
-                    send_buffers_interp_node_flow_fields = (flow_aos<T> *)realloc(send_buffers_interp_node_flow_fields, send_buffers_node_flow_array_size);
-                }
-            }
 
             size_t get_array_memory_usage ()
             {
@@ -1387,15 +1387,7 @@ namespace minicombust::flow
                 uint64_t total_face_lambdas_array_size            = face_lambdas_array_size;
                 uint64_t total_face_rlencos_array_size            = face_rlencos_array_size;
 
-                uint64_t total_cell_index_array_size    = 0;
-                uint64_t total_cell_particle_array_size = 0;
-                for ( uint64_t i = 0; i < cell_index_array_size.size(); i++ )
-                {
-                    total_cell_index_array_size    = cell_index_array_size[i];
-                    total_cell_particle_array_size = cell_particle_array_size[i];
-                }
-
-                return total_cell_index_array_size + total_cell_particle_array_size + total_node_index_array_size + total_node_flow_array_size + 
+                return total_node_index_array_size + total_node_flow_array_size + 
                        total_send_buffers_node_index_array_size + total_send_buffers_node_flow_array_size + total_face_field_array_size + 
                        total_phi_array_size + total_source_phi_array_size + total_phi_grad_array_size +
                        total_face_centers_array_size + total_face_normals_array_size + total_face_mass_fluxes_array_size +
@@ -1405,8 +1397,6 @@ namespace minicombust::flow
 
             size_t get_stl_memory_usage ()
             {
-                uint64_t total_unordered_neighbours_set_size   = unordered_neighbours_set[0].size()          * sizeof(uint64_t) ;
-                uint64_t total_cell_particle_field_map_size    = cell_particle_field_map[0].size()           * sizeof(uint64_t);
                 uint64_t total_node_to_position_map_size       = node_to_position_map.size()                 * sizeof(uint64_t);
                 uint64_t total_mpi_requests_size               = recv_requests.size() * send_requests.size() * sizeof(MPI_Request);
                 uint64_t total_mpi_statuses_size               = statuses.size()                             * sizeof(MPI_Status);
@@ -1417,7 +1407,7 @@ namespace minicombust::flow
                     total_local_particle_node_sets_size += local_particle_node_sets[i].size() * sizeof(uint64_t);
 
 
-                return total_unordered_neighbours_set_size + total_cell_particle_field_map_size + total_node_to_position_map_size + total_mpi_requests_size + total_mpi_statuses_size + total_new_cells_size + total_local_particle_node_sets_size + total_ranks_size;
+                return total_node_to_position_map_size + total_mpi_requests_size + total_mpi_statuses_size + total_new_cells_size + total_local_particle_node_sets_size + total_ranks_size;
             }
 
             bool is_halo( uint64_t cell );
