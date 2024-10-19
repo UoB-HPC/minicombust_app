@@ -11,6 +11,18 @@ GLOBAL_PROF_CMD=
 
 while [ : ]; do
   case "$1" in
+    --cells)
+        export CELLS=$2
+        shift 2
+        ;;
+    --particles)
+        export PARTICLES=$2
+        shift 2
+        ;;
+    --niters)
+        export ITERS=$2
+        shift 2
+        ;;
     --build)
         export BUILD=1
         shift

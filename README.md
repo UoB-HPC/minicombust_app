@@ -30,6 +30,9 @@ This bash script, `.gen_job.sh`, generates and manages jobs for the MiniCombust 
  - Customizable job templates
 
 ### Common Options
+ - `--cells <modifier>`: Cells modifier, mesh will have a total of (2*x)*y*z cells. Where x=y=z=<modifier>.
+ - `--particles <nparticles>`: Number of particles to release each iteration.
+ - `--niters <niters>`: Number of iterations to run the minicombust simulations for.
  - `--build`: build minicombust instead of running
  - `--nodes <number>`: Set number of nodes
  - `--mpi_procs <number>`: Set MPI processes per node
