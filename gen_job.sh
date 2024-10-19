@@ -1,26 +1,20 @@
 #!/bin/bash
 
-NODES=1
-NGPUS=8
-MPI_PER_NODE=112
-CELLS=304
-PARTICLES=280000
-ITERS=100
+source defaults.sh
+
+## Output
+BUILD=0
+NSYS=0
+NCU=0
 RESULTS_DIR=$PWD/results/$(date +%F)/
-CONTAINER=/lustre/fsw/coreai_devtech_all/hwaugh/containers/devtech.sqsh
-JOB_TEMPLATE=job_templates/eos.job
-MOUNT=/lustre/fsw/coreai_devtech_all/hwaugh/
-WDIR=/lustre/fsw/coreai_devtech_all/hwaugh/repos/minicombust_app
-WALLTIME=0:20:00
-USE_ENROOT=0
-INTERACTIVE=0
-INTERACTIVE_RUN=0
-AMGX_PATH=/lustre/fsw/coreai_devtech_all/hwaugh/repos/AMGX_vector_upload/install/lib/
 GLOBAL_PROF_CMD=
-PROF_RANKS=0
 
 while [ : ]; do
   case "$1" in
+    --build)
+        export BUILD=1
+        shift
+        ;;
     --mpi_procs)
         export MPI_PER_NODE=$2
         shift 2
@@ -54,27 +48,32 @@ while [ : ]; do
         shift
         ;;
     --nsys)
-        GLOBAL_PROF_CMD="./nsight-systems-linux-public-DVS/bin/nsys profile -e NSYS_MPI_STORE_TEAMS_PER_RANK=1 --sample=none --cpuctxsw=none --trace=cuda,nvtx,mpi --force-overwrite=true -o"
+        NSYS=1
+        GLOBAL_PROF_CMD="$NSYS_CMD"
         shift
         ;;
     --ncu)
-        GLOBAL_PROF_CMD="ncu -f --set full  --kernel-name kernel_get_phi_gradient --launch-count 1 --launch-skip 6 -o"
+        NCU=1
+        GLOBAL_PROF_CMD="$NCU_CMD"
         shift
         ;;
     --prof_ranks)
         PROF_RANKS="$2"
         shift 2
         ;;
-    --interactive_run)
-        export INTERACTIVE=1
-        export INTERACTIVE_RUN=1
-        USE_ENROOT=1
-        shift
-        ;;
     --interactive)
         export INTERACTIVE=1
+        export INTERACTIVE_RUN=1
+        shift
+        ;;
+    --jump_into_container)
+        export INTERACTIVE=1
         export INTERACTIVE_RUN=0
-        USE_ENROOT=1
+        export USE_ENROOT=1
+        shift
+        ;;
+    --no_container)
+        export NO_CONTAINER=1
         shift
         ;;
     --) 
@@ -107,6 +106,8 @@ print_config () {
     echo "  wdir:                  $WDIR"                    | tee -a $OUTFILE.log       
     echo "  walltime:              $WALLTIME"                | tee -a $OUTFILE.log       
     echo "  amgx_path:             $AMGX_PATH"               | tee -a $OUTFILE.log      
+    echo "  cuda_path:             $CUDA_PATH"               | tee -a $OUTFILE.log      
+    echo "  mpi_path:              $MPI_PATH"                | tee -a $OUTFILE.log      
     echo "  profile_ranks:         $PROF_RANKS"              | tee -a $OUTFILE.log      
     echo "  create_cmd:            $CREATE_CMD"              | tee -a $OUTFILE.log       
     echo "  global_prof_cmd:       $GLOBAL_PROF_CMD"         | tee -a $OUTFILE.log      
@@ -120,7 +121,7 @@ mkdir -p $RESULTS_DIR
 
 CREATE_CMD=""
 INNER_CMD="./wrapper.sh ./bin/gpu_minicombust $PRANKS $PARTICLES $CELLS -1 $ITERS"
-OUTER_CMD="source unset.sh; srun -N${NODES} --ntasks-per-node=${MPI_PER_NODE} --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=${CONTAINER} --distribution=cyclic:cyclic --container-mounts=${MOUNT}:${MOUNT} bash -c"
+OUTER_CMD="source unset.sh; srun --overlap -N${NODES} --ntasks-per-node=${MPI_PER_NODE} --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=${CONTAINER} --distribution=cyclic:cyclic --container-mounts=${MOUNT}:${MOUNT} bash -c"
 
 if [ $USE_ENROOT -eq 1 ]
 then
@@ -129,8 +130,23 @@ then
     INNER_CMD="mpirun -bind-to none -np ${RANKS} ${INNER_CMD}"
 fi
 
+if [ $BUILD -eq 1 ]
+then
+    INNER_CMD="source build.sh"
+    OUTER_CMD="source unset.sh; srun --overlap -N1 --ntasks-per-node=1 --mem-bind=none --cpu-bind=none --mpi=pmix --container-image=${CONTAINER} --distribution=cyclic:cyclic --container-mounts=${MOUNT}:${MOUNT} bash -c"
+fi
+
+if [ $NO_CONTAINER -eq 1 ]
+then
+    OUTER_CMD="bash -c"
+fi
+
 OUTFILE="$RESULTS_DIR/NODES${NODES}-RANKS$RANKS-GPUS$NGPUS-CELLS$CELLS-PARTICLES$PARTICLES-ITERS$ITERS"
-GLOBAL_PROF_CMD="$GLOBAL_PROF_CMD $OUTFILE"
+
+if [ $NSYS -eq 1 ] || [ $NCU -eq 1 ];
+then
+    GLOBAL_PROF_CMD="$GLOBAL_PROF_CMD -o $OUTFILE"
+fi
 
 print_config
 
@@ -152,6 +168,8 @@ sed -i "s@#PARTICLES#@$PARTICLES@g"                $OUTFILE.job
 sed -i "s@#ITERS#@$ITERS@g"                        $OUTFILE.job
 sed -i "s@OUTFILE@$OUTFILE@g"                      $OUTFILE.job
 sed -i "s@#AMGX_PATH#@$AMGX_PATH@g"                $OUTFILE.job
+sed -i "s@#MPI_PATH#@$MPI_PATH@g"                  $OUTFILE.job
+sed -i "s@#CUDA_PATH#@$CUDA_PATH@g"                $OUTFILE.job
 sed -i "s@#PROF_CMD#@$GLOBAL_PROF_CMD@g"           $OUTFILE.job
 sed -i "s@#PROF_RANKS#@$PROF_RANKS@g"              $OUTFILE.job
 

@@ -4,91 +4,79 @@
 - Catch++ Unit Testing (Header-only)
 - PETSc:
   - Set `PETSC_INSTALL_PATH` to the locations of the PETSc folder containing the `include` and `lib` folders.
+- AmgX
 
-## Build
+## MiniCombust Job Generation Script
 
-Tested with GCC, Cray and Intel compilers, Intel is the most tested compiler at the moment.
+### Overview
 
-Without PAPI:
-```bash
-make clean notest
-```
+This bash script, `.gen_job.sh`, generates and manages jobs for the MiniCombust miniapp. It supports SLURM job generation, container-based execution, and various configuration options for running the application.
 
-With PAPI:
-```bash
-PAPI=1 make clean notest
-```
-
-## Run 
-
+### Usage
 
 ```bash
-mpirun -np 10 ./bin/minicombust PARTICLE_RANKS NUM_PARTICLES_PER_TIMESTEP CELLS_SCALE_FACTOR WRITE_TIMESTEP NUM_TIMESTEPS
-
-mpirun -np 10 ./bin/minicombust 9 100 100 20 100
+./.gen_job.sh [--build] [--nodes <nnodes>] [--mpi_procs <mpi_procs_per_node>]  [--gpus <ngpus>] 
+              [--container <path>] [--results_name <name>] [--job_template <file>] 
+              [--walltime <time>] [--enroot] [--nsys] [--ncu] [--prof_ranks <ranks>] 
+              [--interactive_run] [--interactive]
 
 ```
 
+### Key Features
+ - Configurable node, GPU, and MPI process settings
+ - Container support (Enroot)
+ - Interactive and batch job modes
+ - Profiling options (Nsight Systems and NVIDIA Compute Profiler)
+ - Customizable job templates
 
-## Output
+### Common Options
+ - `--build`: build minicombust instead of running
+ - `--nodes <number>`: Set number of nodes
+ - `--mpi_procs <number>`: Set MPI processes per node
+ - `--gpus <number>`: Set number of GPUs
+ - `--container <img/path>`: Specify container img or path (sqshfs)
+ - `--results_name <name>`: Set results directory name, this is appended to `results/CURRENT_DATE`
+ - `--job_template <file>`: Specify job template file
+ - `--walltime <time>`: Set job walltime
+ - `--enroot`: Enable Enroot containerization, default is srun.
+ - `--nsys`: Enable Nsight Systems profiling
+ - `--ncu`: Enable NVIDIA Compute Profiler
+ - `--prof_ranks <ranks>`: Set ranks to profile
+ - `--interactive`: Run interactively within the container
+ - `--jump_into_container`: Jump into container, don't run minicombust.
+ - `--no_container`: Don't use containers. (Untested but implemented..)
 
-Output vtk files for the mesh, particles and flow are written to `out/`
+Default options are set in `defaults.sh`
 
-## Get roofline CMD (PAPI Build Required)
+### Examples
 
-Generates command for roofline repo https://github.com/UoB-HPC/roofline. Plots each MiniCOMBUST kernel. 
-
-```python
-python analysis/get_roofline_cmd.py CASCADE_LAKE 1-core out/performance.csv
-## OR
-python analysis/get_roofline_cmd.py TX2 2-socket 64
-```
-
-## Scaling experiments
-
-### Weak particle scaling experiment. 
-
-Runs MiniCOMBUST with a fixed size mesh on a fixed number of processes, while varying the number of particles (doubling to upper bound). 
-
-For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
-
+Build with enroot:
 ```bash
-./analysis/particle_weak_scaling.sh LOW_PARTICLE_BOUND HIGH_PARTICLE_BOUND CELLS_MODIFIER NODES PPN
-
-./analysis/particle_weak_scaling.sh 16 512 80 1 64
+./gen_job.sh --interactive --enroot --build --results_name build_enroot/ --
 ```
 
-### Weak mesh scaling experiment. 
-
-Runs MiniCOMBUST with a fixed number of particles on a fixed number of processes, while varying the size of the mesh (doubling to upper bound). 
-
-For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
-
+Run with slurm interactively:
 ```bash
-./analysis/mesh_weak_scaling.sh LOW_CELL_MODIFIER_BOUND HIGH_CELL_MODIFIER_BOUND PARTICLES NODES PPN
-
-./analysis/mesh_weak_scaling.sh 5 160 128 1 64
+./gen_job.sh --results_name build_enroot/ --
 ```
 
-### Strong scaling experiment. 
-
-Runs MiniCOMBUST with a fixed number of particles and cells, while varying the number of cores (doubling to upper bound). 
-
-For different systems, provide a template job in `jobs/templates/`. We provide an example for Isambard, ThunderX2. Then edit the `TEMPLATE` env variable.
-
+Create batch slurm batch job:
 ```bash
-./analysis/strong_scaling.sh LOW_CORES HIGH_CORES MAX_PPN PARTICLES CELL_MODIFIER
-
-./analysis/strong_scaling.sh 2 512 64 128 80
+./gen_job.sh --nodes 2 --mpi_procs 112 --gpus 8 --job_template job_templates/eos.job --results_name 2node_112proc_8gpu --
 ```
 
-## Future Features
-- Primary breakup
-- C API for particle side
-- Tetrahedral mesh
-- Benchmarks
-- MPI Implementationi
-- YAML config file
+### Output
+
+Results are stored in `results/CURRENT_DATE/RESULTS_NAME`.
+
+The script generates:
+A log file with configuration details
+A job file based on the specified template
+Both are saved in the designated results directory.
+
+### Job Submission
+For non-interactive runs, the script automatically submits the generated job to SLURM using sbatch.
+
 
 ## References
 - (Parallel load-balancing for combustion with spray for large-scale simulation)[https://www.sciencedirect.com/science/article/pii/S0021999121000826?via%3Dihub#br0160]
