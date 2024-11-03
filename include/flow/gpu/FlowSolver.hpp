@@ -212,6 +212,8 @@ namespace minicombust::flow
             MPI_Config *mpi_config;
             PerformanceLogger<T> performance_logger;
 
+            double solver_setup_time;
+
             size_t cell_flow_array_size;
 
             size_t node_index_array_size;
@@ -269,15 +271,21 @@ namespace minicombust::flow
 
             FlowSolver(MPI_Config *mpi_config, Mesh<T> *mesh, double delta, FILE* fp) : mesh(mesh), delta(delta), output_file(fp), mpi_config(mpi_config)
             {
+                MPI_Barrier(mpi_config->particle_flow_world); solver_setup_time -= MPI_Wtime();
+
                 if (FLOW_SOLVER_DEBUG)  fprintf(fp, "\tRank %d: Entered FlowSolver constructor.\n", mpi_config->particle_flow_rank);
 
                 size_t free_sz, total;
                 int particle_ranks = mpi_config->world_size - mpi_config->particle_flow_world_size;
 				compute_time = 0;
 
+                double times[50] = {0.0};
+
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// GPU SETUP
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
                 //Set up which GPUs to use 
                 int gpu_count = 0;
                 cudaGetDeviceCount(&gpu_count);
@@ -300,6 +308,10 @@ namespace minicombust::flow
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE BUFFERS FOR RECIEVING PARTICLE FIELDS AND SENDING CELLS FIELDS
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[0] -= MPI_Wtime(); 
+
+
                 const float fraction  = 0.0005;
                 max_storage           = max((uint64_t)(fraction * mesh->local_mesh_size), 1UL);
 
@@ -335,9 +347,13 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_recv_buffers_cell_indexes",         (void**)&gpu_recv_buffers_cell_indexes,         gpu_recv_buffers_cell_index_array_size);
                 mtracker->allocate_device("gpu_recv_buffers_cell_particle_fields", (void**)&gpu_recv_buffers_cell_particle_fields, gpu_recv_buffers_cell_particle_array_size);
                 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[0] += MPI_Wtime(); 
+                times[1] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE FACE DATA
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
                 face_field_array_size       = mesh->faces_size * sizeof(Face<T>);
                 face_centers_array_size     = mesh->faces_size * sizeof(vec<T>);
@@ -361,12 +377,19 @@ namespace minicombust::flow
                 cudaMemcpy(gpu_faces,      mesh->faces,      mesh->faces_size*sizeof(Face<uint64_t>), cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_cell_faces, mesh->cell_faces, mesh->local_mesh_size * mesh->faces_per_cell * sizeof(uint64_t), cudaMemcpyHostToDevice);
 
+
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[1] += MPI_Wtime(); 
+                times[2] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// SETUP HALOS
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 setup_halos();
 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[2] += MPI_Wtime(); 
+                times[3] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// CREATE MAPPING : GLOBAL NODE ID -> LOCAL NODE ID
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -405,6 +428,9 @@ namespace minicombust::flow
                     }
                 }
 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[3] += MPI_Wtime(); 
+                times[4] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE EXTRA SPACE FOR ACCUMULATING NODE SEND BUFFERS 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -413,6 +439,9 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_atomic_buffer_index", (void**)&gpu_atomic_buffer_index, sizeof(uint32_t) );
                 mtracker->allocate_device("gpu_node_buffer_disp",    (void**)&gpu_node_buffer_disp,    sizeof(uint64_t) );
 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[4] += MPI_Wtime(); 
+                times[5] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE EXTRA SPACE FOR ACCUMULATING NODE SEND BUFFERS 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -422,6 +451,9 @@ namespace minicombust::flow
                 phi_grad_array_size   = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(vec<T>);
                 source_phi_array_size = (mesh->local_mesh_size + nhalos + mesh->boundary_cells_size) * sizeof(T);
 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[5] += MPI_Wtime(); 
+                times[6] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE PHI NODE DATA
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -438,6 +470,9 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.P,   phi_nodes_array_size, PHI_NODE_DATA);
                 mtracker->allocate_device("gpu_phi_nodes", (void**)&gpu_phi_nodes.TEM, phi_nodes_array_size, PHI_NODE_DATA);
 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[6] += MPI_Wtime(); 
+                times[7] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE PHI DATA
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -470,7 +505,9 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.VARF, phi_array_size, PHI_CELL_DATA);
                 mtracker->allocate_device("gpu_phi", (void**)&gpu_phi.VARP, phi_array_size, PHI_CELL_DATA);
                 
-
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[7] += MPI_Wtime(); 
+                times[8] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE PHI GRAD DATA
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -501,6 +538,9 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.VARF, phi_grad_array_size, PHI_GRAD_DATA);
                 mtracker->allocate_device("gpu_phi_grad", (void**)&gpu_phi_grad.VARP, phi_grad_array_size, PHI_GRAD_DATA);
 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[8] += MPI_Wtime(); 
+                times[9] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE PHI A DATA
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -513,6 +553,10 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_A_phi", (void**)&gpu_A_phi.V, source_phi_array_size, PHI_A_DATA);
                 mtracker->allocate_device("gpu_A_phi", (void**)&gpu_A_phi.W, source_phi_array_size, PHI_A_DATA);
 
+
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[9] += MPI_Wtime(); 
+                times[10] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 ////////////// ALLOCATE PHI S DATA
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -525,8 +569,11 @@ namespace minicombust::flow
                 mtracker->allocate_device("gpu_S_phi", (void**)&gpu_S_phi.V, source_phi_array_size, PHI_S_DATA);
                 mtracker->allocate_device("gpu_S_phi", (void**)&gpu_S_phi.W, source_phi_array_size, PHI_S_DATA);
 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[10] += MPI_Wtime(); 
+                times[11] -= MPI_Wtime(); 
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-                ////////////// 
+                ////////////// ALLOCATE CELL DENSITIES AND VOLUMES
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 				
 				density_array_size = (mesh->local_mesh_size + nhalos) * sizeof(T);
@@ -534,6 +581,13 @@ namespace minicombust::flow
                 cell_densities     = (T *)mtracker->allocate_host("cell_densities", density_array_size);
                 cell_volumes       = (T *)mtracker->allocate_host("cell_volumes", volume_array_size);
 
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[11] += MPI_Wtime(); 
+                times[12] -= MPI_Wtime(); 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// INITIALISE FACE DATA : CENTERS, AREAS, LAMBDAS, NORMALS, MASS FLUXES. PORT TO GPU.
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                
                 #pragma ivdep
                 for ( uint64_t face = 0; face < mesh->faces_size; face++ )  
                 {
@@ -565,7 +619,7 @@ namespace minicombust::flow
 					face_centers[face]     = (*(face_nodes[0]) + *(face_nodes[1]) + *(face_nodes[2]) + *(face_nodes[3]));
 					face_centers[face]     = face_centers[face] / double(4.0);
                    
-					face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
+					// face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
                     face_normals[face]     = cross_product(*(face_nodes[2]) - *(face_nodes[0]), *(face_nodes[1]) - *(face_nodes[0])); 
 
                     if ( dot_product(face_normals[face], mesh->cell_centers[shmem_cell1] -  mesh->cell_centers[shmem_cell0]) < 0 )
@@ -573,13 +627,15 @@ namespace minicombust::flow
 
                     face_rlencos[face]     = face_areas[face] / magnitude(cell0_cell1_vec) / vector_cosangle(face_normals[face], cell0_cell1_vec);
 
-
-                    face_mass_fluxes[face] = 0.25 * face_normals[face].x;
                     face_mass_fluxes[face] = 0.0;
                 }
 
-                const T visc_lambda = 0.000014;  
-                effective_viscosity = visc_lambda; // NOTE: Localise this to cells and boundaries when implementing Turbulence model
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[12] += MPI_Wtime(); 
+                times[13] -= MPI_Wtime(); 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// INITIALISE CELL DATA : PHI, PHI_GRAD. PORT TO GPU
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Setting up cell data.\n", mpi_config->particle_flow_rank);
                 T gradient_percent = 0.01;
@@ -590,22 +646,14 @@ namespace minicombust::flow
                     const uint64_t shmem_cell = block_cell + mesh->local_cells_disp - mesh->shmem_cell_disp;
                     const uint64_t *cell_nodes = &mesh->cells[shmem_cell * mesh->cell_size];
 
-                    // const T gradient_val = mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x;
-                    // const T gradient_val = (mesh->mesh_dim.x - mesh->cell_centers[shmem_cell].x) / mesh->mesh_dim.x;
-
-                    // A_phi.U[block_cell]   = 0.0;//gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
-                    // A_phi.V[block_cell]   = 0.0;//mesh->dummy_gas_vel.y;
-                    // A_phi.W[block_cell]   = 0.0;//mesh->dummy_gas_vel.z;
-
-                    A_phi.U[block_cell]   = mesh->dummy_gas_vel.x;//gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
-                    A_phi.V[block_cell]   = mesh->dummy_gas_vel.y;//mesh->dummy_gas_vel.y;
-                    A_phi.W[block_cell]   = mesh->dummy_gas_vel.z;//mesh->dummy_gas_vel.z;s
+                    A_phi.U[block_cell]   = mesh->dummy_gas_vel.x;
+                    A_phi.V[block_cell]   = mesh->dummy_gas_vel.y;
+                    A_phi.W[block_cell]   = mesh->dummy_gas_vel.z;
 				
-                    // phi.U[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_vel.x + (1.-gradient_percent) * mesh->dummy_gas_vel.x;
                     phi.U[block_cell]     = mesh->dummy_gas_vel.x;
                     phi.V[block_cell]     = mesh->dummy_gas_vel.y;
                     phi.W[block_cell]     = mesh->dummy_gas_vel.z;
-                    // phi.P[block_cell]     = gradient_percent * gradient_val * mesh->dummy_gas_pre + (1.-gradient_percent) * mesh->dummy_gas_pre;;
+                    
                     phi.P[block_cell]     = mesh->dummy_gas_pre;;
 					phi.PP[block_cell]    = 0.0;
 					phi.TE[block_cell]    = mesh->dummy_gas_turbTE;
@@ -616,11 +664,6 @@ namespace minicombust::flow
 					phi.PRO[block_cell]   = mesh->dummy_gas_pro;
 					phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
 					phi.VARP[block_cell]  = mesh->dummy_gas_pro;
-
-                    // old_phi.U[block_cell] = mesh->dummy_gas_vel.x;
-                    // old_phi.V[block_cell] = mesh->dummy_gas_vel.y;
-                    // old_phi.W[block_cell] = mesh->dummy_gas_vel.z;
-                    // old_phi.P[block_cell] = mesh->dummy_gas_pre;
 
                     phi_grad.U[block_cell]    = {0.0, 0.0, 0.0};
                     phi_grad.V[block_cell]    = {0.0, 0.0, 0.0};
@@ -654,13 +697,16 @@ namespace minicombust::flow
                             face_nodes[2] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][2]] - mesh->shmem_point_disp];
                             face_nodes[3] = &mesh->points[cell_nodes[CUBE_FACE_VERTEX_MAP[f][3]] - mesh->shmem_point_disp];
                             
-                            face_lambdas[face]     = 1.0;
-						
-                            face_areas[face]       = magnitude(*face_nodes[2] - *face_nodes[0]) * magnitude(*face_nodes[1] - *face_nodes[0]);
-							
-							face_centers[face]     = (*face_nodes[0] + *face_nodes[1] + *face_nodes[2] + *face_nodes[3]) / 4.0;
+                            // face_lambdas[face]  = 1.0;
 
-							face_normals[face]      = cross_product(*face_nodes[2] - *face_nodes[0], *face_nodes[1] - *face_nodes[0]);
+                            face_areas[face]    = magnitude(*face_nodes[2] - *face_nodes[0]) * magnitude(*face_nodes[1] - *face_nodes[0]);
+							face_centers[face]  = (*face_nodes[0] + *face_nodes[1] + *face_nodes[2] + *face_nodes[3]) / 4.0;
+							face_normals[face]  = cross_product(*face_nodes[2] - *face_nodes[0], *face_nodes[1] - *face_nodes[0]);
+
+                            // vec<T> cell0_cell1_vec = mesh->cell_centers[shmem_cell1] - mesh->cell_centers[shmem_cell0];
+					        // face_lambdas[face]     = magnitude(face_centers[face] - mesh->cell_centers[shmem_cell0]) / magnitude(cell0_cell1_vec) ;
+
+                            face_mass_fluxes[face] = 0.0;
 
                             const uint64_t boundary_cell = mesh->faces[face].cell1 - mesh->mesh_size;
                             if ( mesh->boundary_types[boundary_cell] == INLET )
@@ -688,10 +734,20 @@ namespace minicombust::flow
 
                             vec<T> cell0_facecenter_vec = face_centers[face] - mesh->cell_centers[shmem_cell];
                             face_rlencos[face]          = face_areas[face] / magnitude(cell0_facecenter_vec) / vector_cosangle(face_normals[face], cell0_facecenter_vec);
-
                         }
                     }
                 }
+
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[13] += MPI_Wtime(); 
+                times[14] -= MPI_Wtime(); 
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// INITIALISE PHI DATA
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                
+                const T visc_lambda = 0.000014;  
+                effective_viscosity = visc_lambda; // NOTE: Localise this to cells and boundaries when implementing Turbulence model
 
                 exchange_phi_halos_cpu();
                 exchange_cell_info_halos();
@@ -709,7 +765,7 @@ namespace minicombust::flow
 					phi.TE[block_cell]    = mesh->dummy_gas_turbTE;
 					phi.ED[block_cell]    = mesh->dummy_gas_turbED;
 					phi.TP[block_cell]    = 0.0;
-					phi.TEM[block_cell]     = mesh->dummy_gas_tem;
+					phi.TEM[block_cell]   = mesh->dummy_gas_tem;
 					phi.FUL[block_cell]   = mesh->dummy_gas_fuel;
                     phi.PRO[block_cell]   = mesh->dummy_gas_pro;
 					phi.VARF[block_cell]  = mesh->dummy_gas_fuel;
@@ -787,36 +843,59 @@ namespace minicombust::flow
 					phi_grad.VARP[block_cell] = {0.0, 0.0, 0.0}; 
                 }
 
-                mtracker->allocate_device("gpu_face_rlencos", (void**)&gpu_face_rlencos, face_rlencos_array_size);
-                mtracker->allocate_device("gpu_face_mass_fluxes", (void**)&gpu_face_mass_fluxes, face_mass_fluxes_array_size);
-                mtracker->allocate_device("gpu_cell_densities", (void**)&gpu_cell_densities, density_array_size);
-                mtracker->allocate_device("gpu_cell_volumes", (void**)&gpu_cell_volumes, volume_array_size);
-                mtracker->allocate_device("gpu_boundary_types", (void**)&gpu_boundary_types, 6 * sizeof(uint64_t));
-                mtracker->allocate_device("gpu_face_lambdas", (void**)&gpu_face_lambdas, face_lambdas_array_size);
-                mtracker->allocate_device("gpu_face_normals", (void**)&gpu_face_normals, face_normals_array_size);
-                mtracker->allocate_device("gpu_boundary_map", (void**)&gpu_boundary_map, mesh->mesh_size * sizeof(uint64_t));
-                mtracker->allocate_device("gpu_boundary_map_keys", (void**)&gpu_boundary_map_keys, boundary_map.size() * sizeof(uint64_t));
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[14] += MPI_Wtime(); 
+                times[15] -= MPI_Wtime(); 
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// Allocate GPU data 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+                cpu_local_nodes     = (vec<T> *)  mtracker->allocate_host("cpu_local_nodes",     global_node_to_local_node_map.size() * sizeof(vec<T>));
+                cpu_cells_per_point = (uint8_t *) mtracker->allocate_host("cpu_cells_per_point", global_node_to_local_node_map.size() * sizeof(uint8_t));
+
+                mtracker->allocate_device("gpu_local_nodes",     (void**)&gpu_local_nodes,     global_node_to_local_node_map.size() * sizeof(vec<T>));
+                mtracker->allocate_device("gpu_cells_per_point", (void**)&gpu_cells_per_point, global_node_to_local_node_map.size() * sizeof(uint8_t));
+
+ 				mtracker->allocate_device("gpu_face_centers",    (void**)&gpu_face_centers,    mesh->faces_size         * sizeof(vec<T>));
+                mtracker->allocate_device("gpu_cell_centers",    (void**)&gpu_cell_centers,   (mesh->local_mesh_size + nhalos) * sizeof(vec<T>));
+                mtracker->allocate_device("gpu_local_cells",     (void**)&gpu_local_cells,    (mesh->local_mesh_size + nhalos) * mesh->cell_size * sizeof(uint64_t));
+
+                mtracker->allocate_device("gpu_face_rlencos",        (void**)&gpu_face_rlencos, face_rlencos_array_size);
+                mtracker->allocate_device("gpu_face_mass_fluxes",    (void**)&gpu_face_mass_fluxes, face_mass_fluxes_array_size);
+                mtracker->allocate_device("gpu_cell_densities",      (void**)&gpu_cell_densities, density_array_size);
+                mtracker->allocate_device("gpu_cell_volumes",        (void**)&gpu_cell_volumes, volume_array_size);
+                mtracker->allocate_device("gpu_boundary_types",      (void**)&gpu_boundary_types, 6 * sizeof(uint64_t));
+                mtracker->allocate_device("gpu_face_lambdas",        (void**)&gpu_face_lambdas, face_lambdas_array_size);
+                mtracker->allocate_device("gpu_face_normals",        (void**)&gpu_face_normals, face_normals_array_size);
+                mtracker->allocate_device("gpu_boundary_map",        (void**)&gpu_boundary_map, mesh->mesh_size * sizeof(uint64_t));
+                mtracker->allocate_device("gpu_boundary_map_keys",   (void**)&gpu_boundary_map_keys, boundary_map.size() * sizeof(uint64_t));
                 mtracker->allocate_device("gpu_boundary_map_values", (void**)&gpu_boundary_map_values, boundary_map.size() * sizeof(uint64_t));
-                // fprintf(output_file, "global_node_to_local_node_map_size %lu ps %lu\n", global_node_to_local_node_map.size(), mesh->points_size);
 
                 if (mpi_config->particle_flow_world_size != 1)
                 {
                     mtracker->allocate_device("gpu_node_map_keys",   (void**)&gpu_node_map_keys,   global_node_to_local_node_map.size() * sizeof(uint64_t));
                     mtracker->allocate_device("gpu_node_map_values", (void**)&gpu_node_map_values, global_node_to_local_node_map.size() * sizeof(uint64_t));
                 }
-				mtracker->allocate_device("gpu_face_areas", (void**)&gpu_face_areas, face_areas_array_size);
-				mtracker->allocate_device("gpu_face_fields", (void**)&gpu_face_fields, face_field_array_size);
+				mtracker->allocate_device("gpu_face_areas",     (void**)&gpu_face_areas, face_areas_array_size);
+				mtracker->allocate_device("gpu_face_fields",    (void**)&gpu_face_fields, face_field_array_size);
 				mtracker->allocate_device("gpu_particle_terms", (void**)&gpu_particle_terms, mesh->local_mesh_size * sizeof(particle_aos<T>));
-				mtracker->allocate_device("gpu_halo_ranks", (void**)&gpu_halo_ranks, halo_ranks.size() * sizeof(int));
-				mtracker->allocate_device("gpu_halo_sizes", (void**)&gpu_halo_sizes, halo_sizes.size() * sizeof(int));
-				mtracker->allocate_device("gpu_halo_disps", (void**)&gpu_halo_disps, halo_disps.size() * sizeof(int));
-				// mtracker->allocate_device("gpu_halo_mpi_double_datatypes", (void**)&gpu_halo_mpi_double_datatypes, halo_mpi_double_datatypes.size() * sizeof(MPI_Datatype));
-				// mtracker->allocate_device("gpu_halo_mpi_vec_double_datatypes", (void**)&gpu_halo_mpi_vec_double_datatypes, halo_mpi_vec_double_datatypes.size() * sizeof(MPI_Datatype));
+				mtracker->allocate_device("gpu_halo_ranks",     (void**)&gpu_halo_ranks, halo_ranks.size() * sizeof(int));
+				mtracker->allocate_device("gpu_halo_sizes",     (void**)&gpu_halo_sizes, halo_sizes.size() * sizeof(int));
+				mtracker->allocate_device("gpu_halo_disps",     (void**)&gpu_halo_disps, halo_disps.size() * sizeof(int));
 
-				mtracker->allocate_device("rows_ptr", (void**)&rows_ptr, sizeof(int) *(mesh->local_mesh_size+1));
+				mtracker->allocate_device("rows_ptr",    (void**)&rows_ptr, sizeof(int) *(mesh->local_mesh_size+1));
         		mtracker->allocate_device("col_indices", (void**)&col_indices, sizeof(int64_t) * (mesh->local_mesh_size*7));
-        		mtracker->allocate_device("values", (void**)&values, sizeof(T) * (mesh->local_mesh_size*7));
-        		mtracker->allocate_device("nnz", (void**)&nnz, sizeof(int));
+        		mtracker->allocate_device("values",      (void**)&values, sizeof(T) * (mesh->local_mesh_size*7));
+        		mtracker->allocate_device("nnz",         (void**)&nnz, sizeof(int));
+
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[15] += MPI_Wtime(); 
+                times[16] -= MPI_Wtime(); 
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// Copy GPU data 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 			
 				cudaMemcpy(gpu_phi.U, phi.U, phi_array_size,  cudaMemcpyHostToDevice);
@@ -832,6 +911,7 @@ namespace minicombust::flow
 				cudaMemcpy(gpu_phi.PRO, phi.PRO, phi_array_size, cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_phi.VARF, phi.VARF, phi_array_size, cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_phi.VARP, phi.VARP, phi_array_size, cudaMemcpyHostToDevice);
+
 				cudaMemcpy(gpu_A_phi.U, A_phi.U, source_phi_array_size, cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_A_phi.V, A_phi.V, source_phi_array_size, cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_A_phi.W, A_phi.W, source_phi_array_size, cudaMemcpyHostToDevice);
@@ -851,13 +931,9 @@ namespace minicombust::flow
 				cudaMemcpy(gpu_face_fields, face_fields, face_field_array_size, cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_particle_terms, mesh->particle_terms,  mesh->local_mesh_size * sizeof(particle_aos<T>), cudaMemcpyHostToDevice);
 
-				int* tmp = &halo_ranks[0];
-				cudaMemcpy(gpu_halo_ranks, tmp, halo_ranks.size() * sizeof(int), cudaMemcpyHostToDevice);
-				tmp = &halo_sizes[0];
-				cudaMemcpy(gpu_halo_sizes, tmp, halo_sizes.size() * sizeof(int), cudaMemcpyHostToDevice);
-				tmp = &halo_disps[0];
-				cudaMemcpy(gpu_halo_disps, tmp, halo_disps.size() * sizeof(int), cudaMemcpyHostToDevice);
-			
+				cudaMemcpy(gpu_halo_ranks, &halo_ranks[0], halo_ranks.size() * sizeof(int), cudaMemcpyHostToDevice);
+				cudaMemcpy(gpu_halo_sizes, &halo_sizes[0], halo_sizes.size() * sizeof(int), cudaMemcpyHostToDevice);
+				cudaMemcpy(gpu_halo_disps, &halo_disps[0], halo_disps.size() * sizeof(int), cudaMemcpyHostToDevice);
 	
 				cudaMemcpy(gpu_phi_grad.U, phi_grad.U, phi_grad_array_size, cudaMemcpyHostToDevice);
 				cudaMemcpy(gpu_phi_grad.V, phi_grad.V, phi_grad_array_size, cudaMemcpyHostToDevice);
@@ -872,15 +948,12 @@ namespace minicombust::flow
                 cudaMemcpy(gpu_phi_grad.VARF, phi_grad.VARF, phi_grad_array_size, cudaMemcpyHostToDevice);
                 cudaMemcpy(gpu_phi_grad.VARP, phi_grad.VARP, phi_grad_array_size, cudaMemcpyHostToDevice);
 
-                cpu_local_nodes     = (vec<T> *)  mtracker->allocate_host("cpu_local_nodes",     global_node_to_local_node_map.size() * sizeof(vec<T>));
-                cpu_cells_per_point = (uint8_t *) mtracker->allocate_host("cpu_cells_per_point", global_node_to_local_node_map.size() * sizeof(uint8_t));
-
-                mtracker->allocate_device("gpu_local_nodes",     (void**)&gpu_local_nodes,     global_node_to_local_node_map.size() * sizeof(vec<T>));
-                mtracker->allocate_device("gpu_cells_per_point", (void**)&gpu_cells_per_point, global_node_to_local_node_map.size() * sizeof(uint8_t));
-
- 				mtracker->allocate_device("gpu_face_centers",    (void**)&gpu_face_centers,    mesh->faces_size         * sizeof(vec<T>));
-                mtracker->allocate_device("gpu_cell_centers",    (void**)&gpu_cell_centers,   (mesh->local_mesh_size + nhalos) * sizeof(vec<T>));
-                mtracker->allocate_device("gpu_local_cells",     (void**)&gpu_local_cells,    (mesh->local_mesh_size + nhalos) * mesh->cell_size * sizeof(uint64_t));
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[16] += MPI_Wtime(); 
+                times[17] -= MPI_Wtime(); 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// Set up GPU Boundary map 
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 				//boundary map to gpu
 				uint64_t * full_boundary_map_keys = (uint64_t *) malloc(boundary_map.size() * sizeof(uint64_t));
@@ -965,6 +1038,7 @@ namespace minicombust::flow
                 gpuErrchk( cudaMemcpy(gpu_node_hash_map, node_hash_map, sizeof(Hash_map), cudaMemcpyHostToDevice));
 
                 
+                
                 if (global_node_to_local_node_map.size() != 0)
                 {
                     int thread_count = min( (int) 32, (int)global_node_to_local_node_map.size());
@@ -986,6 +1060,7 @@ namespace minicombust::flow
                 gpuErrchk( cudaFree(gpu_node_map_keys));
                 gpuErrchk( cudaFree(gpu_node_map_values));
 
+
                 uint64_t *local_halo_cells        = (uint64_t *) malloc(nhalos * mesh->cell_size * sizeof(uint64_t)); 
                 vec<T>   *local_halo_cell_centers = (vec<T>   *) malloc(nhalos * sizeof(vec<T>)); 
 
@@ -1003,7 +1078,6 @@ namespace minicombust::flow
                         local_halo_cells[halo*mesh->cell_size + n] = mesh->cells[(cell - mesh->shmem_cell_disp)*mesh->cell_size + n]; 
                     }
                 }
-
 
 				gpuErrchk( cudaMemcpy(gpu_face_centers, face_centers, mesh->faces_size * sizeof(vec<T>),
 						   cudaMemcpyHostToDevice));
@@ -1028,6 +1102,15 @@ namespace minicombust::flow
                 
                 free(local_halo_cell_centers);
                 free(local_halo_cells);
+
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[17] += MPI_Wtime(); 
+                times[18] -= MPI_Wtime(); 
+
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// AMGX Setup
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
                 if (FLOW_SOLVER_DEBUG)  fprintf(output_file, "\tRank %d: Done cell data.\n", mpi_config->particle_flow_rank);
 
@@ -1067,15 +1150,30 @@ namespace minicombust::flow
                 AMGX_SAFE_CALL(AMGX_vector_create(&pressure_u, pressure_rsrc, mode));
                 AMGX_SAFE_CALL(AMGX_vector_create(&pressure_b, pressure_rsrc, mode));
 
-                 cudaMemGetInfo( &free_sz, &total );
+                cudaMemGetInfo( &free_sz, &total );
 
-				
 				//Create solvers for AMGX
 				AMGX_SAFE_CALL(AMGX_solver_create(&solver, main_rsrc, mode, cfg));
 				AMGX_SAFE_CALL(AMGX_solver_create(&pressure_solver, pressure_rsrc, mode, cfg));
 
 
 				AMGX_SAFE_CALL(AMGX_config_get_default_number_of_rings(cfg, &nrings));
+
+
+                MPI_Barrier(mpi_config->particle_flow_world); 
+                times[18] += MPI_Wtime(); 
+
+
+                if (mpi_config->particle_flow_rank == 0)
+                {
+                    for (int i=0; i < 17; i++)
+                    {
+                        printf("Flowsolver setup timings region %d = %.2f\n", i, times[i]);
+                    }
+                }
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                ////////////// Finish setup
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 send_requests.push_back ( MPI_REQUEST_NULL );
                 send_requests.push_back ( MPI_REQUEST_NULL );
@@ -1085,34 +1183,9 @@ namespace minicombust::flow
 
                 memset(&logger, 0, sizeof(Flow_Logger));
 
-                // Array sizes
-                uint64_t total_node_index_array_size              = node_index_array_size;
-                uint64_t total_node_flow_array_size               = node_flow_array_size;
-                uint64_t total_send_buffers_node_index_array_size = send_buffers_node_index_array_size;
-                uint64_t total_send_buffers_node_flow_array_size  = send_buffers_node_flow_array_size;
-                uint64_t total_face_field_array_size              = face_field_array_size;
-                uint64_t total_face_centers_array_size            = face_centers_array_size;
-                uint64_t total_face_normals_array_size            = face_normals_array_size;
-                uint64_t total_face_mass_fluxes_array_size        = face_mass_fluxes_array_size;
-                uint64_t total_face_areas_array_size              = face_areas_array_size;
-                uint64_t total_face_lambdas_array_size            = face_lambdas_array_size;
-                uint64_t total_face_rlencos_array_size            = face_rlencos_array_size;
-                uint64_t total_phi_array_size                     = 13 * phi_array_size;
-                uint64_t total_phi_grad_array_size                = 12 * phi_grad_array_size;
-                uint64_t total_source_phi_array_size              = 3 * source_phi_array_size; 
-                uint64_t total_A_array_size                       = 3 * source_phi_array_size;
-                uint64_t total_volume_array_size                  = volume_array_size;
-                uint64_t total_density_array_size                 = density_array_size;
-
-                // STL sizes
-                uint64_t total_node_to_position_map_size       = node_to_position_map.size()        * sizeof(uint64_t);
-                uint64_t total_mpi_requests_size               = recv_requests.size() * send_requests.size() * sizeof(MPI_Request);
-                uint64_t total_mpi_statuses_size               = statuses.size()                             * sizeof(MPI_Status);
-                uint64_t total_new_cells_size                  = new_cells_set.size()                        * sizeof(uint64_t);
-                uint64_t total_ranks_size                      = ranks.size()                                * sizeof(uint64_t);
-
                 mtracker->print_usage(output_file);
 
+                MPI_Barrier(mpi_config->particle_flow_world); solver_setup_time += MPI_Wtime();
                 MPI_Barrier(mpi_config->world);
 
                 performance_logger.init_papi();

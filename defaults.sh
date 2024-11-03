@@ -15,7 +15,7 @@ MPI_PATH=/usr/local/openmpi/
 CUDA_PATH=/opt/nvidia/hpc_sdk/Linux_x86_64/24.3/cuda/
 
 ## MiniCombust Parameters
-CELLS=304
+CELLS=241
 PARTICLES=280000
 ITERS=100
 

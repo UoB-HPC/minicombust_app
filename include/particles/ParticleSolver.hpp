@@ -81,6 +81,8 @@ namespace minicombust::particles
         public:
             MPI_Config *mpi_config;
 			double compute_time;
+            double solver_setup_time;
+
 
             // Array sizes
             uint64_t total_node_index_array_size = 0.0;
@@ -103,6 +105,8 @@ namespace minicombust::particles
             ParticleSolver(MPI_Config *mpi_config, uint64_t ntimesteps, T delta, ParticleDistribution<T> *particle_dist, Mesh<M> *mesh, uint64_t reserve_particles_size, FILE* fp) : 
                            delta(delta), num_timesteps(ntimesteps), reserve_particles_size(reserve_particles_size), particle_dist(particle_dist), mesh(mesh), output_file(fp), mpi_config(mpi_config)
             {
+                MPI_Barrier(mpi_config->particle_flow_world); solver_setup_time -= MPI_Wtime();
+
                 // Allocate space for the size of each block array size
                 node_index_array_sizes           = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
                 node_flow_array_sizes            = (size_t *)malloc(mesh->num_blocks * sizeof(size_t));
@@ -178,6 +182,8 @@ namespace minicombust::particles
                     total_cell_particle_field_map_size    += cell_particle_field_map[b].size() * sizeof(uint64_t);
                 }
 
+
+                MPI_Barrier(mpi_config->particle_flow_world); solver_setup_time += MPI_Wtime();
                 MPI_Barrier(mpi_config->world);
 
                 if (mpi_config->particle_flow_rank == 0)

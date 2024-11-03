@@ -137,8 +137,6 @@ int main (int argc, char ** argv)
     Mesh<double> *mesh                          = load_mesh(&mpi_config, box_dim, elements_per_dim, flow_ranks, stdout);
     MPI_Barrier(mpi_config.world); mesh_time   += MPI_Wtime();
 
-	if (mpi_config.rank == 0)  printf("Mesh built in %6.2fs!\n\n", mesh_time);
-
     mpi_config.one_flow_rank             = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.every_one_flow_rank       = (int *)     malloc(flow_ranks * sizeof(int));
     mpi_config.one_flow_world_size       = (int *)     malloc(flow_ranks * sizeof(int));
@@ -177,8 +175,9 @@ int main (int argc, char ** argv)
 	if (mpi_config.rank == 0)   cout << endl;
     setup_time += MPI_Wtime(); MPI_Barrier(mpi_config.world); 
 
-    if (mpi_config.rank == 0)  printf("Mesh built in %6.2fs!\n\n", mesh_time);
-
+    if (mpi_config.rank == 0)                                                      printf("Mesh            built in %6.2fs!\n", mesh_time);
+    if (mpi_config.particle_flow_rank == 0 && mpi_config.solver_type == PARTICLE)  printf("Particle Solver built in %6.2fs!\n", particle_solver->solver_setup_time);
+    if (mpi_config.particle_flow_rank == 0 && mpi_config.solver_type != PARTICLE)  printf("Flow     Solver built in %6.2fs!\n", flow_solver->solver_setup_time);
 
     // Output mesh 
     MPI_Barrier(mpi_config.world); output_time -= MPI_Wtime(); 
